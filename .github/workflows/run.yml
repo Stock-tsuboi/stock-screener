@@ -9,10 +9,3 @@ jobs:
     steps:
       - run: echo "OK"
 
-
-        run: pip install -r requirements.txt
-
-      # スクリーナー実行
-      - name: Run screener
-        run: python screening_ai.py
-
