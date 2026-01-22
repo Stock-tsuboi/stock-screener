@@ -3,15 +3,35 @@ name: Run Screener
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "0 0 * * *"   # 毎日 09:00 JST に実行（UTC 0:00）
 
 jobs:
   run:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Test
-        run: echo "Workflow loaded successfully"
+      # 日本語ファイル名のまま、3つの zip を順番に結合
+      - name: Rebuild zip
+        run: |
+          echo "=== ファイル一覧 ==="
+          ls -1
+          echo "=== ZIP を結合中 ==="
+          cat モデル*zip.001 モデル*zip.002 モデル*zip.003 > model.zip
+
+      - name: Unzip model
+        run: unzip -o model.zip
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run screener
+        run: python screening_ai.py
+
