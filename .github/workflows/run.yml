@@ -1,48 +1,14 @@
-name: Run Screener
+name: Test Workflow
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "0 0 * * *"
 
 jobs:
-  run:
+  test:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - run: echo "OK"
 
-      - name: Rebuild zip
-        run: |
-          echo "=== ファイル一覧 ==="
-          ls -1
-          echo "=== ZIP を結合中 ==="
-          cat model_2.zip.001 model_2.zip.002 model_2.zip.003 > model.zip
-
-      - name: Check zip contents
-        run: |
-          echo "=== ZIP の中身 ==="
-          unzip -l model.zip
-
-      - name: Unzip model
-        run: unzip -o model.zip
-
-      - name: Check extracted files
-        run: |
-          echo "=== 展開されたファイル ==="
-          ls -R
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.10"
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run screener
-        run: python screening_ai.py
 
         run: pip install -r requirements.txt
 
