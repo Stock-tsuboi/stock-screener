@@ -13,7 +13,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      # ZIP を結合
       - name: Rebuild zip
         run: |
           echo "=== ファイル一覧 ==="
@@ -21,24 +20,30 @@ jobs:
           echo "=== ZIP を結合中 ==="
           cat model_2.zip.001 model_2.zip.002 model_2.zip.003 > model.zip
 
-      # ZIP を解凍
+      - name: Check zip contents
+        run: |
+          echo "=== ZIP の中身 ==="
+          unzip -l model.zip
+
       - name: Unzip model
         run: unzip -o model.zip
 
-      # 解凍されたファイルを確認
       - name: Check extracted files
         run: |
           echo "=== 展開されたファイル ==="
           ls -R
 
-      # Python セットアップ
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 
-      # 依存関係インストール
       - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run screener
+        run: python screening_ai.py
+
         run: pip install -r requirements.txt
 
       # スクリーナー実行
