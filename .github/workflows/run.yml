@@ -33,5 +33,3 @@ jobs:
 
       - name: Run screener
         run: python screening_ai.py
-
-
