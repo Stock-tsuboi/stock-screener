@@ -17,7 +17,7 @@ jobs:
         run: cat model_2.zip.* > model.zip
 
       - name: Unzip model
-        run: unzip model.zip
+        run: unzip -o model.zip
 
       - name: Set up Python
         uses: actions/setup-python@v4
