@@ -19,10 +19,10 @@ jobs:
       - name: Check zip contents
         run: |
           echo "=== ZIP の中身 ==="
-          unzip -l model_2.zip.001
+          unzip -l model_2.zip
 
       - name: Unzip model
-        run: unzip -o model_2.zip.001
+        run: unzip -o model_2.zip
 
       - name: Check extracted files
         run: |
