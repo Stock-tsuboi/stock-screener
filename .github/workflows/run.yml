@@ -11,20 +11,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Rebuild zip
+      - name: Check files
         run: |
           echo "=== ファイル一覧 ==="
           ls -1
-          echo "=== ZIP を結合中 ==="
-          cat model_2.zip.001 model_2.zip.002 model_2.zip.003 > model.zip
 
       - name: Check zip contents
         run: |
           echo "=== ZIP の中身 ==="
-          unzip -l model.zip
+          unzip -l model_2.zip.001
 
       - name: Unzip model
-        run: unzip -o model.zip
+        run: unzip -o model_2.zip.001
 
       - name: Check extracted files
         run: |
@@ -35,6 +33,12 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run screener
+        run: python screening_ai.py
 
       - name: Install dependencies
         run: pip install -r requirements.txt
