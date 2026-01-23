@@ -39,9 +39,3 @@ jobs:
 
       - name: Run screener
         run: python screening_ai.py
-
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run screener
-        run: python screening_ai.py
