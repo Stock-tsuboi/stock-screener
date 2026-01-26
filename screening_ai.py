@@ -72,8 +72,23 @@ def load_symbol_list():
 # AIモデル読み込み
 # =========================================================
 def load_ai_model():
+    import os
     import joblib
-    return joblib.load("best_model.pkl")
+    import zipfile
+
+    # ① すでに展開済みなら model.pkl をそのまま読む
+    if os.path.exists("model.pkl"):
+        return joblib.load("model.pkl")
+
+    # ② model_2.zip から model.pkl を展開して読む
+    if os.path.exists("model_2.zip"):
+        with zipfile.ZipFile("model_2.zip") as z:
+            # 中に model.pkl が入っている前提
+            z.extract("model.pkl")
+        return joblib.load("model.pkl")
+
+    # ③ どちらも無ければ明示的に落とす
+    raise FileNotFoundError("model.pkl / model_2.zip が見つかりません")
 
 BEST_TH = 0.55
 EXCLUDE_CODES = []
@@ -329,5 +344,6 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
