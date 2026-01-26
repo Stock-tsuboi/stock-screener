@@ -63,7 +63,9 @@ def calc_adx(data, period=14):
 # 銘柄リスト読み込み
 # =========================================================
 def load_symbol_list():
-    df = pd.read_csv("japan_stock_list.csv")
+    df = pd.read_csv("japan_stocks_jpx.csv", dtype={"コード": str})
+    df["市場"] = df["市場・商品区分"].str.extract(r"(プライム|スタンダード|グロース)")
+    df = df[["コード", "銘柄名", "市場"]].dropna()
     return df
 
 # =========================================================
@@ -327,4 +329,5 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
