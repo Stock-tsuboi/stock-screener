@@ -118,7 +118,6 @@ def analyze_symbol(code, name, model):
         return None
 
     symbol = f"{code}.T"
-    time.sleep(0.15)
 
     try:
         data = yf.download(symbol, period="6mo", interval="1d", progress=False)
@@ -350,5 +349,6 @@ def run_screening():
 
 if __name__ == "__main__":
     run_screening()
+
 
 
