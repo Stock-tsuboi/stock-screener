@@ -325,21 +325,21 @@ def run_screening():
     normal_signals = [r for r in results if r["route"] == "normal"]
     ai_only_signals = [r for r in results if r["route"] == "ai_only"]
 
-print("\n===== 初動＋継続シグナル =====\n")
-if normal_signals:
-    df_normal = pd.DataFrame(normal_signals).sort_values("AI上昇確率", ascending=False)
-    df_normal = df_normal.head(20)  # 上位20件
-    print(df_normal.to_string(index=False))
-else:
-    print("該当なし")
+    print("\n===== 初動＋継続シグナル =====\n")
+    if normal_signals:
+        df_normal = pd.DataFrame(normal_signals).sort_values("AI上昇確率", ascending=False)
+        df_normal = df_normal.head(20)
+        print(df_normal.to_string(index=False))
+    else:
+        print("該当なし")
 
-print("\n===== AI単独（AI確率・自動閾値以上） =====\n")
-if ai_only_signals:
-    df_ai = pd.DataFrame(ai_only_signals).sort_values("AI上昇確率", ascending=False)
-    df_ai = df_ai.head(20)  # 上位20件
-    print(df_ai.to_string(index=False))
-else:
-    print("該当なし")
+    print("\n===== AI単独（AI確率・自動閾値以上） =====\n")
+    if ai_only_signals:
+        df_ai = pd.DataFrame(ai_only_signals).sort_values("AI上昇確率", ascending=False)
+        df_ai = df_ai.head(20)
+        print(df_ai.to_string(index=False))
+    else:
+        print("該当なし")
 
     if ai_only_signals:
         backtest_ai_only(ai_only_signals)
@@ -350,4 +350,5 @@ else:
 
 if __name__ == "__main__":
     run_screening()
+
 
