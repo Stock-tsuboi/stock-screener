@@ -1,139 +1,120 @@
-# =========================================================
-# screening_ai.py  完全版（Parallel統一＋警告ゼロ＋AI閾値自動調整）
-# =========================================================
-
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning)
-warnings.filterwarnings("ignore", category=ResourceWarning)
-
-import time
-import pandas as pd
 import yfinance as yf
-import joblib
+import pandas as pd
 import numpy as np
 from joblib import Parallel, delayed
+import time
 
 # =========================================================
-# 設定
+# 安全な割り算
 # =========================================================
-
-CSV_FILE = "japan_stocks_jpx.csv"
-MODEL_FILE = "model.pkl"
-THRESHOLD_FILE = "best_threshold.txt"
-EXCLUDE_CODES = {"6576", "130A", "9999"}
+def safe_div(a, b):
+    return a / b if b not in [0, None] else 0
 
 # =========================================================
-# 最適AI閾値の読み込み
+# RSI
 # =========================================================
-
-try:
-    with open(THRESHOLD_FILE) as f:
-        BEST_TH = float(f.read().strip())
-except:
-    BEST_TH = 0.60  # フォールバック
-    print(f"警告: {THRESHOLD_FILE} が見つからないため、AI閾値を {BEST_TH} に設定")
-
-# =========================================================
-# MultiIndex → Series 変換
-# =========================================================
-
-def smart_close(series):
-    if isinstance(series, pd.DataFrame):
-        return series.iloc[:, 0].astype(float)
-    return series.astype(float)
+def calc_rsi(close, period=14):
+    delta = close.diff()
+    up = delta.clip(lower=0)
+    down = -delta.clip(upper=0)
+    ma_up = up.rolling(period).mean()
+    ma_down = down.rolling(period).mean()
+    rsi = 100 - (100 / (1 + ma_up / ma_down))
+    return rsi
 
 # =========================================================
-# テクニカル指標
+# MACD
 # =========================================================
+def calc_macd(close):
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9, adjust=False).mean()
+    return macd, signal
 
-def calc_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-def calc_macd(series, fast=12, slow=26, signal=9):
-    ema_fast = series.ewm(span=fast, adjust=False).mean()
-    ema_slow = series.ewm(span=slow, adjust=False).mean()
-    macd = ema_fast - ema_slow
-    signal_line = macd.ewm(span=signal, adjust=False).mean()
-    return macd, signal_line
-
+# =========================================================
+# ADX
+# =========================================================
 def calc_adx(data, period=14):
-    high = smart_close(data["High"])
-    low = smart_close(data["Low"])
-    close = smart_close(data["Close"])
+    high = data["High"]
+    low = data["Low"]
+    close = data["Close"]
 
     plus_dm = high.diff()
-    minus_dm = low.diff().abs()
+    minus_dm = low.diff() * -1
 
-    plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0.0)
-    minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0.0)
+    plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
+    minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
 
-    tr1 = high - low
-    tr2 = (high - close.shift()).abs()
-    tr3 = (low - close.shift()).abs()
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    tr = pd.concat([
+        high - low,
+        (high - close.shift()).abs(),
+        (low - close.shift()).abs()
+    ], axis=1).max(axis=1)
 
     atr = tr.rolling(period).mean()
-
-    plus_di = 100 * (plus_dm.rolling(period).mean() / atr)
-    minus_di = 100 * (minus_dm.rolling(period).mean() / atr)
-
-    dx = (abs(plus_di - minus_di) / (plus_di + minus_di)) * 100
+    pdi = 100 * (plus_dm.rolling(period).mean() / atr)
+    mdi = 100 * (minus_dm.rolling(period).mean() / atr)
+    dx = (abs(pdi - mdi) / (pdi + mdi)) * 100
     adx = dx.rolling(period).mean()
-
     return adx
 
 # =========================================================
 # 銘柄リスト読み込み
 # =========================================================
-
 def load_symbol_list():
-    return pd.read_csv(CSV_FILE)
+    df = pd.read_csv("japan_stock_list.csv")
+    return df
 
 # =========================================================
 # AIモデル読み込み
 # =========================================================
-
 def load_ai_model():
-    return joblib.load(MODEL_FILE)
+    import joblib
+    return joblib.load("best_model.pkl")
+
+BEST_TH = 0.55
+EXCLUDE_CODES = []
 
 # =========================================================
-# 安全な割り算
+# ★ 高速化の核心：全銘柄を一括ダウンロード
 # =========================================================
+def download_all_data(symbols):
+    tickers = [f"{code}.T" for code in symbols["コード"]]
 
-def safe_div(a, b):
-    if b is None or b == 0 or np.isnan(b):
-        return 0
-    return (a - b) / b
+    data = yf.download(
+        tickers,
+        period="6mo",
+        interval="1d",
+        group_by="ticker",
+        progress=False,
+        threads=True
+    )
+
+    return data
 
 # =========================================================
-# 銘柄解析（初動＋継続＋AI単独）
+# 銘柄解析（高速版）
 # =========================================================
-
-def analyze_symbol(code, name, model):
+def analyze_symbol(code, name, model, all_data):
     if code in EXCLUDE_CODES:
         return None
 
     symbol = f"{code}.T"
 
+    # 一括データから抽出
     try:
-        data = yf.download(symbol, period="6mo", interval="1d", progress=False)
+        data = all_data[symbol].dropna()
     except:
         return None
 
     if data is None or len(data) < 50:
         return None
 
-    if isinstance(data.columns, pd.MultiIndex):
-        data.columns = data.columns.get_level_values(0)
-
-    close = smart_close(data["Close"])
-    high = smart_close(data["High"])
-    low = smart_close(data["Low"])
-    volume = smart_close(data["Volume"])
+    close = data["Close"]
+    high = data["High"]
+    low = data["Low"]
+    volume = data["Volume"]
 
     sma5 = close.rolling(5).mean()
     sma25 = close.rolling(25).mean()
@@ -216,7 +197,7 @@ def analyze_symbol(code, name, model):
 
     ai_prob = model.predict_proba(features)[0][1]
 
-    # AI単独ルート（自動閾値）
+    # AI単独
     if ai_prob >= BEST_TH:
         return {
             "route": "ai_only",
@@ -231,7 +212,7 @@ def analyze_symbol(code, name, model):
             "AI上昇確率": round(ai_prob, 4)
         }
 
-    # 初動＋継続ルート
+    # 初動＋継続
     if not (buy_sma25 or buy_sma30):
         return None
     if cont_score < 3:
@@ -254,9 +235,8 @@ def analyze_symbol(code, name, model):
     }
 
 # =========================================================
-# AI単独ルートのバックテスト
+# バックテスト
 # =========================================================
-
 def backtest_ai_only(ai_list):
     results = []
 
@@ -296,9 +276,8 @@ def backtest_ai_only(ai_list):
     print(f"平均リターン：{avg_return*100:.2f}%")
 
 # =========================================================
-# メイン処理（Parallel 完全統一）
+# メイン処理（高速版）
 # =========================================================
-
 def run_screening():
     print("日本株銘柄リストを読み込み中...")
     symbols = load_symbol_list()
@@ -306,8 +285,10 @@ def run_screening():
     print("AIモデル読み込み中...")
     model = load_ai_model()
 
-    print(f"AI閾値（自動調整）: {BEST_TH}")
+    print("株価データを一括ダウンロード中...")
+    all_data = download_all_data(symbols)
 
+    print(f"AI閾値（自動調整）: {BEST_TH}")
     print("スクリーニング開始...")
 
     results = Parallel(
@@ -315,7 +296,7 @@ def run_screening():
         backend="loky",
         verbose=0
     )(
-        delayed(analyze_symbol)(row["コード"], row["銘柄名"], model)
+        delayed(analyze_symbol)(row["コード"], row["銘柄名"], model, all_data)
         for _, row in symbols.iterrows()
     )
 
@@ -324,18 +305,16 @@ def run_screening():
     normal_signals = [r for r in results if r["route"] == "normal"]
     ai_only_signals = [r for r in results if r["route"] == "ai_only"]
 
-    print("\n===== 初動＋継続シグナル =====\n")
+    print("\n===== 初動＋継続シグナル（上位20） =====\n")
     if normal_signals:
-        df_normal = pd.DataFrame(normal_signals).sort_values("AI上昇確率", ascending=False)
-        df_normal = df_normal.head(20)
+        df_normal = pd.DataFrame(normal_signals).sort_values("AI上昇確率", ascending=False).head(20)
         print(df_normal.to_string(index=False))
     else:
         print("該当なし")
 
-    print("\n===== AI単独（AI確率・自動閾値以上） =====\n")
+    print("\n===== AI単独（上位20） =====\n")
     if ai_only_signals:
-        df_ai = pd.DataFrame(ai_only_signals).sort_values("AI上昇確率", ascending=False)
-        df_ai = df_ai.head(20)
+        df_ai = pd.DataFrame(ai_only_signals).sort_values("AI上昇確率", ascending=False).head(20)
         print(df_ai.to_string(index=False))
     else:
         print("該当なし")
@@ -346,9 +325,6 @@ def run_screening():
 # =========================================================
 # 実行
 # =========================================================
-
 if __name__ == "__main__":
     run_screening()
-
-
 
