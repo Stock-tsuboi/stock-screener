@@ -1,9 +1,10 @@
-import yfinance as yf
 import pandas as pd
 import numpy as np
 from joblib import Parallel, delayed
 import time
-
+import os
+import requests
+from datetime import datetime, timedelta
 # =========================================================
 # 安全な割り算
 # =========================================================
@@ -94,21 +95,64 @@ BEST_TH = 0.55
 EXCLUDE_CODES = []
 
 # =========================================================
-# ★ 高速化の核心：全銘柄を一括ダウンロード
+# ★ JPX（J-Quants）API で全銘柄を取得
 # =========================================================
 def download_all_data(symbols):
-    tickers = [f"{code}.T" for code in symbols["コード"]]
+    api_key = os.getenv("JQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
 
-    data = yf.download(
-        tickers,
-        period="6mo",
-        interval="1d",
-        group_by="ticker",
-        progress=False,
-        threads=True
-    )
+    headers = {
+        "Authorization": f"Bearer {api_key}"
+    }
 
-    return data
+    # 直近6か月分
+    end = datetime.today().date()
+    start = end - timedelta(days=180)
+
+    base_url = "https://api.jpx-jquants.com/v1/prices/daily_quotes"
+
+    all_data = {}
+
+    for code in symbols["コード"]:
+        params = {
+            "code": code,
+            "from": start.strftime("%Y-%m-%d"),
+            "to": end.strftime("%Y-%m-%d"),
+        }
+
+        r = requests.get(base_url, headers=headers, params=params)
+        if r.status_code != 200:
+            continue
+
+        js = r.json()
+        rows = js.get("daily_quotes", [])
+        if not rows:
+            continue
+
+        df = pd.DataFrame(rows)
+
+        # 必要なカラム名に合わせて整形（J-Quants のキーに応じて調整）
+        # ここでは代表的なキー名を想定
+        rename_map = {
+            "Date": "Date",
+            "Open": "Open",
+            "High": "High",
+            "Low": "Low",
+            "Close": "Close",
+            "Volume": "Volume",
+        }
+        df = df.rename(columns=rename_map)
+
+        # 日付でソートして index を整える
+        df["Date"] = pd.to_datetime(df["Date"])
+        df = df.sort_values("Date").set_index("Date")
+
+        # yfinance 時代と同じように、キーは "コード.T" にしておく
+        symbol = f"{code}.T"
+        all_data[symbol] = df
+
+    return all_data
 
 # =========================================================
 # 銘柄解析（高速版）
@@ -252,24 +296,53 @@ def analyze_symbol(code, name, model, all_data):
     }
 
 # =========================================================
-# バックテスト
+# バックテスト（JPX API 版）
 # =========================================================
 def backtest_ai_only(ai_list):
+    import os
+    import requests
+    from datetime import datetime, timedelta
+
+    api_key = os.getenv("JQ_API_KEY")
+    if not api_key:
+        print("環境変数 JQ_API_KEY が設定されていません")
+        return
+
+    headers = {
+        "Authorization": f"Bearer {api_key}"
+    }
+
     results = []
 
     for row in ai_list:
         code = row["コード"]
-        symbol = f"{code}.T"
 
-        try:
-            data = yf.download(symbol, period="1y", interval="1d", progress=False)
-        except:
+        # 1年分のデータ取得
+        end = datetime.today().date()
+        start = end - timedelta(days=365)
+
+        params = {
+            "code": code,
+            "from": start.strftime("%Y-%m-%d"),
+            "to": end.strftime("%Y-%m-%d"),
+        }
+
+        url = "https://api.jpx-jquants.com/v1/prices/daily_quotes"
+        r = requests.get(url, headers=headers, params=params)
+
+        if r.status_code != 200:
             continue
 
-        if len(data) < 10:
+        js = r.json()
+        rows = js.get("daily_quotes", [])
+        if not rows or len(rows) < 10:
             continue
 
-        close = data["Close"]
+        df = pd.DataFrame(rows)
+        df["Date"] = pd.to_datetime(df["Date"])
+        df = df.sort_values("Date").set_index("Date")
+
+        close = df["Close"]
 
         today_close = close.iloc[-1]
         if len(close) >= 6:
@@ -344,6 +417,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
