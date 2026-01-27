@@ -106,22 +106,28 @@ def download_all_data(symbols):
         "Authorization": f"Bearer {api_key}"
     }
 
-    # 直近6か月分
-    end = datetime.today().date()
-    start = end - timedelta(days=180)
+    # 未来日付を避けるため「昨日」まで
+    end = datetime.today().date() - timedelta(days=1)
+    start = end - timedelta(days=90)  # 3ヶ月で十分
 
     base_url = "https://api.jquants.com/v1/prices/daily_quotes"
 
     all_data = {}
 
     for code in symbols["コード"]:
+        print(f"Downloading: {code}")  # ← どこで止まるか分かる
+
         params = {
             "code": code,
             "from": start.strftime("%Y-%m-%d"),
             "to": end.strftime("%Y-%m-%d"),
         }
 
-        r = requests.get(base_url, headers=headers, params=params)
+        try:
+            r = requests.get(base_url, headers=headers, params=params, timeout=2)
+        except:
+            continue
+
         if r.status_code != 200:
             continue
 
@@ -132,8 +138,7 @@ def download_all_data(symbols):
 
         df = pd.DataFrame(rows)
 
-        # 必要なカラム名に合わせて整形（J-Quants のキーに応じて調整）
-        # ここでは代表的なキー名を想定
+        # J-Quants のキー名に合わせて整形
         rename_map = {
             "Date": "Date",
             "Open": "Open",
@@ -144,13 +149,10 @@ def download_all_data(symbols):
         }
         df = df.rename(columns=rename_map)
 
-        # 日付でソートして index を整える
         df["Date"] = pd.to_datetime(df["Date"])
         df = df.sort_values("Date").set_index("Date")
 
-        # yfinance 時代と同じように、キーは "コード.T" にしておく
-        symbol = f"{code}.T"
-        all_data[symbol] = df
+        all_data[f"{code}.T"] = df
 
     return all_data
 
@@ -417,6 +419,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
