@@ -39,3 +39,8 @@ jobs:
 
       - name: Run screener
         run: python screening_ai.py
+      - name: Run Screener
+        run: python screening_ai.py
+        env:
+          JQ_API_KEY: ${{ secrets.JQ_API_KEY }}
+
