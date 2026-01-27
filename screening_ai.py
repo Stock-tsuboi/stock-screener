@@ -110,7 +110,7 @@ def download_all_data(symbols):
     end = datetime.today().date()
     start = end - timedelta(days=180)
 
-    base_url = "https://api.jpx-jquants.com/v1/prices/daily_quotes"
+    base_url = "https://api.jquants.com/v1/prices/daily_quotes"
 
     all_data = {}
 
@@ -417,6 +417,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
