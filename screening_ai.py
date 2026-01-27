@@ -327,7 +327,7 @@ def backtest_ai_only(ai_list):
             "to": end.strftime("%Y-%m-%d"),
         }
 
-        url = "https://api.jpx-jquants.com/v1/prices/daily_quotes"
+        url = "https://api.jquants.com/v1/prices/daily_quotes"
         r = requests.get(url, headers=headers, params=params)
 
         if r.status_code != 200:
@@ -417,6 +417,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
