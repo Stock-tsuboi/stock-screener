@@ -574,12 +574,56 @@ def run_screening():
         print("\n===== 新AI バックテスト =====")
         codes_new = [s for s, p in ai_list]
         backtest_ai_only(codes_new)
+   
+    # =========================================================
+    # ③ 統合ビュー（旧ロジック＋新AIロジック）
+    # =========================================================
+    print("\n\n===== 統合ビュー（旧ロジック × 新AIロジック） =====")
+
+    # --- 旧ロジック DataFrame ---
+    df_old = pd.DataFrame(results)
+
+    # route を「初動/継続/AI単独/該当なし」に変換
+    def convert_route(row):
+        if row["route"] == "normal":
+            return row.get("タイプ", "初動/継続")
+        elif row["route"] == "ai_only":
+            return "AI単独（旧）"
+        return "該当なし"
+
+    if not df_old.empty:
+        df_old["旧ロジック判定"] = df_old.apply(convert_route, axis=1)
+        df_old["旧AI確率"] = df_old["AI上昇確率"]
+        df_old["symbol"] = df_old["コード"] + ".T"
+        df_old = df_old[["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]]
+    else:
+        df_old = pd.DataFrame(columns=["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"])
+
+    # --- 新AIロジック DataFrame ---
+    df_new = pd.DataFrame(ai_list, columns=["symbol", "新AI確率"])
+    df_new["新AI順位"] = df_new["新AI確率"].rank(ascending=False).astype(int)
+
+    # --- マージ（symbolで結合） ---
+    df_merge = pd.merge(df_old, df_new, on="symbol", how="outer")
+
+    # 欠損を埋める
+    df_merge["銘柄名"] = df_merge["銘柄名"].fillna("不明")
+    df_merge["旧ロジック判定"] = df_merge["旧ロジック判定"].fillna("該当なし")
+    df_merge["旧AI確率"] = df_merge["旧AI確率"].fillna(0)
+    df_merge["新AI確率"] = df_merge["新AI確率"].fillna(0)
+    df_merge["新AI順位"] = df_merge["新AI順位"].fillna(999).astype(int)
+
+    # 新AI順位で並び替え
+    df_merge = df_merge.sort_values("新AI順位").head(50)
+
+    print(df_merge.to_string(index=False))
 
 # =========================================================
 # 実行
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
