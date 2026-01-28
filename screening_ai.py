@@ -108,7 +108,7 @@ def fetch_one(code, headers, start, end, base_url):
     }
 
     try:
-        r = requests.get(base_url, headers=headers, params=params, timeout=1)
+        r = requests.get(base_url, headers=headers, params=params, timeout=0.5)
         if r.status_code != 200:
             return None, None
 
@@ -135,7 +135,6 @@ def download_all_data(symbols):
 
     headers = {"Authorization": f"Bearer {api_key}"}
 
-    # ← ここを200日から150日に変更した
     end = datetime.today().date() - timedelta(days=1)
     start = end - timedelta(days=150)
 
@@ -143,13 +142,12 @@ def download_all_data(symbols):
 
     codes = list(symbols["コード"])
 
-    # 並列化（20スレッド）
-    results = Parallel(n_jobs=20, backend="threading")(
+    # 並列化（40スレッド）
+    results = Parallel(n_jobs=40, backend="threading")(
         delayed(fetch_one)(code, headers, start, end, base_url)
         for code in codes
     )
 
-    # None を除外して辞書化
     all_data = {symbol: df for symbol, df in results if symbol is not None}
 
     return all_data
@@ -417,6 +415,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
