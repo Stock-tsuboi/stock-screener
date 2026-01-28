@@ -501,51 +501,31 @@ def run_screening():
     print("日本株銘柄リストを読み込み中...")
     symbols = load_symbol_list()
 
-    print("AIモデル読み込み中...")
-    model = load_ai_model()
-
     print("株価データを一括ダウンロード中...")
     all_data = download_all_data(symbols)
 
-    print(f"AI閾値（自動調整）: {BEST_TH}")
-    print("スクリーニング開始...")
+    print("AIモデル学習中...")
+    model, feature_cols = train_ai_model(all_data)
 
-    results = Parallel(
-        n_jobs=-1,
-        backend="loky",
-        verbose=0
-    )(
-        delayed(analyze_symbol)(row["コード"], row["銘柄名"], model, all_data)
-        for _, row in symbols.iterrows()
-    )
+    print("AI推論（新ロジック）開始...")
 
-    results = [r for r in results if r is not None]
+    ai_list = ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20)
 
-    normal_signals = [r for r in results if r["route"] == "normal"]
-    ai_only_signals = [r for r in results if r["route"] == "ai_only"]
+    print("\n===== AI（新ロジック）上位20 =====\n")
+    for symbol, prob in ai_list:
+        print(f"{symbol}: {prob:.3f}")
 
-    print("\n===== 初動＋継続シグナル（上位20） =====\n")
-    if normal_signals:
-        df_normal = pd.DataFrame(normal_signals).sort_values("AI上昇確率", ascending=False).head(20)
-        print(df_normal.to_string(index=False))
-    else:
-        print("該当なし")
-
-    print("\n===== AI単独（上位20） =====\n")
-    if ai_only_signals:
-        df_ai = pd.DataFrame(ai_only_signals).sort_values("AI上昇確率", ascending=False).head(20)
-        print(df_ai.to_string(index=False))
-    else:
-        print("該当なし")
-
-    if ai_only_signals:
-        backtest_ai_only(ai_only_signals)
+    # バックテスト
+    if ai_list:
+        codes = [s for s, p in ai_list]
+        backtest_ai_only(codes)
 
 # =========================================================
 # 実行
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
