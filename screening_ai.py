@@ -298,71 +298,71 @@ def analyze_symbol(code, name, model, all_data):
 # =========================================================
 # バックテスト（JPX API 版）
 # =========================================================
-def backtest_ai_only(ai_list):
-    import os
-    import requests
-    from datetime import datetime, timedelta
+from joblib import Parallel, delayed
 
-    api_key = os.getenv("JQ_API_KEY")
-    if not api_key:
-        print("環境変数 JQ_API_KEY が設定されていません")
-        return
-
-    headers = {
-        "Authorization": f"Bearer {api_key}"
+def fetch_backtest(code, headers, start, end, base_url):
+    """1銘柄分のバックテスト用データ取得＋計算"""
+    params = {
+        "code": code,
+        "from": start.strftime("%Y-%m-%d"),
+        "to": end.strftime("%Y-%m-%d"),
     }
 
-    results = []
-
-    for row in ai_list:
-        code = row["コード"]
-
-        # 1年分のデータ取得
-        end = datetime.today().date()
-        start = end - timedelta(days=365)
-
-        params = {
-            "code": code,
-            "from": start.strftime("%Y-%m-%d"),
-            "to": end.strftime("%Y-%m-%d"),
-        }
-
-        url = "https://api.jquants.com/v1/prices/daily_quotes"
-        r = requests.get(url, headers=headers, params=params)
-
+    try:
+        r = requests.get(base_url, headers=headers, params=params, timeout=1)
         if r.status_code != 200:
-            continue
+            return None
 
         js = r.json()
         rows = js.get("daily_quotes", [])
-        if not rows or len(rows) < 10:
-            continue
+        if not rows:
+            return None
 
         df = pd.DataFrame(rows)
         df["Date"] = pd.to_datetime(df["Date"])
         df = df.sort_values("Date").set_index("Date")
 
-        close = df["Close"]
+        if len(df) < 10:
+            return None
 
-        today_close = close.iloc[-1]
-        if len(close) >= 6:
-            future_close = close.iloc[-6]
-        else:
-            continue
+        start_price = df["Close"].iloc[0]
+        end_price = df["Close"].iloc[-1]
+        ret = (end_price - start_price) / start_price
 
-        ret = (future_close - today_close) / today_close
-        results.append(ret)
+        return ret
 
-    if not results:
-        print("\nバックテスト結果：データ不足\n")
+    except:
+        return None
+
+
+def backtest_ai_only(ai_list):
+    """AIが選んだ銘柄だけを高速バックテスト"""
+    api_key = os.getenv("JQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
+
+    headers = {"Authorization": f"Bearer {api_key}"}
+
+    end = datetime.today().date() - timedelta(days=1)
+    start = end - timedelta(days=200)
+
+    base_url = "https://api.jquants.com/v1/prices/daily_quotes"
+
+    codes = [c.replace(".T", "") for c in ai_list]
+
+    results = Parallel(n_jobs=20, backend="threading")(
+        delayed(fetch_backtest)(code, headers, start, end, base_url)
+        for code in codes
+    )
+
+    returns = [r for r in results if r is not None]
+
+    if not returns:
+        print("バックテスト結果：該当なし")
         return
 
-    results = np.array(results)
-    win_rate = (results >= 0.05).mean()
-    avg_return = results.mean()
-
-    print("\n===== AI単独ルート バックテスト結果（過去1年） =====")
-    print(f"勝率（5日後+5%以上）：{win_rate*100:.2f}%")
+    avg_return = sum(returns) / len(returns)
+    print(f"バックテスト銘柄数：{len(returns)}")
     print(f"平均リターン：{avg_return*100:.2f}%")
 
 # =========================================================
@@ -417,6 +417,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
