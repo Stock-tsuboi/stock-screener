@@ -523,11 +523,10 @@ def run_screening():
     all_data = download_all_data(symbols)
 
     # =========================================================
-    # ① 旧ロジック（初動＋継続シグナル）
+    # ① 旧ロジック（初動→継続＋AI単独）
     # =========================================================
-    print("\n===== 旧ロジック（初動＋継続シグナル）解析中 =====")
+    print("\n===== 旧ロジック（初動→継続）解析中 =====")
 
-    # 旧AIモデル読み込み（旧ロジックはこれを使う）
     model_old = load_ai_model()
 
     results = Parallel(
@@ -541,10 +540,14 @@ def run_screening():
 
     results = [r for r in results if r is not None]
 
+    # 旧ロジックの分類
     normal_signals = [r for r in results if r["route"] == "normal"]
     ai_only_signals = [r for r in results if r["route"] == "ai_only"]
 
-    print("\n===== 初動＋継続シグナル（上位20） =====\n")
+    # -----------------------------
+    # 初動→継続（旧ロジック）表示
+    # -----------------------------
+    print("\n===== 初動→継続（旧ロジック）上位20 =====\n")
     if normal_signals:
         df_normal = (
             pd.DataFrame(normal_signals)
@@ -555,6 +558,9 @@ def run_screening():
     else:
         print("該当なし")
 
+    # -----------------------------
+    # AI単独（旧ロジック）表示
+    # -----------------------------
     print("\n===== AI単独（旧ロジック）上位20 =====\n")
     if ai_only_signals:
         df_ai = (
@@ -566,7 +572,9 @@ def run_screening():
     else:
         print("該当なし")
 
+    # -----------------------------
     # 旧ロジックのバックテスト
+    # -----------------------------
     if ai_only_signals:
         print("\n===== 旧ロジック AI単独 バックテスト =====")
         codes_old = [r["コード"] + ".T" for r in ai_only_signals]
@@ -592,16 +600,15 @@ def run_screening():
         print("\n===== 新AI バックテスト =====")
         codes_new = [s for s, p in ai_list]
         backtest_ai_only(codes_new)
-   
+
     # =========================================================
-    # ③ 統合ビュー（旧ロジック＋新AIロジック）
+    # ③ 統合ビュー（旧ロジック × 新AIロジック）
     # =========================================================
     print("\n\n===== 統合ビュー（旧ロジック × 新AIロジック） =====")
 
     # --- 旧ロジック DataFrame ---
     df_old = pd.DataFrame(results)
 
-    # route を「初動/継続/AI単独/該当なし」に変換
     def convert_route(row):
         if row["route"] == "normal":
             return row.get("タイプ", "初動/継続")
@@ -621,17 +628,17 @@ def run_screening():
     df_new = pd.DataFrame(ai_list, columns=["symbol", "新AI確率"])
     df_new["新AI順位"] = df_new["新AI確率"].rank(ascending=False).astype(int)
 
-    # --- マージ（symbolで結合） ---
+    # --- マージ ---
     df_merge = pd.merge(df_old, df_new, on="symbol", how="outer")
 
-    # 欠損を埋める
+    # 欠損埋め
     df_merge["銘柄名"] = df_merge["銘柄名"].fillna("不明")
     df_merge["旧ロジック判定"] = df_merge["旧ロジック判定"].fillna("該当なし")
     df_merge["旧AI確率"] = df_merge["旧AI確率"].fillna(0)
     df_merge["新AI確率"] = df_merge["新AI確率"].fillna(0)
     df_merge["新AI順位"] = df_merge["新AI順位"].fillna(999).astype(int)
 
-    # 新AI順位で並び替え
+    # 並び替え
     df_merge = df_merge.sort_values("新AI順位").head(50)
 
     print(df_merge.to_string(index=False))
@@ -641,6 +648,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
