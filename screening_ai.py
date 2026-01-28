@@ -143,7 +143,7 @@ def download_all_data(symbols):
     codes = list(symbols["コード"])
 
     # 並列化（40スレッド）
-    results = Parallel(n_jobs=40, backend="threading")(
+    results = Parallel(n_jobs=60, backend="threading")(
         delayed(fetch_one)(code, headers, start, end, base_url)
         for code in codes
     )
@@ -415,6 +415,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
