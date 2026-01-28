@@ -135,9 +135,9 @@ def download_all_data(symbols):
 
     headers = {"Authorization": f"Bearer {api_key}"}
 
-    # ← ここを200日に変更
+    # ← ここを200日から150日に変更した
     end = datetime.today().date() - timedelta(days=1)
-    start = end - timedelta(days=200)
+    start = end - timedelta(days=150)
 
     base_url = "https://api.jquants.com/v1/prices/daily_quotes"
 
@@ -309,7 +309,7 @@ def fetch_backtest(code, headers, start, end, base_url):
     }
 
     try:
-        r = requests.get(base_url, headers=headers, params=params, timeout=1)
+        r = requests.get(base_url, headers=headers, params=params, timeout=0.5)
         if r.status_code != 200:
             return None
 
@@ -350,7 +350,7 @@ def backtest_ai_only(ai_list):
 
     codes = [c.replace(".T", "") for c in ai_list]
 
-    results = Parallel(n_jobs=20, backend="threading")(
+    results = Parallel(n_jobs=40, backend="threading")(
         delayed(fetch_backtest)(code, headers, start, end, base_url)
         for code in codes
     )
@@ -417,6 +417,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
