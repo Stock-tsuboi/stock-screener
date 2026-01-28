@@ -504,27 +504,83 @@ def run_screening():
     print("株価データを一括ダウンロード中...")
     all_data = download_all_data(symbols)
 
-    print("AIモデル学習中...")
-    model, feature_cols = train_ai_model(all_data)
+    # =========================================================
+    # ① 旧ロジック（初動＋継続シグナル）
+    # =========================================================
+    print("旧ロジック（初動＋継続シグナル）解析中...")
 
-    print("AI推論（新ロジック）開始...")
+    # 旧AIモデル読み込み（旧ロジックはこれを使う）
+    model_old = load_ai_model()
 
-    ai_list = ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20)
+    results = Parallel(
+        n_jobs=-1,
+        backend="loky",
+        verbose=0
+    )(
+        delayed(analyze_symbol)(row["コード"], row["銘柄名"], model_old, all_data)
+        for _, row in symbols.iterrows()
+    )
 
-    print("\n===== AI（新ロジック）上位20 =====\n")
+    results = [r for r in results if r is not None]
+
+    normal_signals = [r for r in results if r["route"] == "normal"]
+    ai_only_signals = [r for r in results if r["route"] == "ai_only"]
+
+    print("\n===== 初動＋継続シグナル（上位20） =====\n")
+    if normal_signals:
+        df_normal = (
+            pd.DataFrame(normal_signals)
+            .sort_values("AI上昇確率", ascending=False)
+            .head(20)
+        )
+        print(df_normal.to_string(index=False))
+    else:
+        print("該当なし")
+
+    print("\n===== AI単独（旧ロジック）上位20 =====\n")
+    if ai_only_signals:
+        df_ai = (
+            pd.DataFrame(ai_only_signals)
+            .sort_values("AI上昇確率", ascending=False)
+            .head(20)
+        )
+        print(df_ai.to_string(index=False))
+    else:
+        print("該当なし")
+
+    # 旧ロジックのバックテスト
+    if ai_only_signals:
+        print("\n===== 旧ロジック AI単独 バックテスト =====")
+        codes_old = [r["コード"] + ".T" for r in ai_only_signals]
+        backtest_ai_only(codes_old)
+
+    # =========================================================
+    # ② 新AIロジック（精度最大化AI）
+    # =========================================================
+    print("\n\n===== 新AIロジック（精度最大化AI） =====")
+    print("新AIモデル学習中...")
+
+    model_new, feature_cols = train_ai_model(all_data)
+
+    print("新AI推論中...")
+    ai_list = ai_predict(model_new, feature_cols, all_data, threshold=0.55, top_n=20)
+
+    print("\n===== 新AI（精度最大化）上位20 =====\n")
     for symbol, prob in ai_list:
         print(f"{symbol}: {prob:.3f}")
 
-    # バックテスト
+    # 新AIのバックテスト
     if ai_list:
-        codes = [s for s, p in ai_list]
-        backtest_ai_only(codes)
+        print("\n===== 新AI バックテスト =====")
+        codes_new = [s for s, p in ai_list]
+        backtest_ai_only(codes_new)
 
 # =========================================================
 # 実行
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
