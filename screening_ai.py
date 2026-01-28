@@ -97,62 +97,60 @@ EXCLUDE_CODES = []
 # =========================================================
 # ★ JPX（J-Quants）API で全銘柄を取得
 # =========================================================
+from joblib import Parallel, delayed
+
+# 1銘柄分のデータ取得
+def fetch_one(code, headers, start, end, base_url):
+    params = {
+        "code": code,
+        "from": start.strftime("%Y-%m-%d"),
+        "to": end.strftime("%Y-%m-%d"),
+    }
+
+    try:
+        r = requests.get(base_url, headers=headers, params=params, timeout=1)
+        if r.status_code != 200:
+            return None, None
+
+        js = r.json()
+        rows = js.get("daily_quotes", [])
+        if not rows:
+            return None, None
+
+        df = pd.DataFrame(rows)
+        df["Date"] = pd.to_datetime(df["Date"])
+        df = df.sort_values("Date").set_index("Date")
+
+        return f"{code}.T", df
+
+    except:
+        return None, None
+
+
+# 全銘柄データ取得（高速版）
 def download_all_data(symbols):
     api_key = os.getenv("JQ_API_KEY")
     if not api_key:
         raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
 
-    headers = {
-        "Authorization": f"Bearer {api_key}"
-    }
+    headers = {"Authorization": f"Bearer {api_key}"}
 
-    # 未来日付を避けるため「昨日」まで
+    # ← ここを200日に変更
     end = datetime.today().date() - timedelta(days=1)
-    start = end - timedelta(days=90)  # 3ヶ月で十分
+    start = end - timedelta(days=200)
 
     base_url = "https://api.jquants.com/v1/prices/daily_quotes"
 
-    all_data = {}
+    codes = list(symbols["コード"])
 
-    for code in symbols["コード"]:
-        print(f"Downloading: {code}")  # ← どこで止まるか分かる
+    # 並列化（20スレッド）
+    results = Parallel(n_jobs=20, backend="threading")(
+        delayed(fetch_one)(code, headers, start, end, base_url)
+        for code in codes
+    )
 
-        params = {
-            "code": code,
-            "from": start.strftime("%Y-%m-%d"),
-            "to": end.strftime("%Y-%m-%d"),
-        }
-
-        try:
-            r = requests.get(base_url, headers=headers, params=params, timeout=2)
-        except:
-            continue
-
-        if r.status_code != 200:
-            continue
-
-        js = r.json()
-        rows = js.get("daily_quotes", [])
-        if not rows:
-            continue
-
-        df = pd.DataFrame(rows)
-
-        # J-Quants のキー名に合わせて整形
-        rename_map = {
-            "Date": "Date",
-            "Open": "Open",
-            "High": "High",
-            "Low": "Low",
-            "Close": "Close",
-            "Volume": "Volume",
-        }
-        df = df.rename(columns=rename_map)
-
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.sort_values("Date").set_index("Date")
-
-        all_data[f"{code}.T"] = df
+    # None を除外して辞書化
+    all_data = {symbol: df for symbol, df in results if symbol is not None}
 
     return all_data
 
@@ -419,6 +417,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
