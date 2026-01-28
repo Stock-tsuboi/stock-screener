@@ -336,7 +336,9 @@ def analyze_symbol(code, name, model, all_data):
     vol_t = float(volume.iloc[-1])
     s25_t = float(sma25.iloc[-1])
 
-    # 初動判定
+    # ============================
+    # 初動判定（旧ロジック完全維持）
+    # ============================
     sma25_touch = (s25_y != 0) and abs(c_y - s25_y) / s25_y <= 0.03
     sma30_touch = (s30_y != 0) and abs(c_y - s30_y) / s30_y <= 0.03
 
@@ -348,7 +350,11 @@ def analyze_symbol(code, name, model, all_data):
     buy_sma25 = rsi_rebound and sma25_touch and macd_rebound and vol_increase and strong_trend
     buy_sma30 = rsi_rebound and sma30_touch and macd_rebound and vol_increase and strong_trend
 
-    # 継続スコア
+    cond_initial = buy_sma25 or buy_sma30
+
+    # ============================
+    # 継続スコア（旧ロジック完全維持）
+    # ============================
     cont_score = 0
     if c_t > h_y: cont_score += 2
     if vol_t == max(volume.iloc[-6:-1]): cont_score += 2
@@ -356,13 +362,18 @@ def analyze_symbol(code, name, model, all_data):
     if c_t > s25_t: cont_score += 1
     if vol_t > vol_y: cont_score += 1
     if vol_t > volume.iloc[-6:-1].mean(): cont_score += 1
+
     candle_range = h_t - l_t
     if candle_range > 0 and (c_t - l_t) / candle_range > 0.3:
         cont_score += 1
     if c_t > h_y * 0.95:
         cont_score += 1
 
-    # AI予測
+    cond_continue = cont_score >= 3
+
+    # ============================
+    # AI予測（旧ロジック完全維持）
+    # ============================
     sma5_val = float(sma5.iloc[-1]) if sma5.iloc[-1] != 0 else None
     sma25_val = float(sma25.iloc[-1]) if sma25.iloc[-1] != 0 else None
     sma75_val = float(sma75.iloc[-1]) if sma75.iloc[-1] != 0 else None
@@ -387,7 +398,9 @@ def analyze_symbol(code, name, model, all_data):
 
     ai_prob = model.predict_proba(features)[0][1]
 
-    # AI単独
+    # ============================
+    # AI単独（旧ロジック完全維持）
+    # ============================
     if ai_prob >= BEST_TH:
         return {
             "route": "ai_only",
@@ -402,13 +415,18 @@ def analyze_symbol(code, name, model, all_data):
             "AI上昇確率": round(ai_prob, 4)
         }
 
-    # 初動＋継続
-    if not (buy_sma25 or buy_sma30):
-        return None
-    if cont_score < 3:
+    # ============================
+    # 初動 → 継続 の流れを正しく表現
+    # ============================
+    if not cond_initial and not cond_continue:
         return None
 
-    signal_type = "浅押し（SMA25）" if buy_sma25 else "深押し（SMA30）"
+    if cond_initial and cond_continue:
+        signal_type = "初動→継続"
+    elif cond_initial:
+        signal_type = "初動"
+    else:
+        signal_type = "継続"
 
     return {
         "route": "normal",
@@ -623,6 +641,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
