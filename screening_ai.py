@@ -548,6 +548,7 @@ def run_screening():
 
     # ★ 追加：リフレッシュトークン → アクセストークン取得
     access_token = get_access_token()
+    print("ACCESS TOKEN:", access_token)
     headers = {"Authorization": f"Bearer {access_token}"}
 
     print("株価データを一括ダウンロード中...")
@@ -674,6 +675,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
