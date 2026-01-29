@@ -239,24 +239,35 @@ def fetch_one(code, headers, start, end, base_url):
     }
 
     try:
-        r = requests.get(base_url, headers=headers, params=params, timeout=0.5)
+        # タイムアウトを十分長くする
+        r = requests.get(base_url, headers=headers, params=params, timeout=5)
+
         if r.status_code != 200:
+            print(f"[ERROR] {code}: status={r.status_code}")
             return None, None
 
         js = r.json()
+
         rows = js.get("daily_quotes", [])
         if not rows:
+            print(f"[EMPTY] {code}: no data")
             return None, None
 
         df = pd.DataFrame(rows)
+
+        # Date が存在しない場合の保険
+        if "Date" not in df.columns:
+            print(f"[ERROR] {code}: Date column missing")
+            return None, None
+
         df["Date"] = pd.to_datetime(df["Date"])
         df = df.sort_values("Date").set_index("Date")
 
         return f"{code}.T", df
 
-    except:
+    except Exception as e:
+        print(f"[EXCEPTION] {code}: {e}")
         return None, None
-
 
 # 全銘柄データ取得（高速版）
 def download_all_data(symbols):
@@ -665,6 +676,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
