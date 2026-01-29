@@ -537,6 +537,10 @@ def run_screening():
     print("日本株銘柄リストを読み込み中...")
     symbols = load_symbol_list()
 
+    # ★ 追加：リフレッシュトークン → アクセストークン取得
+    access_token = get_access_token()
+    headers = {"Authorization": f"Bearer {access_token}"}
+
     print("株価データを一括ダウンロード中...")
     all_data = download_all_data(symbols)
 
@@ -626,7 +630,6 @@ def run_screening():
     # =========================================================
     print("\n\n===== 統合ビュー（旧ロジック × 新AIロジック） =====")
 
-    # --- 旧ロジック DataFrame ---
     df_old = pd.DataFrame(results)
 
     def convert_route(row):
@@ -644,21 +647,17 @@ def run_screening():
     else:
         df_old = pd.DataFrame(columns=["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"])
 
-    # --- 新AIロジック DataFrame ---
     df_new = pd.DataFrame(ai_list, columns=["symbol", "新AI確率"])
     df_new["新AI順位"] = df_new["新AI確率"].rank(ascending=False).astype(int)
 
-    # --- マージ ---
     df_merge = pd.merge(df_old, df_new, on="symbol", how="outer")
 
-    # 欠損埋め
     df_merge["銘柄名"] = df_merge["銘柄名"].fillna("不明")
     df_merge["旧ロジック判定"] = df_merge["旧ロジック判定"].fillna("該当なし")
     df_merge["旧AI確率"] = df_merge["旧AI確率"].fillna(0)
     df_merge["新AI確率"] = df_merge["新AI確率"].fillna(0)
     df_merge["新AI順位"] = df_merge["新AI順位"].fillna(999).astype(int)
 
-    # 並び替え
     df_merge = df_merge.sort_values("新AI順位").head(50)
 
     print(df_merge.to_string(index=False))
@@ -668,6 +667,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
