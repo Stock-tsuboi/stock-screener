@@ -273,13 +273,28 @@ def download_all_data(symbols):
 
     codes = list(symbols["コード"])
 
-    # 並列化（40スレッド）
+    # 並列ダウンロード
     results = Parallel(n_jobs=60, backend="threading")(
         delayed(fetch_one)(code, headers, start, end, base_url)
         for code in codes
     )
 
-    all_data = {symbol: df for symbol, df in results if symbol is not None}
+    all_data = {}
+
+    for code, df in results:
+        # 失敗した銘柄はスキップ
+        if code is None or df is None or df.empty:
+            continue
+
+        # ★ここが最重要：必ず .T を付けて統一
+        symbol = f"{code}.T"
+
+        # DataFrame のインデックスを日付に統一（安全策）
+        if "Date" in df.columns:
+            df = df.sort_values("Date")
+            df = df.set_index("Date")
+
+        all_data[symbol] = df
 
     return all_data
 
@@ -586,6 +601,8 @@ def run_screening():
     print("\n\n===== 新AIロジック（精度最大化AI） =====")
     print("新AIモデル学習中...")
 
+    print("all_data keys:", list(all_data.keys())[:10])
+
     model_new, feature_cols = train_ai_model(all_data)
 
     print("新AI推論中...")
@@ -648,6 +665,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
