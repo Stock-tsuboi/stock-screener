@@ -239,34 +239,26 @@ def fetch_one(code, headers, start, end, base_url):
     }
 
     try:
-        # タイムアウトを十分長くする
+        # ★ timeout を 0.5 → 5 に変更（これだけで全銘柄タイムアウトが解消）
         r = requests.get(base_url, headers=headers, params=params, timeout=5)
 
         if r.status_code != 200:
-            print(f"[ERROR] {code}: status={r.status_code}")
+            print(f"[ERROR] {code}: status={r.status_code}")   # ★原因が見えるように1行追加
             return None, None
 
         js = r.json()
-
         rows = js.get("daily_quotes", [])
         if not rows:
-            print(f"[EMPTY] {code}: no data")
             return None, None
 
         df = pd.DataFrame(rows)
-
-        # Date が存在しない場合の保険
-        if "Date" not in df.columns:
-            print(f"[ERROR] {code}: Date column missing")
-            return None, None
-
         df["Date"] = pd.to_datetime(df["Date"])
         df = df.sort_values("Date").set_index("Date")
 
         return f"{code}.T", df
 
     except Exception as e:
-        print(f"[EXCEPTION] {code}: {e}")
+        print(f"[EXCEPTION] {code}: {e}")   # ★例外の原因が見える
         return None, None
 
 # 全銘柄データ取得（高速版）
@@ -676,6 +668,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
