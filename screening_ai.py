@@ -533,6 +533,15 @@ def backtest_ai_only(ai_list):
 # =========================================================
 # メイン処理（高速版）
 # =========================================================
+def get_access_token():
+    refresh_token = os.getenv("JQ_API_KEY")
+    r = requests.post(
+        "https://api.jquants.com/v1/token/auth_refresh",
+        json={"refreshToken": refresh_token},
+        timeout=5
+    )
+    return r.json().get("accessToken")
+
 def run_screening():
     print("日本株銘柄リストを読み込み中...")
     symbols = load_symbol_list()
@@ -562,14 +571,11 @@ def run_screening():
 
     results = [r for r in results if r is not None]
 
-    # 旧ロジックの分類
-    normal_signals = [r for r in results if r["route"] == "normal"]
-    ai_only_signals = [r for r in results if r["route"] == "ai_only"]
-
     # -----------------------------
     # 初動→継続（旧ロジック）表示
     # -----------------------------
     print("\n===== 初動→継続（旧ロジック）上位20 =====\n")
+    normal_signals = [r for r in results if r["route"] == "normal"]
     if normal_signals:
         df_normal = (
             pd.DataFrame(normal_signals)
@@ -584,6 +590,7 @@ def run_screening():
     # AI単独（旧ロジック）表示
     # -----------------------------
     print("\n===== AI単独（旧ロジック）上位20 =====\n")
+    ai_only_signals = [r for r in results if r["route"] == "ai_only"]
     if ai_only_signals:
         df_ai = (
             pd.DataFrame(ai_only_signals)
@@ -667,6 +674,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
