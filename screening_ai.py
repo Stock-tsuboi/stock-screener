@@ -6,7 +6,7 @@ import os
 import requests
 from datetime import datetime, timedelta
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_regression import LinearRegression
+from sklearn.linear_model import LinearRegression
 
 # =========================================================
 # 安全な割り算
@@ -593,3 +593,4 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
