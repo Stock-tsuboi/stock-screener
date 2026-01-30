@@ -262,13 +262,7 @@ def fetch_one(code, headers, start, end, base_url):
         return None, None
 
 # 全銘柄データ取得（高速版）
-def download_all_data(symbols):
-    api_key = os.getenv("JQ_API_KEY")
-    if not api_key:
-        raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
-
-    headers = {"Authorization": f"Bearer {api_key}"}
-
+def download_all_data(symbols, headers):
     end = datetime.today().date() - timedelta(days=1)
     start = end - timedelta(days=150)
 
@@ -276,7 +270,6 @@ def download_all_data(symbols):
 
     codes = list(symbols["コード"])
 
-    # 並列ダウンロード
     results = Parallel(n_jobs=60, backend="threading")(
         delayed(fetch_one)(code, headers, start, end, base_url)
         for code in codes
@@ -285,14 +278,11 @@ def download_all_data(symbols):
     all_data = {}
 
     for code, df in results:
-        # 失敗した銘柄はスキップ
         if code is None or df is None or df.empty:
             continue
 
-        # ★ここが最重要：必ず .T を付けて統一
         symbol = f"{code}.T"
 
-        # DataFrame のインデックスを日付に統一（安全策）
         if "Date" in df.columns:
             df = df.sort_values("Date")
             df = df.set_index("Date")
@@ -675,6 +665,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
