@@ -5,6 +5,9 @@ import time
 import os
 import requests
 from datetime import datetime, timedelta
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_regression import LinearRegression
+
 # =========================================================
 # 安全な割り算
 # =========================================================
@@ -73,26 +76,18 @@ def load_symbol_list():
 # AIモデル読み込み
 # =========================================================
 def load_ai_model():
-    import os
     import joblib
     import zipfile
 
-    # ① すでに展開済みなら model.pkl をそのまま読む
     if os.path.exists("model.pkl"):
         return joblib.load("model.pkl")
 
-    # ② model_2.zip から model.pkl を展開して読む
     if os.path.exists("model_2.zip"):
         with zipfile.ZipFile("model_2.zip") as z:
-            # 中に model.pkl が入っている前提
             z.extract("model.pkl")
         return joblib.load("model.pkl")
 
-    # ③ どちらも無ければ明示的に落とす
     raise FileNotFoundError("model.pkl / model_2.zip が見つかりません")
-
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.linear_model import LinearRegression
 
 # ============================
 # 特徴量生成（精度最大化版）
@@ -100,17 +95,14 @@ from sklearn.linear_model import LinearRegression
 def create_features(df):
     df = df.copy()
 
-    # 移動平均
     df["SMA5"] = df["Close"].rolling(5).mean()
     df["SMA25"] = df["Close"].rolling(25).mean()
     df["SMA75"] = df["Close"].rolling(75).mean()
 
-    # 乖離率
     df["Bias5"] = (df["Close"] - df["SMA5"]) / df["SMA5"]
     df["Bias25"] = (df["Close"] - df["SMA25"]) / df["SMA25"]
     df["Bias75"] = (df["Close"] - df["SMA75"]) / df["SMA75"]
 
-    # ボリンジャーバンド
     df["BB_MID"] = df["SMA25"]
     df["BB_STD"] = df["Close"].rolling(25).std()
     df["BB_UP1"] = df["BB_MID"] + df["BB_STD"]
@@ -118,15 +110,12 @@ def create_features(df):
     df["BB_UP2"] = df["BB_MID"] + 2 * df["BB_STD"]
     df["BB_LOW2"] = df["BB_MID"] - 2 * df["BB_STD"]
 
-    # 出来高急増率
     df["VolRatio"] = df["Volume"] / df["Volume"].rolling(25).mean()
 
-    # ローソク足パターン
-    df["Bull"] = (df["Close"] > df["Open"]).astype(int)  # 陽線
-    df["BigBull"] = ((df["Close"] - df["Open"]) / df["Open"] > 0.03).astype(int)  # 大陽線
-    df["BigBear"] = ((df["Open"] - df["Close"]) / df["Open"] > 0.03).astype(int)  # 大陰線
+    df["Bull"] = (df["Close"] > df["Open"]).astype(int)
+    df["BigBull"] = ((df["Close"] - df["Open"]) / df["Open"] > 0.03).astype(int)
+    df["BigBear"] = ((df["Open"] - df["Close"]) / df["Open"] > 0.03).astype(int)
 
-    # トレンド傾き（回帰直線 slope）
     def calc_slope(series):
         if len(series) < 10:
             return np.nan
@@ -137,13 +126,11 @@ def create_features(df):
 
     df["Slope10"] = df["Close"].rolling(10).apply(calc_slope, raw=False)
 
-    # 目的変数：5日後 +3% 以上
     df["Target"] = (df["Close"].shift(-5) / df["Close"] - 1 > 0.03).astype(int)
 
     df = df.dropna()
 
     return df
-
 
 # ============================
 # 学習処理（精度最大化版）
@@ -164,7 +151,6 @@ def train_ai_model(all_data):
 
     data = pd.concat(dfs)
 
-    # 特徴量
     feature_cols = [
         "SMA5", "SMA25", "SMA75",
         "Bias5", "Bias25", "Bias75",
@@ -177,10 +163,8 @@ def train_ai_model(all_data):
     X = data[feature_cols]
     y = data["Target"]
 
-    # 欠損は0埋め（RandomForestはこれでOK）
     X = X.fillna(0)
 
-    # RandomForest（精度最大化パラメータ）
     model = RandomForestClassifier(
         n_estimators=400,
         max_depth=10,
@@ -194,7 +178,6 @@ def train_ai_model(all_data):
     model.fit(X, y)
 
     return model, feature_cols
-
 
 # ============================
 # 推論処理（AI が銘柄を選ぶ部分）
@@ -226,11 +209,8 @@ BEST_TH = 0.55
 EXCLUDE_CODES = []
 
 # =========================================================
-# ★ JPX（J-Quants）API で全銘柄を取得
+# ★ JPX（J-Quants）API で全銘柄を取得（v2仕様）
 # =========================================================
-from joblib import Parallel, delayed
-
-# 1銘柄分のデータ取得
 def fetch_one(code, headers, start, end, base_url):
     params = {
         "code": code,
@@ -239,11 +219,10 @@ def fetch_one(code, headers, start, end, base_url):
     }
 
     try:
-        # ★ timeout を 0.5 → 5 に変更（これだけで全銘柄タイムアウトが解消）
         r = requests.get(base_url, headers=headers, params=params, timeout=5)
 
         if r.status_code != 200:
-            print(f"[ERROR] {code}: status={r.status_code}")   # ★原因が見えるように1行追加
+            print(f"[ERROR] {code}: status={r.status_code}")
             return None, None
 
         js = r.json()
@@ -258,10 +237,9 @@ def fetch_one(code, headers, start, end, base_url):
         return f"{code}.T", df
 
     except Exception as e:
-        print(f"[EXCEPTION] {code}: {e}")   # ★例外の原因が見える
+        print(f"[EXCEPTION] {code}: {e}")
         return None, None
 
-# 全銘柄データ取得（高速版）
 def download_all_data(symbols, headers):
     end = datetime.today().date() - timedelta(days=1)
     start = end - timedelta(days=150)
@@ -300,7 +278,6 @@ def analyze_symbol(code, name, model, all_data):
 
     symbol = f"{code}.T"
 
-    # 一括データから抽出
     try:
         data = all_data[symbol].dropna()
     except:
@@ -323,7 +300,6 @@ def analyze_symbol(code, name, model, all_data):
     macd, signal = calc_macd(close)
     adx = calc_adx(data)
 
-    # 昨日
     c_y = float(close.iloc[-2])
     h_y = float(high.iloc[-2])
     s25_y = float(sma25.iloc[-2])
@@ -337,16 +313,12 @@ def analyze_symbol(code, name, model, all_data):
     vol_y = float(volume.iloc[-2])
     vol_avg5_y = float(volume.iloc[-7:-2].mean())
 
-    # 今日
     c_t = float(close.iloc[-1])
     h_t = float(high.iloc[-1])
     l_t = float(low.iloc[-1])
     vol_t = float(volume.iloc[-1])
     s25_t = float(sma25.iloc[-1])
 
-    # ============================
-    # 初動判定（旧ロジック完全維持）
-    # ============================
     sma25_touch = (s25_y != 0) and abs(c_y - s25_y) / s25_y <= 0.03
     sma30_touch = (s30_y != 0) and abs(c_y - s30_y) / s30_y <= 0.03
 
@@ -360,9 +332,6 @@ def analyze_symbol(code, name, model, all_data):
 
     cond_initial = buy_sma25 or buy_sma30
 
-    # ============================
-    # 継続スコア（旧ロジック完全維持）
-    # ============================
     cont_score = 0
     if c_t > h_y: cont_score += 2
     if vol_t == max(volume.iloc[-6:-1]): cont_score += 2
@@ -379,9 +348,6 @@ def analyze_symbol(code, name, model, all_data):
 
     cond_continue = cont_score >= 3
 
-    # ============================
-    # AI予測（旧ロジック完全維持）
-    # ============================
     sma5_val = float(sma5.iloc[-1]) if sma5.iloc[-1] != 0 else None
     sma25_val = float(sma25.iloc[-1]) if sma25.iloc[-1] != 0 else None
     sma75_val = float(sma75.iloc[-1]) if sma75.iloc[-1] != 0 else None
@@ -406,9 +372,6 @@ def analyze_symbol(code, name, model, all_data):
 
     ai_prob = model.predict_proba(features)[0][1]
 
-    # ============================
-    # AI単独（旧ロジック完全維持）
-    # ============================
     if ai_prob >= BEST_TH:
         return {
             "route": "ai_only",
@@ -423,9 +386,6 @@ def analyze_symbol(code, name, model, all_data):
             "AI上昇確率": round(ai_prob, 4)
         }
 
-    # ============================
-    # 初動 → 継続 の流れを正しく表現
-    # ============================
     if not cond_initial and not cond_continue:
         return None
 
@@ -451,12 +411,9 @@ def analyze_symbol(code, name, model, all_data):
     }
 
 # =========================================================
-# バックテスト（JPX API 版）
+# バックテスト（JPX API 版, v2仕様）
 # =========================================================
-from joblib import Parallel, delayed
-
 def fetch_backtest(code, headers, start, end, base_url):
-    """1銘柄分のバックテスト用データ取得＋計算"""
     params = {
         "code": code,
         "from": start.strftime("%Y-%m-%d"),
@@ -464,7 +421,7 @@ def fetch_backtest(code, headers, start, end, base_url):
     }
 
     try:
-        r = requests.get(base_url, headers=headers, params=params, timeout=0.5)
+        r = requests.get(base_url, headers=headers, params=params, timeout=5)
         if r.status_code != 200:
             return None
 
@@ -489,14 +446,12 @@ def fetch_backtest(code, headers, start, end, base_url):
     except:
         return None
 
-
 def backtest_ai_only(ai_list):
-    """AIが選んだ銘柄だけを高速バックテスト"""
     api_key = os.getenv("JQ_API_KEY")
     if not api_key:
         raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
 
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {"X-API-KEY": api_key}
 
     end = datetime.today().date() - timedelta(days=1)
     start = end - timedelta(days=200)
@@ -521,33 +476,21 @@ def backtest_ai_only(ai_list):
     print(f"平均リターン：{avg_return*100:.2f}%")
 
 # =========================================================
-# メイン処理（高速版）
+# メイン処理（v2仕様対応版）
 # =========================================================
-def get_access_token():
-    refresh_token = os.getenv("JQ_API_KEY")
-    r = requests.post(
-        "https://api.jquants.com/v1/token/auth_refresh",
-        json={"refreshToken": refresh_token},
-        timeout=5
-    )
-    return r.json().get("accessToken")
-
 def run_screening():
     print("日本株銘柄リストを読み込み中...")
     symbols = load_symbol_list()
 
-    # ★ 追加：リフレッシュトークン → アクセストークン取得
-    access_token = get_access_token()
-    print("ACCESS TOKEN:", access_token)
-    headers = {"Authorization": f"Bearer {access_token}"}
+    api_key = os.getenv("JQ_API_KEY")
+    if not api_key:
+        raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
+    print("API KEY:", api_key)
+    headers = {"X-API-KEY": api_key}
 
     print("株価データを一括ダウンロード中...")
-    # ★ 唯一の修正点：headers を渡す
     all_data = download_all_data(symbols, headers)
 
-    # =========================================================
-    # ① 旧ロジック（初動→継続＋AI単独）
-    # =========================================================
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
 
     model_old = load_ai_model()
@@ -563,9 +506,6 @@ def run_screening():
 
     results = [r for r in results if r is not None]
 
-    # -----------------------------
-    # 初動→継続（旧ロジック）表示
-    # -----------------------------
     print("\n===== 初動→継続（旧ロジック）上位20 =====\n")
     normal_signals = [r for r in results if r["route"] == "normal"]
     if normal_signals:
@@ -578,9 +518,6 @@ def run_screening():
     else:
         print("該当なし")
 
-    # -----------------------------
-    # AI単独（旧ロジック）表示
-    # -----------------------------
     print("\n===== AI単独（旧ロジック）上位20 =====\n")
     ai_only_signals = [r for r in results if r["route"] == "ai_only"]
     if ai_only_signals:
@@ -593,17 +530,11 @@ def run_screening():
     else:
         print("該当なし")
 
-    # -----------------------------
-    # 旧ロジックのバックテスト
-    # -----------------------------
     if ai_only_signals:
         print("\n===== 旧ロジック AI単独 バックテスト =====")
         codes_old = [r["コード"] + ".T" for r in ai_only_signals]
         backtest_ai_only(codes_old)
 
-    # =========================================================
-    # ② 新AIロジック（精度最大化AI）
-    # =========================================================
     print("\n\n===== 新AIロジック（精度最大化AI） =====")
     print("新AIモデル学習中...")
 
@@ -618,15 +549,11 @@ def run_screening():
     for symbol, prob in ai_list:
         print(f"{symbol}: {prob:.3f}")
 
-    # 新AIのバックテスト
     if ai_list:
         print("\n===== 新AI バックテスト =====")
         codes_new = [s for s, p in ai_list]
         backtest_ai_only(codes_new)
 
-    # =========================================================
-    # ③ 統合ビュー（旧ロジック × 新AIロジック）
-    # =========================================================
     print("\n\n===== 統合ビュー（旧ロジック × 新AIロジック） =====")
 
     df_old = pd.DataFrame(results)
@@ -666,30 +593,3 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
