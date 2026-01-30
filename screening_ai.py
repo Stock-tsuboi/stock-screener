@@ -542,7 +542,8 @@ def run_screening():
     headers = {"Authorization": f"Bearer {access_token}"}
 
     print("株価データを一括ダウンロード中...")
-    all_data = download_all_data(symbols)
+    # ★ 唯一の修正点：headers を渡す
+    all_data = download_all_data(symbols, headers)
 
     # =========================================================
     # ① 旧ロジック（初動→継続＋AI単独）
@@ -665,6 +666,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
