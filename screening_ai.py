@@ -209,63 +209,77 @@ BEST_TH = 0.55
 EXCLUDE_CODES = []
 
 # =========================================================
-# ★ JPX（J-Quants）API で全銘柄を取得（v2仕様）
+# ★ JPX（J-Quants）API V2 まとめ取得版
 # =========================================================
-def fetch_one(code, headers, start, end, base_url):
+V2_BARS_URL = "https://api.jquants.com/v2/equities/bars/daily"
+
+def fetch_batch(codes, headers, start, end):
+    """
+    複数銘柄をまとめて /v2/equities/bars/daily で取得
+    """
     params = {
-        "code": code,
+        "code": ",".join(codes),
         "from": start.strftime("%Y-%m-%d"),
         "to": end.strftime("%Y-%m-%d"),
     }
 
     try:
-        r = requests.get(base_url, headers=headers, params=params, timeout=5)
+        r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
+
+        if r.status_code == 429:
+            print(f"[RATE LIMIT] batch {codes[0]}... 429, sleep 2s")
+            time.sleep(2)
+            r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
 
         if r.status_code != 200:
-            print(f"[ERROR] {code}: status={r.status_code}")
-            return None, None
+            print(f"[ERROR][BATCH] status={r.status_code}")
+            return {}
 
         js = r.json()
-        rows = js.get("daily_quotes", [])
+        rows = js.get("data", [])
         if not rows:
-            return None, None
+            return {}
 
-        df = pd.DataFrame(rows)
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.sort_values("Date").set_index("Date")
+        result = {}
+        for row in rows:
+            code = row["Code"]
+            if code not in result:
+                result[code] = []
+            result[code].append(row)
 
-        return f"{code}.T", df
+        dfs = {}
+        for code, rws in result.items():
+            df = pd.DataFrame(rws)
+            df["Date"] = pd.to_datetime(df["Date"])
+            df = df.sort_values("Date").set_index("Date")
+            # V2 bars/daily のカラム名に合わせておく
+            # Open, High, Low, Close, Volume がある前提
+            dfs[f"{code}.T"] = df
+
+        return dfs
 
     except Exception as e:
-        print(f"[EXCEPTION] {code}: {e}")
-        return None, None
+        print(f"[EXCEPTION][BATCH] {codes[0]}...: {e}")
+        return {}
 
 def download_all_data(symbols, headers):
+    """
+    全銘柄を まとめ取得 でダウンロード（429 が出ないようにバッチ＋スリープ）
+    """
     end = datetime.today().date() - timedelta(days=1)
     start = end - timedelta(days=150)
 
-    base_url = "https://api.jquants.com/v2/equities/bars/daily"
-
     codes = list(symbols["コード"])
-
-    results = Parallel(n_jobs=60, backend="threading")(
-        delayed(fetch_one)(code, headers, start, end, base_url)
-        for code in codes
-    )
+    batch_size = 200  # 200銘柄ずつまとめて取得
 
     all_data = {}
 
-    for code, df in results:
-        if code is None or df is None or df.empty:
-            continue
-
-        symbol = f"{code}.T"
-
-        if "Date" in df.columns:
-            df = df.sort_values("Date")
-            df = df.set_index("Date")
-
-        all_data[symbol] = df
+    for i in range(0, len(codes), batch_size):
+        batch = codes[i:i+batch_size]
+        dfs = fetch_batch(batch, headers, start, end)
+        all_data.update(dfs)
+        # レートリミット対策：少し待つ
+        time.sleep(0.2)
 
     return all_data
 
@@ -411,72 +425,91 @@ def analyze_symbol(code, name, model, all_data):
     }
 
 # =========================================================
-# バックテスト（JPX API 版, v2仕様）
+# バックテスト（V2 まとめ取得版）
 # =========================================================
-def fetch_backtest(code, headers, start, end, base_url):
+def fetch_backtest_batch(codes, headers, start, end):
+    """
+    バックテスト用に複数銘柄をまとめて取得し、銘柄ごとのリターンを返す
+    """
     params = {
-        "code": code,
+        "code": ",".join(codes),
         "from": start.strftime("%Y-%m-%d"),
         "to": end.strftime("%Y-%m-%d"),
     }
 
     try:
-        r = requests.get(base_url, headers=headers, params=params, timeout=5)
+        r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
+
+        if r.status_code == 429:
+            print(f"[RATE LIMIT][BT] batch {codes[0]}... 429, sleep 2s")
+            time.sleep(2)
+            r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
+
         if r.status_code != 200:
-            return None
+            print(f"[ERROR][BT BATCH] status={r.status_code}")
+            return {}
 
         js = r.json()
-        rows = js.get("daily_quotes", [])
+        rows = js.get("data", [])
         if not rows:
-            return None
+            return {}
 
-        df = pd.DataFrame(rows)
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.sort_values("Date").set_index("Date")
+        grouped = {}
+        for row in rows:
+            code = row["Code"]
+            if code not in grouped:
+                grouped[code] = []
+            grouped[code].append(row)
 
-        if len(df) < 10:
-            return None
+        returns = {}
+        for code, rws in grouped.items():
+            df = pd.DataFrame(rws)
+            df["Date"] = pd.to_datetime(df["Date"])
+            df = df.sort_values("Date").set_index("Date")
+            if len(df) < 10:
+                continue
+            start_price = df["Close"].iloc[0]
+            end_price = df["Close"].iloc[-1]
+            ret = (end_price - start_price) / start_price
+            returns[code] = ret
 
-        start_price = df["Close"].iloc[0]
-        end_price = df["Close"].iloc[-1]
-        ret = (end_price - start_price) / start_price
+        return returns
 
-        return ret
-
-    except:
-        return None
+    except Exception as e:
+        print(f"[EXCEPTION][BT BATCH] {codes[0]}...: {e}")
+        return {}
 
 def backtest_ai_only(ai_list):
     api_key = os.getenv("JQ_API_KEY")
     if not api_key:
         raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
 
-    headers = {"X-API-KEY": api_key}
+    headers = {"x-api-key": api_key}
 
     end = datetime.today().date() - timedelta(days=1)
     start = end - timedelta(days=200)
 
-    base_url = "https://api.jquants.com/v1/prices/daily_quotes"
-
     codes = [c.replace(".T", "") for c in ai_list]
 
-    results = Parallel(n_jobs=40, backend="threading")(
-        delayed(fetch_backtest)(code, headers, start, end, base_url)
-        for code in codes
-    )
+    batch_size = 200
+    all_returns = []
 
-    returns = [r for r in results if r is not None]
+    for i in range(0, len(codes), batch_size):
+        batch = codes[i:i+batch_size]
+        rets = fetch_backtest_batch(batch, headers, start, end)
+        all_returns.extend([v for v in rets.values() if v is not None])
+        time.sleep(0.2)
 
-    if not returns:
+    if not all_returns:
         print("バックテスト結果：該当なし")
         return
 
-    avg_return = sum(returns) / len(returns)
-    print(f"バックテスト銘柄数：{len(returns)}")
+    avg_return = sum(all_returns) / len(all_returns)
+    print(f"バックテスト銘柄数：{len(all_returns)}")
     print(f"平均リターン：{avg_return*100:.2f}%")
 
 # =========================================================
-# メイン処理（v2仕様対応版）
+# メイン処理（V2 まとめ取得版）
 # =========================================================
 def run_screening():
     print("日本株銘柄リストを読み込み中...")
@@ -486,9 +519,9 @@ def run_screening():
     if not api_key:
         raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
     print("API KEY:", api_key)
-    headers = {"X-API-KEY": api_key}
+    headers = {"x-api-key": api_key}
 
-    print("株価データを一括ダウンロード中...")
+    print("株価データを一括ダウンロード中（V2まとめ取得）...")
     all_data = download_all_data(symbols, headers)
 
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
@@ -593,5 +626,3 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
-
-
