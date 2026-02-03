@@ -1,18 +1,21 @@
-import pandas as pd
-import numpy as np
-import time
 import os
-import requests
+import time
 from datetime import datetime, timedelta
+
+import numpy as np
+import pandas as pd
+import requests
 from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LinearRegression
+
 
 # =========================================================
 # 安全な割り算
 # =========================================================
 def safe_div(a, b):
     return a / b if b not in [0, None] else 0
+
 
 # =========================================================
 # RSI
@@ -26,6 +29,7 @@ def calc_rsi(close, period=14):
     rsi = 100 - (100 / (1 + ma_up / ma_down))
     return rsi
 
+
 # =========================================================
 # MACD
 # =========================================================
@@ -35,6 +39,7 @@ def calc_macd(close):
     macd = ema12 - ema26
     signal = macd.ewm(span=9, adjust=False).mean()
     return macd, signal
+
 
 # =========================================================
 # ADX
@@ -50,11 +55,14 @@ def calc_adx(data, period=14):
     plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
     minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
 
-    tr = pd.concat([
-        high - low,
-        (high - close.shift()).abs(),
-        (low - close.shift()).abs()
-    ], axis=1).max(axis=1)
+    tr = pd.concat(
+        [
+            high - low,
+            (high - close.shift()).abs(),
+            (low - close.shift()).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
 
     atr = tr.rolling(period).mean()
     pdi = 100 * (plus_dm.rolling(period).mean() / atr)
@@ -62,6 +70,7 @@ def calc_adx(data, period=14):
     dx = (abs(pdi - mdi) / (pdi + mdi)) * 100
     adx = dx.rolling(period).mean()
     return adx
+
 
 # =========================================================
 # 銘柄リスト読み込み
@@ -72,8 +81,9 @@ def load_symbol_list():
     df = df[["コード", "銘柄名", "市場"]].dropna()
     return df
 
+
 # =========================================================
-# AIモデル読み込み
+# AIモデル読み込み（旧ロジック用）
 # =========================================================
 def load_ai_model():
     import joblib
@@ -89,8 +99,9 @@ def load_ai_model():
 
     raise FileNotFoundError("model.pkl / model_2.zip が見つかりません")
 
+
 # =========================================================
-# 特徴量生成
+# 特徴量生成（新AI用）
 # =========================================================
 def create_features(df):
     df = df.copy()
@@ -132,86 +143,10 @@ def create_features(df):
 
     return df
 
-# =========================================================
-# ★ V2 prices API（複数銘柄まとめ取得）
-# =========================================================
-V2_PRICES_URL = "https://api.jquants.com/v2/equities/prices"
-
-def fetch_batch(codes, headers, start, end):
-    """
-    /v2/equities/prices は複数銘柄まとめ取得が可能
-    → 400/429 を避けるための正しい方式
-    """
-    params = {
-        "from": start.strftime("%Y-%m-%d"),
-        "to": end.strftime("%Y-%m-%d"),
-        "code": codes  # ← 複数コードをそのまま渡せる
-    }
-
-    try:
-        r = requests.get(V2_PRICES_URL, headers=headers, params=params, timeout=15)
-
-        # レートリミット対策
-        if r.status_code == 429:
-            print(f"[RATE LIMIT] batch {codes[0]}... 429, sleep 2s")
-            time.sleep(2)
-            r = requests.get(V2_PRICES_URL, headers=headers, params=params, timeout=15)
-
-        if r.status_code != 200:
-            print(f"[BATCH ERROR] status={r.status_code}")
-            return {}
-
-        js = r.json()
-        rows = js.get("data", [])
-        if not rows:
-            return {}
-
-        # 銘柄ごとにまとめる
-        grouped = {}
-        for row in rows:
-            code = row["Code"]
-            grouped.setdefault(code, []).append(row)
-
-        # DataFrame 化
-        dfs = {}
-        for code, rws in grouped.items():
-            df = pd.DataFrame(rws)
-            df["Date"] = pd.to_datetime(df["Date"])
-            df = df.sort_values("Date").set_index("Date")
-            dfs[f"{code}.T"] = df
-
-        return dfs
-
-    except Exception as e:
-        print(f"[EXCEPTION][BATCH] {codes[0]}...: {e}")
-        return {}
 
 # =========================================================
-# 全銘柄ダウンロード（高速・安定）
-# =========================================================
-def download_all_data(symbols, headers):
-    """
-    全銘柄を 200 件ずつまとめて高速取得
-    → 400/429 を完全回避
-    """
-    end = datetime.today().date() - timedelta(days=1)
-    start = end - timedelta(days=150)
-
-    codes = list(symbols["コード"])
-    batch_size = 200
-
-    all_data = {}
-
-    for i in range(0, len(codes), batch_size):
-        batch = codes[i:i+batch_size]
-        dfs = fetch_batch(batch, headers, start, end)
-        all_data.update(dfs)
-        time.sleep(0.2)  # レートリミット対策
-
-    return all_data
-# ============================
 # 学習処理（精度最大化版）
-# ============================
+# =========================================================
 def train_ai_model(all_data):
     dfs = []
 
@@ -229,12 +164,21 @@ def train_ai_model(all_data):
     data = pd.concat(dfs)
 
     feature_cols = [
-        "SMA5", "SMA25", "SMA75",
-        "Bias5", "Bias25", "Bias75",
-        "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2",
+        "SMA5",
+        "SMA25",
+        "SMA75",
+        "Bias5",
+        "Bias25",
+        "Bias75",
+        "BB_UP1",
+        "BB_LOW1",
+        "BB_UP2",
+        "BB_LOW2",
         "VolRatio",
-        "Bull", "BigBull", "BigBear",
-        "Slope10"
+        "Bull",
+        "BigBull",
+        "BigBear",
+        "Slope10",
     ]
 
     X = data[feature_cols].fillna(0)
@@ -247,16 +191,17 @@ def train_ai_model(all_data):
         min_samples_leaf=3,
         max_features="sqrt",
         random_state=42,
-        n_jobs=-1
+        n_jobs=-1,
     )
 
     model.fit(X, y)
 
     return model, feature_cols
 
-# ============================
-# 推論処理（AI が銘柄を選ぶ部分）
-# ============================
+
+# =========================================================
+# 推論処理（新AI が銘柄を選ぶ部分）
+# =========================================================
 def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
     results = []
 
@@ -276,8 +221,97 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
     return filtered[:top_n]
 
+
 BEST_TH = 0.55
 EXCLUDE_CODES = []
+
+
+# =========================================================
+# JPX（J-Quants）API V2 bars/daily 単銘柄取得版
+# =========================================================
+V2_BARS_URL = "https://api.jquants.com/v2/equities/bars/daily"
+
+
+def fetch_single(code, headers, start, end):
+    """
+    /v2/equities/bars/daily を 1銘柄ずつ取得（403/400 回避・429 最小化）
+    """
+    params = {
+        "code": code,
+        "from": start.strftime("%Y-%m-%d"),
+        "to": end.strftime("%Y-%m-%d"),
+    }
+
+    for retry in range(3):
+        try:
+            r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
+
+            if r.status_code == 429:
+                wait = 2 * (retry + 1)
+                print(f"[RATE LIMIT] {code} 429, sleep {wait}s")
+                time.sleep(wait)
+                continue
+
+            if r.status_code == 403:
+                print(f"[FORBIDDEN] {code} status=403")
+                return None
+
+            if r.status_code != 200:
+                print(f"[ERROR] {code} status={r.status_code}")
+                return None
+
+            js = r.json()
+            rows = js.get("data", [])
+            if not rows:
+                return None
+
+            df = pd.DataFrame(rows)
+            if "Date" not in df.columns:
+                return None
+
+            df["Date"] = pd.to_datetime(df["Date"])
+            df = df.sort_values("Date").set_index("Date")
+
+            # bars/daily のカラム名に合わせて最低限の列を揃える
+            # 想定: Open, High, Low, Close, Volume
+            needed = ["Open", "High", "Low", "Close", "Volume"]
+            for col in needed:
+                if col not in df.columns:
+                    return None
+
+            return df
+
+        except Exception as e:
+            print(f"[EXCEPTION] {code}: {e}")
+            time.sleep(2)
+
+    return None
+
+
+def download_all_data(symbols, headers):
+    """
+    全銘柄を 1銘柄ずつ取得（bars/daily の仕様に完全準拠）
+    429 を避けるため、直列＋短いスリープで安定動作させる
+    """
+    end = datetime.today().date() - timedelta(days=1)
+    start = end - timedelta(days=150)
+
+    codes = list(symbols["コード"])
+    all_data = {}
+
+    for idx, code in enumerate(codes, 1):
+        df = fetch_single(code, headers, start, end)
+        if df is not None:
+            all_data[f"{code}.T"] = df
+
+        # レートリミット対策：ごく短いスリープ
+        time.sleep(0.1)
+
+        if idx % 200 == 0:
+            print(f"  進捗: {idx}銘柄取得完了")
+
+    return all_data
+
 
 # =========================================================
 # 銘柄解析（旧ロジック）
@@ -290,7 +324,7 @@ def analyze_symbol(code, name, model, all_data):
 
     try:
         data = all_data[symbol].dropna()
-    except:
+    except KeyError:
         return None
 
     if data is None or len(data) < 50:
@@ -337,18 +371,28 @@ def analyze_symbol(code, name, model, all_data):
     vol_increase = vol_y >= vol_avg5_y * 0.9
     strong_trend = ad_y >= 20
 
-    buy_sma25 = rsi_rebound and sma25_touch and macd_rebound and vol_increase and strong_trend
-    buy_sma30 = rsi_rebound and sma30_touch and macd_rebound and vol_increase and strong_trend
+    buy_sma25 = (
+        rsi_rebound and sma25_touch and macd_rebound and vol_increase and strong_trend
+    )
+    buy_sma30 = (
+        rsi_rebound and sma30_touch and macd_rebound and vol_increase and strong_trend
+    )
 
     cond_initial = buy_sma25 or buy_sma30
 
     cont_score = 0
-    if c_t > h_y: cont_score += 2
-    if vol_t == max(volume.iloc[-6:-1]): cont_score += 2
-    if c_t > c_y: cont_score += 1
-    if c_t > s25_t: cont_score += 1
-    if vol_t > vol_y: cont_score += 1
-    if vol_t > volume.iloc[-6:-1].mean(): cont_score += 1
+    if c_t > h_y:
+        cont_score += 2
+    if vol_t == max(volume.iloc[-6:-1]):
+        cont_score += 2
+    if c_t > c_y:
+        cont_score += 1
+    if c_t > s25_t:
+        cont_score += 1
+    if vol_t > vol_y:
+        cont_score += 1
+    if vol_t > volume.iloc[-6:-1].mean():
+        cont_score += 1
 
     candle_range = h_t - l_t
     if candle_range > 0 and (c_t - l_t) / candle_range > 0.3:
@@ -365,20 +409,24 @@ def analyze_symbol(code, name, model, all_data):
     vol_avg = float(volume.iloc[-6:-1].mean())
     vol_ratio = vol_t / vol_avg if vol_avg != 0 else 0
 
-    features = pd.DataFrame([{
-        "終値": c_t,
-        "高値": h_t,
-        "出来高": vol_t,
-        "RSI": float(rsi.iloc[-1]),
-        "MACD": float(macd.iloc[-1]),
-        "MACD_signal": float(signal.iloc[-1]),
-        "MACD_hist": float(macd.iloc[-1] - signal.iloc[-1]),
-        "ADX": float(adx.iloc[-1]),
-        "SMA5乖離": safe_div(c_t, sma5_val),
-        "SMA25乖離": safe_div(c_t, sma25_val),
-        "SMA75乖離": safe_div(c_t, sma75_val),
-        "出来高比率": vol_ratio
-    }])
+    features = pd.DataFrame(
+        [
+            {
+                "終値": c_t,
+                "高値": h_t,
+                "出来高": vol_t,
+                "RSI": float(rsi.iloc[-1]),
+                "MACD": float(macd.iloc[-1]),
+                "MACD_signal": float(signal.iloc[-1]),
+                "MACD_hist": float(macd.iloc[-1] - signal.iloc[-1]),
+                "ADX": float(adx.iloc[-1]),
+                "SMA5乖離": safe_div(c_t, sma5_val),
+                "SMA25乖離": safe_div(c_t, sma25_val),
+                "SMA75乖離": safe_div(c_t, sma75_val),
+                "出来高比率": vol_ratio,
+            }
+        ]
+    )
 
     ai_prob = model.predict_proba(features)[0][1]
 
@@ -393,7 +441,7 @@ def analyze_symbol(code, name, model, all_data):
             "ADX": float(adx.iloc[-1]),
             "出来高": vol_t,
             "継続スコア": cont_score,
-            "AI上昇確率": round(ai_prob, 4)
+            "AI上昇確率": round(ai_prob, 4),
         }
 
     if not cond_initial and not cond_continue:
@@ -417,63 +465,55 @@ def analyze_symbol(code, name, model, all_data):
         "ADX": ad_y,
         "出来高": vol_t,
         "継続スコア": cont_score,
-        "AI上昇確率": round(ai_prob, 4)
+        "AI上昇確率": round(ai_prob, 4),
     }
 
+
 # =========================================================
-# バックテスト（prices まとめ取得）
+# バックテスト（bars/daily 単銘柄版）
 # =========================================================
-def fetch_backtest_batch(codes, headers, start, end):
+def backtest_single(code, headers, start, end):
     params = {
+        "code": code,
         "from": start.strftime("%Y-%m-%d"),
         "to": end.strftime("%Y-%m-%d"),
-        "code": codes
     }
 
     try:
-        r = requests.get(V2_PRICES_URL, headers=headers, params=params, timeout=15)
-
-        if r.status_code == 429:
-            print(f"[RATE LIMIT][BT] batch {codes[0]}... 429, sleep 2s")
-            time.sleep(2)
-            r = requests.get(V2_PRICES_URL, headers=headers, params=params, timeout=15)
+        r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
 
         if r.status_code != 200:
-            print(f"[BT ERROR] status={r.status_code}")
-            return {}
+            return None
 
         js = r.json()
         rows = js.get("data", [])
         if not rows:
-            return {}
+            return None
 
-        grouped = {}
-        for row in rows:
-            code = row["Code"]
-            grouped.setdefault(code, []).append(row)
+        df = pd.DataFrame(rows)
+        if "Close" not in df.columns:
+            return None
 
-        returns = {}
-        for code, rws in grouped.items():
-            df = pd.DataFrame(rws)
-            df["Date"] = pd.to_datetime(df["Date"])
-            df = df.sort_values("Date").set_index("Date")
-            if len(df) < 10:
-                continue
-            start_price = df["Close"].iloc[0]
-            end_price = df["Close"].iloc[-1]
-            ret = (end_price - start_price) / start_price
-            returns[code] = ret
+        df["Date"] = pd.to_datetime(df["Date"])
+        df = df.sort_values("Date").set_index("Date")
 
-        return returns
+        if len(df) < 10:
+            return None
 
-    except Exception as e:
-        print(f"[EXCEPTION][BT] {codes[0]}...: {e}")
-        return {}
+        start_price = df["Close"].iloc[0]
+        end_price = df["Close"].iloc[-1]
+        ret = (end_price - start_price) / start_price
+        return ret
+
+    except Exception:
+        return None
+
 
 def backtest_ai_only(ai_list):
     api_key = os.getenv("JQ_API_KEY")
     if not api_key:
-        raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
+        print("バックテスト用 API KEY 未設定")
+        return
 
     headers = {"x-api-key": api_key}
 
@@ -482,14 +522,12 @@ def backtest_ai_only(ai_list):
 
     codes = [c.replace(".T", "") for c in ai_list]
 
-    batch_size = 200
     all_returns = []
-
-    for i in range(0, len(codes), batch_size):
-        batch = codes[i:i+batch_size]
-        rets = fetch_backtest_batch(batch, headers, start, end)
-        all_returns.extend([v for v in rets.values() if v is not None])
-        time.sleep(0.2)
+    for code in codes:
+        ret = backtest_single(code, headers, start, end)
+        if ret is not None:
+            all_returns.append(ret)
+        time.sleep(0.1)
 
     if not all_returns:
         print("バックテスト結果：該当なし")
@@ -499,8 +537,9 @@ def backtest_ai_only(ai_list):
     print(f"バックテスト銘柄数：{len(all_returns)}")
     print(f"平均リターン：{avg_return*100:.2f}%")
 
+
 # =========================================================
-# メイン処理（V2 prices まとめ取得版）
+# メイン処理
 # =========================================================
 def run_screening():
     print("日本株銘柄リストを読み込み中...")
@@ -511,7 +550,7 @@ def run_screening():
         raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
     headers = {"x-api-key": api_key}
 
-    print("株価データを一括ダウンロード中（V2 prices まとめ取得）...")
+    print("株価データを一括ダウンロード中（V2 bars/daily 単銘柄取得）...")
     all_data = download_all_data(symbols, headers)
 
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
@@ -587,7 +626,9 @@ def run_screening():
         df_old["symbol"] = df_old["コード"] + ".T"
         df_old = df_old[["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]]
     else:
-        df_old = pd.DataFrame(columns=["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"])
+        df_old = pd.DataFrame(
+            columns=["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]
+        )
 
     df_new = pd.DataFrame(ai_list, columns=["symbol", "新AI確率"])
     df_new["新AI順位"] = df_new["新AI確率"].rank(ascending=False).astype(int)
@@ -604,8 +645,6 @@ def run_screening():
 
     print(df_merge.to_string(index=False))
 
-# =========================================================
-# 実行
-# =========================================================
+
 if __name__ == "__main__":
     run_screening()
