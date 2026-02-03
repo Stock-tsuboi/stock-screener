@@ -503,8 +503,6 @@ def backtest_ai_only(ai_list, all_data, days=200):
         rets.append(ret)
 
     if not rets:
-        print("バックテスト結果：該当
-    if not rets:
         print("バックテスト結果：該当なし")
         return
 
@@ -632,3 +630,4 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
