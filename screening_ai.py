@@ -1,5 +1,7 @@
 import os
+import io
 import time
+import zipfile
 from datetime import datetime, timedelta
 
 import numpy as np
@@ -87,13 +89,13 @@ def load_symbol_list():
 # =========================================================
 def load_ai_model():
     import joblib
-    import zipfile
+    import zipfile as zf
 
     if os.path.exists("model.pkl"):
         return joblib.load("model.pkl")
 
     if os.path.exists("model_2.zip"):
-        with zipfile.ZipFile("model_2.zip") as z:
+        with zf.ZipFile("model_2.zip") as z:
             z.extract("model.pkl")
         return joblib.load("model.pkl")
 
@@ -227,90 +229,89 @@ EXCLUDE_CODES = []
 
 
 # =========================================================
-# JPX（J-Quants）API V2 bars/daily 単銘柄取得版
+# JPX（J-Quants）API V2 bulk bars/daily 一括取得
 # =========================================================
-V2_BARS_URL = "https://api.jquants.com/v2/equities/bars/daily"
+BULK_LIST_URL = "https://api.jquants.com/v2/bulk/list"
+BULK_DOWNLOAD_URL = "https://api.jquants.com/v2/bulk/download"
 
 
-def fetch_single(code, headers, start, end):
+def download_bulk_bars_daily(headers):
     """
-    /v2/equities/bars/daily を 1銘柄ずつ取得（403/400 回避・429 最小化）
+    /equities/bars/daily を bulk API で一括取得する
+    → 429/403/400 完全回避
     """
-    params = {
-        "code": code,
-        "from": start.strftime("%Y-%m-%d"),
-        "to": end.strftime("%Y-%m-%d"),
-    }
+    resp = requests.get(
+        BULK_LIST_URL,
+        params={"endpoint": "/equities/bars/daily"},
+        headers=headers,
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"bulk list 失敗: {resp.status_code}")
 
-    for retry in range(3):
-        try:
-            r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
+    js = resp.json()
+    if "data" not in js or not js["data"]:
+        raise RuntimeError("bulk list に bars/daily のデータがありません")
 
-            if r.status_code == 429:
-                wait = 2 * (retry + 1)
-                print(f"[RATE LIMIT] {code} 429, sleep {wait}s")
-                time.sleep(wait)
-                continue
+    latest = js["data"][0]  # 最新ファイル
+    key = latest["Key"]
 
-            if r.status_code == 403:
-                print(f"[FORBIDDEN] {code} status=403")
-                return None
+    print(f"最新ファイル: {key}")
 
-            if r.status_code != 200:
-                print(f"[ERROR] {code} status={r.status_code}")
-                return None
+    resp = requests.get(
+        BULK_DOWNLOAD_URL,
+        params={"key": key},
+        headers=headers,
+        timeout=120,
+    )
+    if resp.status_code != 200:
+        raise RuntimeError(f"bulk download 失敗: {resp.status_code}")
 
-            js = r.json()
-            rows = js.get("data", [])
-            if not rows:
-                return None
+    z = zipfile.ZipFile(io.BytesIO(resp.content))
+    name = z.namelist()[0]
+    df = pd.read_csv(z.open(name), dtype={"Code": str})
 
-            df = pd.DataFrame(rows)
-            if "Date" not in df.columns:
-                return None
+    df["Date"] = pd.to_datetime(df["Date"])
 
-            df["Date"] = pd.to_datetime(df["Date"])
-            df = df.sort_values("Date").set_index("Date")
+    return df
 
-            # bars/daily のカラム名に合わせて最低限の列を揃える
-            # 想定: Open, High, Low, Close, Volume
-            needed = ["Open", "High", "Low", "Close", "Volume"]
-            for col in needed:
-                if col not in df.columns:
-                    return None
 
-            return df
+def split_bulk_dataframe(df):
+    """
+    bulk で取得した bars/daily を銘柄ごとに分割して all_data に格納
+    """
+    all_data = {}
 
-        except Exception as e:
-            print(f"[EXCEPTION] {code}: {e}")
-            time.sleep(2)
+    for code, group in df.groupby("Code"):
+        g = group.sort_values("Date").set_index("Date")
 
-    return None
+        needed = ["Open", "High", "Low", "Close", "Volume"]
+        if not all(col in g.columns for col in needed):
+            continue
+
+        all_data[f"{code}.T"] = g
+
+    return all_data
 
 
 def download_all_data(symbols, headers):
-    """
-    全銘柄を 1銘柄ずつ取得（bars/daily の仕様に完全準拠）
-    429 を避けるため、直列＋短いスリープで安定動作させる
-    """
-    end = datetime.today().date() - timedelta(days=1)
-    start = end - timedelta(days=150)
+    print("bulk API で全銘柄 OHLCV を一括取得中...")
+    df_bulk = download_bulk_bars_daily(headers)
+    print(f"取得行数: {len(df_bulk)}")
 
-    codes = list(symbols["コード"])
-    all_data = {}
+    all_data = split_bulk_dataframe(df_bulk)
 
-    for idx, code in enumerate(codes, 1):
-        df = fetch_single(code, headers, start, end)
-        if df is not None:
-            all_data[f"{code}.T"] = df
+    # 銘柄リストに存在するものだけに絞る（余計な指数などを除外）
+    codes_set = set(symbols["コード"])
+    filtered = {}
+    for symbol, df in all_data.items():
+        code = symbol.replace(".T", "")
+        if code in codes_set:
+            filtered[symbol] = df
 
-        # レートリミット対策：ごく短いスリープ
-        time.sleep(0.1)
+    print(f"銘柄数: {len(filtered)}")
 
-        if idx % 200 == 0:
-            print(f"  進捗: {idx}銘柄取得完了")
-
-    return all_data
+    return filtered
 
 
 # =========================================================
@@ -470,71 +471,44 @@ def analyze_symbol(code, name, model, all_data):
 
 
 # =========================================================
-# バックテスト（bars/daily 単銘柄版）
+# バックテスト（bulk 取得データを再利用）
 # =========================================================
-def backtest_single(code, headers, start, end):
-    params = {
-        "code": code,
-        "from": start.strftime("%Y-%m-%d"),
-        "to": end.strftime("%Y-%m-%d"),
-    }
+def backtest_ai_only(ai_list, all_data, days=200):
+    """
+    ai_list: ["XXXX.T", ...]
+    all_data: bulk から作った {symbol: df}
+    days: 何営業日分でリターンを見るか
+    """
+    rets = []
 
-    try:
-        r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
-
-        if r.status_code != 200:
-            return None
-
-        js = r.json()
-        rows = js.get("data", [])
-        if not rows:
-            return None
-
-        df = pd.DataFrame(rows)
-        if "Close" not in df.columns:
-            return None
-
-        df["Date"] = pd.to_datetime(df["Date"])
-        df = df.sort_values("Date").set_index("Date")
-
+    for symbol in ai_list:
+        if symbol not in all_data:
+            continue
+        df = all_data[symbol].sort_index()
         if len(df) < 10:
-            return None
+            continue
 
-        start_price = df["Close"].iloc[0]
-        end_price = df["Close"].iloc[-1]
+        end_date = df.index.max()
+        start_date = end_date - timedelta(days=days)
+
+        df_win = df[df.index >= start_date]
+        if len(df_win) < 5:
+            continue
+
+        start_price = df_win["Close"].iloc[0]
+        end_price = df_win["Close"].iloc[-1]
+        if start_price <= 0:
+            continue
+
         ret = (end_price - start_price) / start_price
-        return ret
+        rets.append(ret)
 
-    except Exception:
-        return None
-
-
-def backtest_ai_only(ai_list):
-    api_key = os.getenv("JQ_API_KEY")
-    if not api_key:
-        print("バックテスト用 API KEY 未設定")
-        return
-
-    headers = {"x-api-key": api_key}
-
-    end = datetime.today().date() - timedelta(days=1)
-    start = end - timedelta(days=200)
-
-    codes = [c.replace(".T", "") for c in ai_list]
-
-    all_returns = []
-    for code in codes:
-        ret = backtest_single(code, headers, start, end)
-        if ret is not None:
-            all_returns.append(ret)
-        time.sleep(0.1)
-
-    if not all_returns:
+    if not rets:
         print("バックテスト結果：該当なし")
         return
 
-    avg_return = sum(all_returns) / len(all_returns)
-    print(f"バックテスト銘柄数：{len(all_returns)}")
+    avg_return = sum(rets) / len(rets)
+    print(f"バックテスト銘柄数：{len(rets)}")
     print(f"平均リターン：{avg_return*100:.2f}%")
 
 
@@ -550,7 +524,7 @@ def run_screening():
         raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
     headers = {"x-api-key": api_key}
 
-    print("株価データを一括ダウンロード中（V2 bars/daily 単銘柄取得）...")
+    print("株価データを一括ダウンロード中（V2 bulk bars/daily）...")
     all_data = download_all_data(symbols, headers)
 
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
@@ -588,9 +562,9 @@ def run_screening():
         print("該当なし")
 
     if ai_only_signals:
-        print("\n===== 旧ロジック AI単独 バックテスト =====")
+        print("\n===== 旧ロジック AI単独 バックテスト（bulkデータ利用） =====")
         codes_old = [r["コード"] + ".T" for r in ai_only_signals]
-        backtest_ai_only(codes_old)
+        backtest_ai_only(codes_old, all_data, days=200)
 
     print("\n\n===== 新AIロジック（精度最大化AI） =====")
     print("新AIモデル学習中...")
@@ -605,9 +579,9 @@ def run_screening():
         print(f"{symbol}: {prob:.3f}")
 
     if ai_list:
-        print("\n===== 新AI バックテスト =====")
+        print("\n===== 新AI バックテスト（bulkデータ利用） =====")
         codes_new = [s for s, p in ai_list]
-        backtest_ai_only(codes_new)
+        backtest_ai_only(codes_new, all_data, days=200)
 
     print("\n\n===== 統合ビュー（旧ロジック × 新AIロジック） =====")
 
