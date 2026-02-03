@@ -1,10 +1,10 @@
 import pandas as pd
 import numpy as np
-from joblib import Parallel, delayed
 import time
 import os
 import requests
 from datetime import datetime, timedelta
+from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LinearRegression
 
@@ -89,9 +89,9 @@ def load_ai_model():
 
     raise FileNotFoundError("model.pkl / model_2.zip が見つかりません")
 
-# ============================
-# 特徴量生成（精度最大化版）
-# ============================
+# =========================================================
+# 特徴量生成
+# =========================================================
 def create_features(df):
     df = df.copy()
 
@@ -132,6 +132,83 @@ def create_features(df):
 
     return df
 
+# =========================================================
+# ★ V2 prices API（複数銘柄まとめ取得）
+# =========================================================
+V2_PRICES_URL = "https://api.jquants.com/v2/equities/prices"
+
+def fetch_batch(codes, headers, start, end):
+    """
+    /v2/equities/prices は複数銘柄まとめ取得が可能
+    → 400/429 を避けるための正しい方式
+    """
+    params = {
+        "from": start.strftime("%Y-%m-%d"),
+        "to": end.strftime("%Y-%m-%d"),
+        "code": codes  # ← 複数コードをそのまま渡せる
+    }
+
+    try:
+        r = requests.get(V2_PRICES_URL, headers=headers, params=params, timeout=15)
+
+        # レートリミット対策
+        if r.status_code == 429:
+            print(f"[RATE LIMIT] batch {codes[0]}... 429, sleep 2s")
+            time.sleep(2)
+            r = requests.get(V2_PRICES_URL, headers=headers, params=params, timeout=15)
+
+        if r.status_code != 200:
+            print(f"[BATCH ERROR] status={r.status_code}")
+            return {}
+
+        js = r.json()
+        rows = js.get("data", [])
+        if not rows:
+            return {}
+
+        # 銘柄ごとにまとめる
+        grouped = {}
+        for row in rows:
+            code = row["Code"]
+            grouped.setdefault(code, []).append(row)
+
+        # DataFrame 化
+        dfs = {}
+        for code, rws in grouped.items():
+            df = pd.DataFrame(rws)
+            df["Date"] = pd.to_datetime(df["Date"])
+            df = df.sort_values("Date").set_index("Date")
+            dfs[f"{code}.T"] = df
+
+        return dfs
+
+    except Exception as e:
+        print(f"[EXCEPTION][BATCH] {codes[0]}...: {e}")
+        return {}
+
+# =========================================================
+# 全銘柄ダウンロード（高速・安定）
+# =========================================================
+def download_all_data(symbols, headers):
+    """
+    全銘柄を 200 件ずつまとめて高速取得
+    → 400/429 を完全回避
+    """
+    end = datetime.today().date() - timedelta(days=1)
+    start = end - timedelta(days=150)
+
+    codes = list(symbols["コード"])
+    batch_size = 200
+
+    all_data = {}
+
+    for i in range(0, len(codes), batch_size):
+        batch = codes[i:i+batch_size]
+        dfs = fetch_batch(batch, headers, start, end)
+        all_data.update(dfs)
+        time.sleep(0.2)  # レートリミット対策
+
+    return all_data
 # ============================
 # 学習処理（精度最大化版）
 # ============================
@@ -160,10 +237,8 @@ def train_ai_model(all_data):
         "Slope10"
     ]
 
-    X = data[feature_cols]
+    X = data[feature_cols].fillna(0)
     y = data["Target"]
-
-    X = X.fillna(0)
 
     model = RandomForestClassifier(
         n_estimators=400,
@@ -187,20 +262,16 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
     for symbol, df in all_data.items():
         df2 = create_features(df)
-
         if df2.empty:
             continue
 
         latest = df2.iloc[-1]
-
         X_pred = latest[feature_cols].fillna(0).values.reshape(1, -1)
-
         prob = model.predict_proba(X_pred)[0][1]
 
         results.append((symbol, prob))
 
     results.sort(key=lambda x: x[1], reverse=True)
-
     filtered = [(s, p) for s, p in results if p >= threshold]
 
     return filtered[:top_n]
@@ -209,83 +280,7 @@ BEST_TH = 0.55
 EXCLUDE_CODES = []
 
 # =========================================================
-# ★ JPX（J-Quants）API V2 まとめ取得版
-# =========================================================
-V2_BARS_URL = "https://api.jquants.com/v2/equities/bars/daily"
-
-def fetch_batch(codes, headers, start, end):
-    """
-    /v2/equities/bars/daily の正しい複数銘柄取得
-    code はカンマ区切りではなく、複数回指定する
-    """
-    params = {
-        "from": start.strftime("%Y-%m-%d"),
-        "to": end.strftime("%Y-%m-%d"),
-    }
-
-    # code を複数回指定する形式に変換
-    for c in codes:
-        params.setdefault("code", [])
-        params["code"].append(c)
-
-    try:
-        r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
-
-        if r.status_code == 429:
-            print(f"[RATE LIMIT] batch {codes[0]}... 429, sleep 2s")
-            time.sleep(2)
-            r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
-
-        if r.status_code != 200:
-            print(f"[BATCH ERROR] status={r.status_code}")
-            return {}
-
-        js = r.json()
-        rows = js.get("data", [])
-        if not rows:
-            return {}
-
-        grouped = {}
-        for row in rows:
-            code = row["Code"]
-            grouped.setdefault(code, []).append(row)
-
-        dfs = {}
-        for code, rws in grouped.items():
-            df = pd.DataFrame(rws)
-            df["Date"] = pd.to_datetime(df["Date"])
-            df = df.sort_values("Date").set_index("Date")
-            dfs[f"{code}.T"] = df
-
-        return dfs
-
-    except Exception as e:
-        print(f"[EXCEPTION][BATCH] {codes[0]}...: {e}")
-        return {}
-
-def download_all_data(symbols, headers):
-    """
-    全銘柄を まとめ取得 でダウンロード（429 が出ないようにバッチ＋スリープ）
-    """
-    end = datetime.today().date() - timedelta(days=1)
-    start = end - timedelta(days=150)
-
-    codes = list(symbols["コード"])
-    batch_size = 200  # 200銘柄ずつまとめて取得
-
-    all_data = {}
-
-    for i in range(0, len(codes), batch_size):
-        batch = codes[i:i+batch_size]
-        dfs = fetch_batch(batch, headers, start, end)
-        all_data.update(dfs)
-        # レートリミット対策：少し待つ
-        time.sleep(0.2)
-
-    return all_data
-
-# =========================================================
-# 銘柄解析（高速版）
+# 銘柄解析（旧ロジック）
 # =========================================================
 def analyze_symbol(code, name, model, all_data):
     if code in EXCLUDE_CODES:
@@ -426,28 +421,25 @@ def analyze_symbol(code, name, model, all_data):
     }
 
 # =========================================================
-# バックテスト（V2 まとめ取得版）
+# バックテスト（prices まとめ取得）
 # =========================================================
 def fetch_backtest_batch(codes, headers, start, end):
-    """
-    バックテスト用に複数銘柄をまとめて取得し、銘柄ごとのリターンを返す
-    """
     params = {
-        "code": ",".join(codes),
         "from": start.strftime("%Y-%m-%d"),
         "to": end.strftime("%Y-%m-%d"),
+        "code": codes
     }
 
     try:
-        r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
+        r = requests.get(V2_PRICES_URL, headers=headers, params=params, timeout=15)
 
         if r.status_code == 429:
             print(f"[RATE LIMIT][BT] batch {codes[0]}... 429, sleep 2s")
             time.sleep(2)
-            r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
+            r = requests.get(V2_PRICES_URL, headers=headers, params=params, timeout=15)
 
         if r.status_code != 200:
-            print(f"[ERROR][BT BATCH] status={r.status_code}")
+            print(f"[BT ERROR] status={r.status_code}")
             return {}
 
         js = r.json()
@@ -458,9 +450,7 @@ def fetch_backtest_batch(codes, headers, start, end):
         grouped = {}
         for row in rows:
             code = row["Code"]
-            if code not in grouped:
-                grouped[code] = []
-            grouped[code].append(row)
+            grouped.setdefault(code, []).append(row)
 
         returns = {}
         for code, rws in grouped.items():
@@ -477,7 +467,7 @@ def fetch_backtest_batch(codes, headers, start, end):
         return returns
 
     except Exception as e:
-        print(f"[EXCEPTION][BT BATCH] {codes[0]}...: {e}")
+        print(f"[EXCEPTION][BT] {codes[0]}...: {e}")
         return {}
 
 def backtest_ai_only(ai_list):
@@ -510,7 +500,7 @@ def backtest_ai_only(ai_list):
     print(f"平均リターン：{avg_return*100:.2f}%")
 
 # =========================================================
-# メイン処理（V2 まとめ取得版）
+# メイン処理（V2 prices まとめ取得版）
 # =========================================================
 def run_screening():
     print("日本株銘柄リストを読み込み中...")
@@ -519,21 +509,15 @@ def run_screening():
     api_key = os.getenv("JQ_API_KEY")
     if not api_key:
         raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
-    print("API KEY:", api_key)
     headers = {"x-api-key": api_key}
 
-    print("株価データを一括ダウンロード中（V2まとめ取得）...")
+    print("株価データを一括ダウンロード中（V2 prices まとめ取得）...")
     all_data = download_all_data(symbols, headers)
 
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
-
     model_old = load_ai_model()
 
-    results = Parallel(
-        n_jobs=-1,
-        backend="loky",
-        verbose=0
-    )(
+    results = Parallel(n_jobs=-1, backend="loky")(
         delayed(analyze_symbol)(row["コード"], row["銘柄名"], model_old, all_data)
         for _, row in symbols.iterrows()
     )
@@ -571,8 +555,6 @@ def run_screening():
 
     print("\n\n===== 新AIロジック（精度最大化AI） =====")
     print("新AIモデル学習中...")
-
-    print("all_data keys:", list(all_data.keys())[:10])
 
     model_new, feature_cols = train_ai_model(all_data)
 
@@ -627,4 +609,3 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
-
