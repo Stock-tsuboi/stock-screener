@@ -215,13 +215,18 @@ V2_BARS_URL = "https://api.jquants.com/v2/equities/bars/daily"
 
 def fetch_batch(codes, headers, start, end):
     """
-    複数銘柄をまとめて /v2/equities/bars/daily で取得
+    /v2/equities/bars/daily の正しい複数銘柄取得
+    code はカンマ区切りではなく、複数回指定する
     """
     params = {
-        "code": ",".join(codes),
         "from": start.strftime("%Y-%m-%d"),
         "to": end.strftime("%Y-%m-%d"),
     }
+
+    # code を複数回指定する形式に変換
+    for c in codes:
+        params.setdefault("code", [])
+        params["code"].append(c)
 
     try:
         r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
@@ -232,7 +237,7 @@ def fetch_batch(codes, headers, start, end):
             r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
 
         if r.status_code != 200:
-            print(f"[ERROR][BATCH] status={r.status_code}")
+            print(f"[BATCH ERROR] status={r.status_code}")
             return {}
 
         js = r.json()
@@ -240,20 +245,16 @@ def fetch_batch(codes, headers, start, end):
         if not rows:
             return {}
 
-        result = {}
+        grouped = {}
         for row in rows:
             code = row["Code"]
-            if code not in result:
-                result[code] = []
-            result[code].append(row)
+            grouped.setdefault(code, []).append(row)
 
         dfs = {}
-        for code, rws in result.items():
+        for code, rws in grouped.items():
             df = pd.DataFrame(rws)
             df["Date"] = pd.to_datetime(df["Date"])
             df = df.sort_values("Date").set_index("Date")
-            # V2 bars/daily のカラム名に合わせておく
-            # Open, High, Low, Close, Volume がある前提
             dfs[f"{code}.T"] = df
 
         return dfs
@@ -626,3 +627,4 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
