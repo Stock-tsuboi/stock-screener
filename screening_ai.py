@@ -244,7 +244,7 @@ def download_all_data(symbols, headers):
     end = datetime.today().date() - timedelta(days=1)
     start = end - timedelta(days=150)
 
-    base_url = "https://api.jquants.com/v1/prices/daily_quotes"
+    base_url = "https://api.jquants.com/v2/equities/bars/daily"
 
     codes = list(symbols["コード"])
 
@@ -593,4 +593,5 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
