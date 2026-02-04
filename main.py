@@ -14,18 +14,21 @@ load_dotenv()
 
 # --- 設定 ---
 DB_NAME = "stock_analytics.duckdb"
-BASE_URL = "https://api.jquants.com/v2"
+# BASE_URL を V2 の最新エンドポイントに合わせます
+BASE_URL = "https://api.jquants.com/v2" 
 API_KEY = os.getenv("JQ_API_KEY")
 
 # =========================================================
-# 1. 認証 (J-Quants V2)
+# 1. 認証 (J-Quants V2 最新仕様)
 # =========================================================
-# --- 修正後の認証関数 (J-Quants V2 専用) ---
 def get_id_token():
-    # V2では /auth/refresh ではなく /token/generate を使います
-    # また、APIキーはURLパラメータではなくヘッダー(x-api-key)にセットします
-    headers = {"x-api-key": API_KEY}
-    res = requests.post(f"{BASE_URL}/token/generate", headers=headers)
+    # V2の正しいエンドポイントは /token/generate ではなく /idtoken/get です
+    # また、APIキーはヘッダーではなく、クエリパラメータ "mailaddress" にセットします
+    # ※V2のAPIキーは実質的にメールアドレスの代わりとして機能します
+    url = f"{BASE_URL}/idtoken/get"
+    params = {"mailaddress": API_KEY}
+    
+    res = requests.post(url, params=params)
     
     if res.status_code != 200:
         print(f"認証エラー: {res.status_code}")
