@@ -20,9 +20,18 @@ API_KEY = os.getenv("JQ_API_KEY")
 # =========================================================
 # 1. 認証 (J-Quants V2)
 # =========================================================
+# --- 修正後の認証関数 (J-Quants V2 専用) ---
 def get_id_token():
-    res = requests.post(f"{BASE_URL}/auth/refresh", params={"refreshtoken": API_KEY})
-    res.raise_for_status()
+    # V2では /auth/refresh ではなく /token/generate を使います
+    # また、APIキーはURLパラメータではなくヘッダー(x-api-key)にセットします
+    headers = {"x-api-key": API_KEY}
+    res = requests.post(f"{BASE_URL}/token/generate", headers=headers)
+    
+    if res.status_code != 200:
+        print(f"認証エラー: {res.status_code}")
+        print(f"レスポンス内容: {res.text}")
+        res.raise_for_status()
+        
     return res.json().get("idToken")
 
 # =========================================================
