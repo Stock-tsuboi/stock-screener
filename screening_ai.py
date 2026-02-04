@@ -238,12 +238,8 @@ EXCLUDE_CODES = []
 V2_BARS_URL = "https://api.jquants.com/v2/equities/bars/daily"
 
 
-def fetch_single(code, headers, start, end):
-    params = {
-        "code": code,
-        "from": start.strftime("%Y-%m-%d"),
-        "to": end.strftime("%Y-%m-%d"),
-    }
+def fetch_single(code, headers):
+    params = {"code": code}  # ★ from/to を指定しない
 
     wait_times = [0, 10, 20, 30]
 
@@ -287,7 +283,6 @@ def fetch_single(code, headers, start, end):
 
     print(f"[SKIP] {code} → 3回失敗")
     return None
-
 
 def download_all_data(symbols, headers):
     end = datetime.today().date() - timedelta(days=1)
@@ -630,4 +625,5 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
