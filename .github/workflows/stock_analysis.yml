@@ -41,6 +41,7 @@ jobs:
       - name: Run Main System
         env:
           JQ_API_KEY: ${{ secrets.JQ_API_KEY }}
+          JQ_PASSWORD: ${{ secrets.JQ_PASSWORD }}
         # あなたが作成する「main.py」を実行
         run: python main.py
 
