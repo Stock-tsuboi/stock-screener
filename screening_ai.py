@@ -297,7 +297,7 @@ def download_all_data(symbols, headers):
     print(f"取得対象銘柄数: {total}")
 
     for idx, code in enumerate(codes, 1):
-        df = fetch_single(code, headers, start, end)
+        df = fetch_single(code, headers)
         if df is not None:
             all_data[f"{code}.T"] = df
             success += 1
@@ -625,5 +625,6 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
