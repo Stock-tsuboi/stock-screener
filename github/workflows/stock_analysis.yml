@@ -1,1 +1,53 @@
+name: Stock Analysis and DB Update
 
+on:
+  schedule:
+    # 平日（月-金）の日本時間 21:00 (UTC 12:00) に実行
+    - cron: '0 12 * * 1-5'
+  workflow_dispatch: # 手動実行ボタンを有効化
+
+jobs:
+  run-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # キャッシュや成果物の書き込み権限
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip' # pipの依存関係をキャッシュ
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install duckdb pandas numpy requests yfinance scikit-learn python-dotenv
+
+      # DuckDBファイルをキャッシュから復元
+      - name: Restore DuckDB Cache
+        id: cache-db
+        uses: actions/cache@v4
+        with:
+          path: stock_analytics.duckdb
+          # キーが一致すれば復元、なければ新規作成
+          key: ${{ runner.os }}-stock-db-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-stock-db-
+
+      - name: Run Stock Analysis Script
+        env:
+          JQ_API_KEY: ${{ secrets.JQ_API_KEY }} # GitHubのSecretsに登録が必要
+        run: python main.py
+
+      # 実行後のDuckDBファイルをキャッシュに保存
+      # actions/cache は既存のキーを上書きできないため、常に新しいキーで保存する工夫が必要
+      - name: Save Updated DuckDB to Cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: stock_analytics.duckdb
+          key: ${{ runner.os }}-stock-db-${{ github.run_id }}
