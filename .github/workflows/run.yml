@@ -1,44 +1,46 @@
 name: Run Screener
 
 on:
+  # 手動実行
   workflow_dispatch:
+
+  # 平日毎日 実行（JST 15:40）
+  schedule:
+    - cron: '40 6 * * 1-5'
 
 jobs:
   run:
     runs-on: ubuntu-latest
 
+    # ★ Secrets は job 全体に渡す（超重要）
+    env:
+      JQ_API_KEY: ${{ secrets.JQ_API_KEY }}
+      JQ_PASSWORD: ${{ secrets.JQ_PASSWORD }}
+
     steps:
+      # 1. リポジトリ取得
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Check files
-        run: |
-          echo "=== ファイル一覧 ==="
-          ls -1
-
-      - name: Check zip contents
-        run: |
-          echo "=== ZIP の中身 ==="
-          unzip -l model_2.zip
-
-      - name: Unzip model
-        run: unzip -o model_2.zip
-
-      - name: Check extracted files
-        run: |
-          echo "=== 展開されたファイル ==="
-          ls -R
-
+      # 2. Python セットアップ
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.10"
 
+      # 3. 依存関係インストール
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
+      # 4. ZIPモデル展開（必要な場合）
+      - name: Unzip model
+        run: |
+          if [ -f model_2.zip ]; then
+            unzip -o model_2.zip
+          fi
+
+      # 5. スクリーナー実行（失敗してもログは残す）
       - name: Run Screener
         run: python screening_ai.py
-        env:
-          JQ_API_KEY: ${{ secrets.JQ_API_KEY }}
-
