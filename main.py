@@ -14,25 +14,16 @@ from sklearn.ensemble import RandomForestClassifier
 DB_NAME = "stock_analytics.duckdb"
 BASE_URL = "https://api.jquants.com/v2"
 
-JQ_MAIL = os.getenv("JQ_API_KEY")
-JQ_PASS = os.getenv("JQ_PASSWORD")
+JQ_API_KEY = os.getenv("JQ_API_KEY")
+if not JQ_API_KEY:
+    raise EnvironmentError("JQ_API_KEY が設定されていません")
+
+HEADERS = {
+    "x-api-key": JQ_API_KEY
+}
 
 # =========================================================
-# 1. J-Quants 認証（V2準拠・過去データ用）
-# =========================================================
-def get_id_token():
-    url = f"{BASE_URL}/token/generate"
-    payload = {
-        "mailaddress": JQ_MAIL,
-        "password": JQ_PASS
-    }
-    r = requests.post(url, json=payload, timeout=15)
-    if r.status_code != 200:
-        raise RuntimeError(f"J-Quants auth failed: {r.text}")
-    return r.json()["idToken"]
-
-# =========================================================
-# 2. yfinance 安定取得（直近用）
+# 1. yfinance 安定取得（直近用）
 # =========================================================
 def fetch_yf_daily(code, days=90, retry=3):
     ticker = f"{code}.T"
@@ -58,7 +49,7 @@ def fetch_yf_daily(code, days=90, retry=3):
     return pd.DataFrame()
 
 # =========================================================
-# 3. データベース同期（安定版）
+# 2. データベース同期（成功構成）
 # =========================================================
 def sync_database():
     print("=== STEP1: DB SYNC START ===")
@@ -77,12 +68,15 @@ def sync_database():
         )
     """)
 
-    # --- 銘柄一覧（J-Quants：過去専用）
-    token = get_id_token()
-    headers = {"Authorization": f"Bearer {token}"}
+    # --- 銘柄一覧（J-Quants V2）
+    r = requests.get(
+        f"{BASE_URL}/equities/master",
+        headers=HEADERS,
+        timeout=30
+    )
+    r.raise_for_status()
 
-    r = requests.get(f"{BASE_URL}/listed/info", headers=headers, timeout=30)
-    codes = [x["Code"] for x in r.json()["info"]]
+    codes = [x["Code"] for x in r.json()["data"]]
 
     # --- 直近データ補完（yfinance）
     for code in codes:
@@ -98,7 +92,7 @@ def sync_database():
             """)
             conn.unregister("tmp")
 
-            time.sleep(0.3)  # GitHub Actions 安定化
+            time.sleep(0.3)  # API・Actions安定化
         except Exception as e:
             print(f"[SYNC ERROR] {code}: {e}")
 
@@ -106,7 +100,7 @@ def sync_database():
     print("=== STEP1: DB SYNC END ===")
 
 # =========================================================
-# 4. AI分析（元ロジック維持）
+# 3. AI分析（元ロジック完全維持）
 # =========================================================
 def run_analysis():
     print("=== STEP2: AI ANALYSIS START ===")
@@ -173,7 +167,7 @@ def run_analysis():
     print(result[["Code", "Close", "AI_Score"]].to_string(index=False))
 
 # =========================================================
-# 5. メイン実行（落ちない構成）
+# 4. メイン実行
 # =========================================================
 if __name__ == "__main__":
     try:
