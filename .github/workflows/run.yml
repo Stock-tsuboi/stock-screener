@@ -5,8 +5,8 @@ on:
   workflow_dispatch:
 
   # 平日毎日 実行（JST 15:40）
-  schedule:
-    - cron: '40 6 * * 1-5'
+  #schedule:スケジュールを一旦ストップ　解除は、#を消す
+   # - cron: '40 6 * * 1-5'スケジュールを一旦ストップ　解除は、#を消す
 
 jobs:
   run:
