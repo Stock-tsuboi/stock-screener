@@ -21,6 +21,7 @@ if not JQ_API_KEY:
 HEADERS = {
     "x-api-key": JQ_API_KEY
 }
+MAX_CODES = 300
 
 # =========================================================
 # 1. yfinance 安定取得（直近用）
@@ -88,7 +89,8 @@ def sync_database():
     r.raise_for_status()
 
     codes = [x["Code"] for x in r.json()["data"]]
-
+    codes = codes[:MAX_CODES]
+    
     # --- 直近データ補完（yfinance）
     for code in codes:
         try:
@@ -145,8 +147,8 @@ def run_analysis():
         print("No data for analysis")
         return
 
-    df["Bias75"] = (df["Close"] - df["SMA75"]) / df["SMA75"]
-    df["VolRatio"] = df["Volume"] / df["Vol25"]
+    df["Bias75"] = (df["Close"] - df["SMA75"]) / df["SMA75"].replace(0, np.nan)
+    df["VolRatio"] = df["Volume"] / df["Vol25"].replace(0, np.nan)
     df["Target"] = (df["FutureClose"] / df["Close"] > 1.05).astype(int)
 
     train_df = df.dropna(subset=["Bias75", "VolRatio", "Target"]).tail(100000)
@@ -180,13 +182,20 @@ def run_analysis():
 # =========================================================
 # 4. メイン実行
 # =========================================================
+# =========================================================
+# 4. メイン実行
+# =========================================================
 if __name__ == "__main__":
+    sync_ok = True
+
     try:
         sync_database()
     except Exception as e:
         print("DB SYNC FAILED:", e)
+        sync_ok = False
 
-    try:
-        run_analysis()
-    except Exception as e:
-        print("ANALYSIS FAILED:", e)
+    if sync_ok:
+        try:
+            run_analysis()
+        except Exception as e:
+            print("ANALYSIS FAILED:", e)
