@@ -94,16 +94,17 @@ def sync_database():
         )
     """)
 
-    # --- 銘柄一覧（J-Quants V2）
-    r = requests.get(
-        f"{BASE_URL}/equities/master",
-        headers=HEADERS,
-        timeout=30
-    )
-    r.raise_for_status()
+    # --- DuckDBから銘柄コード取得
+    codes = conn.execute("""
+        SELECT DISTINCT Code
+        FROM daily_quotes
+        ORDER BY Code
+    """).fetchall()
 
-    codes = [x["Code"] for x in r.json()["data"]]
+    codes = [c[0] for c in codes]
     codes = codes[:MAX_CODES]
+
+    print(f"Codes loaded from DB: {len(codes)}")
     
     # --- 直近データ補完（yfinance）
     for code in codes:
