@@ -40,7 +40,18 @@ def fetch_yf_daily(code, days=90, retry=3):
             )
             if not df.empty:
                 df = df.reset_index()
+
+                # Datetime列対策（銘柄により発生）
+                if "Datetime" in df.columns:
+                    df.rename(columns={"Datetime": "Date"}, inplace=True)
+
+                df["Date"] = pd.to_datetime(df["Date"])
+
+                # Volume欠損対策
+                df["Volume"] = df["Volume"].fillna(0)
+
                 df["Code"] = code
+
                 return df[["Date", "Code", "Open", "High", "Low", "Close", "Volume"]]
         except Exception as e:
             print(f"[yfinance retry {i+1}] {code} : {e}")
