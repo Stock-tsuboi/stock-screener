@@ -20,7 +20,7 @@ jobs:
     steps:
       # 1. リポジトリ取得
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       # 2. Python セットアップ
       - name: Set up Python
