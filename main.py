@@ -27,10 +27,21 @@ MAX_CODES = 300
 # 1. yfinance 安定取得（直近用）
 # =========================================================
 def fetch_yf_daily(code, days=90, retry=3):
+    import signal
+
+    class TimeoutException(Exception):
+        pass
+
+    def timeout_handler(signum, frame):
+        raise TimeoutException()
+
     ticker = f"{code}.T"
 
     for i in range(retry):
         try:
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(20)  # ★ 20秒で強制タイムアウト
+
             df = yf.download(
                 ticker,
                 period=f"{days}d",
@@ -39,24 +50,27 @@ def fetch_yf_daily(code, days=90, retry=3):
                 progress=False,
                 threads=False
             )
+
+            signal.alarm(0)  # 成功時は解除
+
             if not df.empty:
                 df = df.reset_index()
 
-                # Datetime列対策（銘柄により発生）
                 if "Datetime" in df.columns:
                     df.rename(columns={"Datetime": "Date"}, inplace=True)
 
                 df["Date"] = pd.to_datetime(df["Date"])
-
-                # Volume欠損対策
                 df["Volume"] = df["Volume"].fillna(0)
-
                 df["Code"] = code
 
                 return df[["Date", "Code", "Open", "High", "Low", "Close", "Volume"]]
+
+        except TimeoutException:
+            print(f"[TIMEOUT] {code} retry {i+1}")
         except Exception as e:
             print(f"[yfinance retry {i+1}] {code} : {e}")
-            time.sleep(5)
+
+        time.sleep(3)
 
     return pd.DataFrame()
 
