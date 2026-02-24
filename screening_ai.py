@@ -66,7 +66,7 @@ def calc_adx(data, period=14):
     close = data["Close"]
 
     plus_dm = high.diff()
-    minus_dm = low.diff() * -1
+    minus_dm = -low.diff()
 
     plus_dm = plus_dm.where((plus_dm > minus_dm) & (plus_dm > 0), 0)
     minus_dm = minus_dm.where((minus_dm > plus_dm) & (minus_dm > 0), 0)
@@ -80,11 +80,14 @@ def calc_adx(data, period=14):
         axis=1,
     ).max(axis=1)
 
-    atr = tr.rolling(period).mean()
+    atr = tr.rolling(period).mean().replace(0, np.nan)
+    
     pdi = 100 * (plus_dm.rolling(period).mean() / atr)
     mdi = 100 * (minus_dm.rolling(period).mean() / atr)
-    dx = (abs(pdi - mdi) / (pdi + mdi)) * 100
+    
+    dx = (abs(pdi - mdi) / (pdi + mdi)).replace(0, np.nan)) * 100
     adx = dx.rolling(period).mean()
+    
     return adx
 
 
@@ -92,9 +95,26 @@ def calc_adx(data, period=14):
 # Step6　銘柄リスト読み込み
 # =========================================================
 def load_symbol_list():
-    df = pd.read_csv("japan_stocks_jpx.csv", dtype={"コード": str})
-    df["市場"] = df["市場・商品区分"].str.extract(r"(プライム|スタンダード|グロース)")
+    print("銘柄CSV読み込み中...")
+
+    df = pd.read_csv("japan_stocks_jpx.csv", dtype=str)
+
+    # 列名の空白除去（事故防止）
+    df.columns = df.columns.str.strip()
+
+    required_cols = ["コード", "銘柄名", "市場・商品区分"]
+    for col in required_cols:
+        if col not in df.columns:
+            raise ValueError(f"CSVに必要な列がありません: {col}")
+
+    df["市場"] = df["市場・商品区分"].str.extract(
+        r"(プライム|スタンダード|グロース)"
+    )
+
     df = df[["コード", "銘柄名", "市場"]].dropna()
+
+    print(f"銘柄数ロード完了: {len(df)}")
+
     return df
 
 
@@ -635,6 +655,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
