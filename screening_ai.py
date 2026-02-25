@@ -147,7 +147,7 @@ def load_ai_model():
 
 
 # =========================================================
-# Step8　特徴量生成（新AI用）
+# Step8　特徴量生成（新AI用・安定版）
 # =========================================================
 def create_features(df):
     df = df.copy()
@@ -168,7 +168,9 @@ def create_features(df):
     df["BB_UP2"] = df["BB_MID"] + 2 * df["BB_STD"]
     df["BB_LOW2"] = df["BB_MID"] - 2 * df["BB_STD"]
 
-    df["VolRatio"] = df["Volume"] / df["Volume"].rolling(25).mean().replace(0, np.nan)
+    df["VolRatio"] = (
+        df["Volume"] / df["Volume"].rolling(25).mean().replace(0, np.nan)
+    )
 
     df["Bull"] = (df["Close"] > df["Open"]).astype(int)
 
@@ -192,7 +194,6 @@ def create_features(df):
 
     df["Target"] = (df["Close"].shift(-5) / df["Close"] - 1 > 0.03).astype(int)
 
-    # 🎯 必要列だけでdropna
     feature_cols = [
         "SMA5","SMA25","SMA75",
         "Bias5","Bias25","Bias75",
@@ -207,47 +208,56 @@ def create_features(df):
 
 
 # =========================================================
-# Step9　学習処理（精度最大化版）
+# Step9　学習処理（精度最大化版・安定化）
 # =========================================================
 def train_ai_model(all_data):
+    print("AI学習データ生成中...")
+
     dfs = []
+    used_symbols = 0
 
     for symbol, df in all_data.items():
-        if len(df) < 120:
+        if df is None or len(df) < 120:
             continue
 
-        df2 = create_features(df)
-        df2["symbol"] = symbol
-        dfs.append(df2)
+        try:
+            df2 = create_features(df)
+            if df2.empty:
+                continue
+
+            df2["symbol"] = symbol
+            dfs.append(df2)
+            used_symbols += 1
+
+        except Exception as e:
+            print(f"[FEATURE ERROR] {symbol}: {e}")
 
     if not dfs:
         raise RuntimeError("学習用データがありません。")
 
-    data = pd.concat(dfs)
+    print(f"✔ 学習対象銘柄数: {used_symbols}")
+
+    data = pd.concat(dfs, ignore_index=True)
 
     feature_cols = [
-        "SMA5",
-        "SMA25",
-        "SMA75",
-        "Bias5",
-        "Bias25",
-        "Bias75",
-        "BB_UP1",
-        "BB_LOW1",
-        "BB_UP2",
-        "BB_LOW2",
+        "SMA5", "SMA25", "SMA75",
+        "Bias5", "Bias25", "Bias75",
+        "BB_UP1", "BB_LOW1",
+        "BB_UP2", "BB_LOW2",
         "VolRatio",
-        "Bull",
-        "BigBull",
-        "BigBear",
+        "Bull", "BigBull", "BigBear",
         "Slope10",
     ]
+
+    print(f"✔ 学習データ件数: {len(data)}")
 
     X = data[feature_cols].fillna(0)
     y = data["Target"]
 
+    print("RandomForest 学習開始...")
+
     model = RandomForestClassifier(
-        n_estimators=400,
+        n_estimators=300,          # ← 400→300で高速化
         max_depth=10,
         min_samples_split=5,
         min_samples_leaf=3,
@@ -258,32 +268,66 @@ def train_ai_model(all_data):
 
     model.fit(X, y)
 
+    print("✔ 学習完了")
+
     return model, feature_cols
 
 
 # =========================================================
-# Step10　推論処理（新AI）
+# Step10　推論処理（新AI・安定化）
 # =========================================================
 def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
-    results = []
 
-    for symbol, df in all_data.items():
-        df2 = create_features(df)
-        if df2.empty:
+    print("新AIスコア計算中...")
+
+    results = []
+    total = len(all_data)
+    success = 0
+
+    for idx, (symbol, df) in enumerate(all_data.items(), 1):
+
+        if df is None or len(df) < 80:
             continue
 
-        latest = df2.iloc[-1]
-        X_pred = latest[feature_cols].fillna(0).values.reshape(1, -1)
-        prob = model.predict_proba(X_pred)[0][1]
+        try:
+            df2 = create_features(df)
+            if df2.empty:
+                continue
 
-        results.append((symbol, prob))
+            latest = df2.iloc[-1]
+
+            X_pred = (
+                latest[feature_cols]
+                .fillna(0)
+                .values
+                .reshape(1, -1)
+            )
+
+            prob = model.predict_proba(X_pred)[0][1]
+
+            results.append((symbol, prob))
+            success += 1
+
+        except Exception as e:
+            print(f"[PREDICT ERROR] {symbol}: {e}")
+
+        # 🔥 進捗表示（50銘柄ごと）
+        if idx % 50 == 0:
+            print(f"進捗: {idx}/{total} 推論成功: {success}")
+
+    print(f"✔ 推論完了: {success}銘柄")
 
     results.sort(key=lambda x: x[1], reverse=True)
     filtered = [(s, p) for s, p in results if p >= threshold]
 
+    print(f"✔ 閾値 {threshold} 以上: {len(filtered)}銘柄")
+
     return filtered[:top_n]
 
 
+# =========================================================
+# Step10b　パラメータ設定
+# =========================================================
 BEST_TH = 0.55
 EXCLUDE_CODES = []
 
@@ -681,6 +725,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
