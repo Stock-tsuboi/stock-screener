@@ -395,7 +395,7 @@ def update_duckdb_from_yfinance(symbols):
                 volume
             FROM tmp_df
         """)
-
+        conn.unregister("tmp_df")
         print(f"  → {len(df)}件追加")
 
     conn.close()
@@ -935,6 +935,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
