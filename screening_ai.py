@@ -333,81 +333,97 @@ EXCLUDE_CODES = []
 
 
 # =========================================================
-# Step11　bars/daily 単発取得（429完全回避）
+# Step11　DuckDB + yfinance 差分更新
 # =========================================================
-V2_BARS_URL = "https://api.jquants.com/v2/equities/bars/daily"
+import duckdb
+import yfinance as yf
 
 
-def fetch_single(code, headers):
-    params = {"code": code}  # ★ from/to を指定しない
+DB_PATH = "market.db"
 
-    wait_times = [0, 10, 20, 30]
 
-    for wait in wait_times:
-        if wait > 0:
-            print(f"[429] {code} → {wait}秒待機して再試行")
-            time.sleep(wait)
+def update_duckdb_from_yfinance(symbols):
+    conn = duckdb.connect(DB_PATH)
 
-        try:
-            r = requests.get(V2_BARS_URL, headers=headers, params=params, timeout=15)
+    print("DuckDB更新開始...")
 
-            if r.status_code == 429:
-                continue
+    for code in symbols["コード"]:
+        symbol = f"{code}.T"
 
-            if r.status_code == 403:
-                print(f"[403] {code} → 権限なし（Freeプラン制限）")
-                return None
+        # DBの最終日取得
+        last_date = conn.execute(f"""
+            SELECT MAX(date)
+            FROM prices
+            WHERE code = '{code}'
+        """).fetchone()[0]
 
-            if r.status_code != 200:
-                print(f"[ERROR] {code} status={r.status_code}")
-                return None
+        if last_date is None:
+            start_date = "2020-01-01"
+        else:
+            start_date = str(last_date + timedelta(days=1))
 
-            js = r.json()
-            rows = js.get("data", [])
-            if not rows:
-                return None
+        print(f"{symbol} → {start_date} 以降を取得")
 
-            df = pd.DataFrame(rows)
-            df["Date"] = pd.to_datetime(df["Date"])
-            df = df.sort_values("Date").set_index("Date")
+        df = yf.download(symbol, start=start_date, progress=False)
 
-            needed = ["Open", "High", "Low", "Close", "Volume"]
-            if not all(col in df.columns for col in needed):
-                return None
+        if df.empty:
+            print(f"  → 更新なし")
+            continue
 
-            return df
+        df = df.reset_index()
+        df.columns = [c.lower() for c in df.columns]
 
-        except Exception as e:
-            print(f"[EXCEPTION] {code}: {e}")
-            time.sleep(5)
+        df["code"] = code
 
-    print(f"[SKIP] {code} → 3回失敗")
-    return None
+        conn.register("tmp_df", df)
 
-def download_all_data(symbols, headers):
-    end = datetime.today().date() - timedelta(days=1)
-    start = end - timedelta(days=150)
+        conn.execute("""
+            INSERT INTO prices
+            SELECT
+                code,
+                date,
+                open,
+                high,
+                low,
+                close,
+                close - open AS change,
+                volume
+            FROM tmp_df
+        """)
 
-    codes = list(symbols["コード"])
-    total = len(codes)
-    success = 0
+        print(f"  → {len(df)}件追加")
+
+    conn.close()
+    print("DuckDB更新完了")
+
+
+def load_all_data_from_duckdb(symbols):
+    conn = duckdb.connect(DB_PATH)
+
+    print("DuckDBから株価ロード中...")
 
     all_data = {}
 
-    print(f"取得対象銘柄数: {total}")
+    for code in symbols["コード"]:
+        df = conn.execute(f"""
+            SELECT date, open, high, low, close, volume
+            FROM prices
+            WHERE code = '{code}'
+            ORDER BY date
+        """).df()
 
-    for idx, code in enumerate(codes, 1):
-        df = fetch_single(code, headers)
-        if df is not None:
-            all_data[f"{code}.T"] = df
-            success += 1
+        if df.empty:
+            continue
 
-        time.sleep(1.2)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date")
 
-        if idx % 50 == 0:
-            print(f"進捗: {idx}/{total} 取得成功: {success}")
+        df.columns = ["Open", "High", "Low", "Close", "Volume"]
 
-    print(f"\n最終取得成功数: {success}/{total}")
+        all_data[f"{code}.T"] = df
+
+    conn.close()
+    print(f"ロード完了: {len(all_data)}銘柄")
 
     return all_data
 
@@ -725,6 +741,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
