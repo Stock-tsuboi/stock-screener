@@ -125,12 +125,22 @@ def load_ai_model():
     import joblib
     import zipfile as zf
 
+    print("AIモデル読み込み中...")
+
     if os.path.exists("model.pkl"):
+        print("✔ model.pkl を検出")
         return joblib.load("model.pkl")
 
     if os.path.exists("model_2.zip"):
+        print("✔ model_2.zip を検出 → 展開")
+
         with zf.ZipFile("model_2.zip") as z:
+            if "model.pkl" not in z.namelist():
+                raise FileNotFoundError("ZIP内に model.pkl が存在しません")
+
             z.extract("model.pkl")
+
+        print("✔ ZIP展開完了")
         return joblib.load("model.pkl")
 
     raise FileNotFoundError("model.pkl / model_2.zip が見つかりません")
@@ -146,22 +156,29 @@ def create_features(df):
     df["SMA25"] = df["Close"].rolling(25).mean()
     df["SMA75"] = df["Close"].rolling(75).mean()
 
-    df["Bias5"] = (df["Close"] - df["SMA5"]) / df["SMA5"]
-    df["Bias25"] = (df["Close"] - df["SMA25"]) / df["SMA25"]
-    df["Bias75"] = (df["Close"] - df["SMA75"]) / df["SMA75"]
+    df["Bias5"] = (df["Close"] - df["SMA5"]) / df["SMA5"].replace(0, np.nan)
+    df["Bias25"] = (df["Close"] - df["SMA25"]) / df["SMA25"].replace(0, np.nan)
+    df["Bias75"] = (df["Close"] - df["SMA75"]) / df["SMA75"].replace(0, np.nan)
 
     df["BB_MID"] = df["SMA25"]
     df["BB_STD"] = df["Close"].rolling(25).std()
+
     df["BB_UP1"] = df["BB_MID"] + df["BB_STD"]
     df["BB_LOW1"] = df["BB_MID"] - df["BB_STD"]
     df["BB_UP2"] = df["BB_MID"] + 2 * df["BB_STD"]
     df["BB_LOW2"] = df["BB_MID"] - 2 * df["BB_STD"]
 
-    df["VolRatio"] = df["Volume"] / df["Volume"].rolling(25).mean()
+    df["VolRatio"] = df["Volume"] / df["Volume"].rolling(25).mean().replace(0, np.nan)
 
     df["Bull"] = (df["Close"] > df["Open"]).astype(int)
-    df["BigBull"] = ((df["Close"] - df["Open"]) / df["Open"] > 0.03).astype(int)
-    df["BigBear"] = ((df["Open"] - df["Close"]) / df["Open"] > 0.03).astype(int)
+
+    df["BigBull"] = (
+        (df["Close"] - df["Open"]) / df["Open"].replace(0, np.nan) > 0.03
+    ).astype(int)
+
+    df["BigBear"] = (
+        (df["Open"] - df["Close"]) / df["Open"].replace(0, np.nan) > 0.03
+    ).astype(int)
 
     def calc_slope(series):
         if len(series) < 10:
@@ -175,7 +192,16 @@ def create_features(df):
 
     df["Target"] = (df["Close"].shift(-5) / df["Close"] - 1 > 0.03).astype(int)
 
-    df = df.dropna()
+    # 🎯 必要列だけでdropna
+    feature_cols = [
+        "SMA5","SMA25","SMA75",
+        "Bias5","Bias25","Bias75",
+        "BB_UP1","BB_LOW1","BB_UP2","BB_LOW2",
+        "VolRatio","Bull","BigBull","BigBear",
+        "Slope10","Target"
+    ]
+
+    df = df.dropna(subset=feature_cols)
 
     return df
 
@@ -655,6 +681,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
