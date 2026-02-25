@@ -337,7 +337,7 @@ EXCLUDE_CODES = []
 # =========================================================
 import duckdb
 import yfinance as yf
-
+from datetime import timedelta
 
 DB_PATH = "market.db"
 
@@ -351,11 +351,11 @@ def update_duckdb_from_yfinance(symbols):
         symbol = f"{code}.T"
 
         # DBの最終日取得
-        last_date = conn.execute(f"""
+        last_date = conn.execute("""
             SELECT MAX(date)
             FROM prices
-            WHERE code = '{code}'
-        """).fetchone()[0]
+            WHERE code = ?
+        """, [code]).fetchone()[0]
 
         if last_date is None:
             start_date = "2020-01-01"
@@ -372,6 +372,10 @@ def update_duckdb_from_yfinance(symbols):
 
         df = df.reset_index()
         df.columns = [c.lower() for c in df.columns]
+        required = {"date", "open", "high", "low", "close", "volume"}
+        if not required.issubset(set(df.columns)):
+            print("  → 必要列不足スキップ")
+            continue
 
         df["code"] = code
 
@@ -405,12 +409,12 @@ def load_all_data_from_duckdb(symbols):
     all_data = {}
 
     for code in symbols["コード"]:
-        df = conn.execute(f"""
+        df = conn.execute("""
             SELECT date, open, high, low, close, volume
             FROM prices
-            WHERE code = '{code}'
+            WHERE code = ?
             ORDER BY date
-        """).df()
+        """, [code]).df()
 
         if df.empty:
             continue
@@ -640,8 +644,11 @@ def run_screening():
         raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
     headers = {"x-api-key": api_key}
 
-    print("\n株価データを一括ダウンロード中（bars/daily 単発取得）...")
-    all_data = download_all_data(symbols, headers)
+    print("\nDuckDB + yfinance 差分更新...")
+    update_duckdb_from_yfinance(symbols)
+
+    print("\nDuckDBから株価読み込み...")
+    all_data = load_all_data_from_duckdb(symbols)
 
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
     model_old = load_ai_model()
@@ -741,6 +748,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
