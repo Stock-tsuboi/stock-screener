@@ -377,7 +377,7 @@ def update_duckdb_from_yfinance(symbols):
         if not required.issubset(set(df.columns)):
             print("  → 必要列不足スキップ")
             continue
-
+        df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
         df["code"] = code
 
         conn.register("tmp_df", df)
@@ -935,6 +935,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
