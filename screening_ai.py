@@ -85,7 +85,7 @@ def calc_adx(data, period=14):
     pdi = 100 * (plus_dm.rolling(period).mean() / atr)
     mdi = 100 * (minus_dm.rolling(period).mean() / atr)
     
-    dx = (abs(pdi - mdi) / (pdi + mdi)).replace(0, np.nan)) * 100
+    dx = (abs(pdi - mdi) / (pdi + mdi)).replace(0, np.nan) * 100
     adx = dx.rolling(period).mean()
     
     return adx
@@ -935,6 +935,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
