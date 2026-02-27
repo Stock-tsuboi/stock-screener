@@ -345,6 +345,19 @@ DB_PATH = "market.db"
 
 def update_duckdb_from_yfinance(symbols):
     conn = duckdb.connect(DB_PATH)
+    # pricesテーブルが無ければ作成（GitHub Actions対策）
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS prices (
+        code TEXT,
+        date DATE,
+        open DOUBLE,
+        high DOUBLE,
+        low DOUBLE,
+        close DOUBLE,
+        volume DOUBLE
+        market_cap DOUBLE
+    )
+    """)
 
     print("DuckDB更新開始...")
 
@@ -935,6 +948,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
