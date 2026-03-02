@@ -416,7 +416,38 @@ def update_duckdb_from_yfinance(symbols):
 
     conn.close()
     print("DuckDB更新完了")
+def load_all_data_from_duckdb(symbols):
 
+    conn = duckdb.connect(DB_PATH)
+
+    print("DuckDBから株価ロード中...")
+
+    all_data = {}
+
+    for code in symbols["コード"]:
+
+        df = conn.execute("""
+            SELECT date, open, high, low, close, volume
+            FROM prices
+            WHERE code = ?
+            ORDER BY date
+        """, [code]).df()
+
+        if df.empty:
+            continue
+
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date")
+
+        df.columns = ["Open", "High", "Low", "Close", "Volume"]
+
+        all_data[f"{code}.T"] = df
+
+    conn.close()
+
+    print(f"ロード完了: {len(all_data)}銘柄")
+
+    return all_data
 
 # =========================================================
 # Step12　銘柄解析（旧ロジック）
@@ -740,6 +771,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
