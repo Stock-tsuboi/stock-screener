@@ -634,7 +634,13 @@ def run_screening():
     update_duckdb_from_yfinance(symbols)
 
     print("\nDuckDBから株価読み込み...")
-    all_data = load_all_data_from_duckdb(symbols)
+
+    try:
+        all_data = load_all_data_from_duckdb(symbols)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise
 
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
     model_old = load_ai_model()
@@ -734,6 +740,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
