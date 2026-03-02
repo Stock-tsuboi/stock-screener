@@ -416,6 +416,7 @@ def update_duckdb_from_yfinance(symbols):
 
     conn.close()
     print("DuckDB更新完了")
+    
 def load_all_data_from_duckdb(symbols):
 
     conn = duckdb.connect(DB_PATH)
@@ -771,6 +772,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
