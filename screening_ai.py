@@ -388,7 +388,11 @@ def update_duckdb_from_yfinance(symbols):
             continue
 
         df = df.reset_index()
-        df.columns = [c.lower() for c in df.columns]
+        # MultiIndex対策
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        df.columns = [str(c).lower() for c in df.columns]
 
         required = {"date", "open", "high", "low", "close", "volume"}
         if not required.issubset(df.columns):
@@ -730,6 +734,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
