@@ -333,8 +333,9 @@ EXCLUDE_CODES = []
 
 
 # =========================================================
-# Step11　DuckDB + yfinance 差分更新
+# Step11　本物のDuckDB差分更新（重複完全防止）
 # =========================================================
+
 import duckdb
 import yfinance as yf
 import pandas as pd
@@ -344,8 +345,10 @@ DB_PATH = "market.db"
 
 
 def update_duckdb_from_yfinance(symbols):
+
     conn = duckdb.connect(DB_PATH)
-    # pricesテーブルが無ければ作成（GitHub Actions対策）
+
+    # ① テーブル作成（主キー付き）
     conn.execute("""
     CREATE TABLE IF NOT EXISTS prices (
         code TEXT,
@@ -354,8 +357,8 @@ def update_duckdb_from_yfinance(symbols):
         high DOUBLE,
         low DOUBLE,
         close DOUBLE,
-        volume DOUBLE
-        market_cap DOUBLE
+        volume DOUBLE,
+        PRIMARY KEY (code, date)
     )
     """)
 
@@ -364,7 +367,7 @@ def update_duckdb_from_yfinance(symbols):
     for code in symbols["コード"]:
         symbol = f"{code}.T"
 
-        # DBの最終日取得
+        # ② 銘柄ごとの最終日取得
         last_date = conn.execute("""
             SELECT MAX(date)
             FROM prices
@@ -376,260 +379,39 @@ def update_duckdb_from_yfinance(symbols):
         else:
             start_date = str(last_date + timedelta(days=1))
 
-        print(f"{symbol} → {start_date} 以降を取得")
+        print(f"{symbol} → {start_date} 以降取得")
 
         df = yf.download(symbol, start=start_date, progress=False)
 
         if df.empty:
-            print(f"  → 更新なし")
+            print("  → 更新なし")
             continue
 
         df = df.reset_index()
         df.columns = [c.lower() for c in df.columns]
+
         required = {"date", "open", "high", "low", "close", "volume"}
-        if not required.issubset(set(df.columns)):
+        if not required.issubset(df.columns):
             print("  → 必要列不足スキップ")
             continue
-        df["volume"] = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
+
         df["code"] = code
+        df = df[["code", "date", "open", "high", "low", "close", "volume"]]
 
         conn.register("tmp_df", df)
 
+        # ③ 重複を無視してINSERT
         conn.execute("""
-            INSERT INTO prices
-            SELECT
-                code,
-                date,
-                open,
-                high,
-                low,
-                close,
-                close - open AS change,
-                volume
-            FROM tmp_df
+            INSERT OR IGNORE INTO prices
+            SELECT * FROM tmp_df
         """)
+
         conn.unregister("tmp_df")
-        print(f"  → {len(df)}件追加")
+
+        print(f"  → {len(df)}件処理")
 
     conn.close()
     print("DuckDB更新完了")
-
-
-def load_all_data_from_duckdb(symbols):
-    conn = duckdb.connect(DB_PATH)
-
-    print("DuckDBから株価ロード中...")
-
-    all_data = {}
-
-    for code in symbols["コード"]:
-        df = conn.execute("""
-            SELECT date, open, high, low, close, volume
-            FROM prices
-            WHERE code = ?
-            ORDER BY date
-        """, [code]).df()
-
-        if df.empty:
-            continue
-
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.set_index("date")
-
-        df.columns = ["Open", "High", "Low", "Close", "Volume"]
-
-        all_data[f"{code}.T"] = df
-
-    conn.close()
-    print(f"ロード完了: {len(all_data)}銘柄")
-
-    return all_data
-from datetime import timedelta
-
-DB_PATH = "market.db"
-
-
-def update_duckdb_from_yfinance(symbols):
-    conn = duckdb.connect(DB_PATH)
-
-    print("DuckDB更新開始...")
-
-    for code in symbols["コード"]:
-        symbol = f"{code}.T"
-
-        # DBの最終日取得
-        last_date = conn.execute("""
-            SELECT MAX(date)
-            FROM prices
-            WHERE code = ?
-        """, [code]).fetchone()[0]
-
-        if last_date is None:
-            start_date = "2020-01-01"
-        else:
-            start_date = str(last_date + timedelta(days=1))
-
-        print(f"{symbol} → {start_date} 以降を取得")
-
-        df = yf.download(symbol, start=start_date, progress=False)
-
-        if df.empty:
-            print(f"  → 更新なし")
-            continue
-
-        df = df.reset_index()
-        df.columns = [c.lower() for c in df.columns]
-        required = {"date", "open", "high", "low", "close", "volume"}
-        if not required.issubset(set(df.columns)):
-            print("  → 必要列不足スキップ")
-            continue
-
-        df["code"] = code
-
-        conn.register("tmp_df", df)
-
-        conn.execute("""
-            INSERT INTO prices
-            SELECT
-                code,
-                date,
-                open,
-                high,
-                low,
-                close,
-                close - open AS change,
-                volume
-            FROM tmp_df
-        """)
-
-        print(f"  → {len(df)}件追加")
-
-    conn.close()
-    print("DuckDB更新完了")
-
-
-def load_all_data_from_duckdb(symbols):
-    conn = duckdb.connect(DB_PATH)
-
-    print("DuckDBから株価ロード中...")
-
-    all_data = {}
-
-    for code in symbols["コード"]:
-        df = conn.execute("""
-            SELECT date, open, high, low, close, volume
-            FROM prices
-            WHERE code = ?
-            ORDER BY date
-        """, [code]).df()
-
-        if df.empty:
-            continue
-
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.set_index("date")
-
-        df.columns = ["Open", "High", "Low", "Close", "Volume"]
-
-        all_data[f"{code}.T"] = df
-
-    conn.close()
-    print(f"ロード完了: {len(all_data)}銘柄")
-
-    return all_data
-from datetime import timedelta
-
-DB_PATH = "market.db"
-
-
-def update_duckdb_from_yfinance(symbols):
-    conn = duckdb.connect(DB_PATH)
-
-    print("DuckDB更新開始...")
-
-    for code in symbols["コード"]:
-        symbol = f"{code}.T"
-
-        # DBの最終日取得
-        last_date = conn.execute("""
-            SELECT MAX(date)
-            FROM prices
-            WHERE code = ?
-        """, [code]).fetchone()[0]
-
-        if last_date is None:
-            start_date = "2020-01-01"
-        else:
-            start_date = str(last_date + timedelta(days=1))
-
-        print(f"{symbol} → {start_date} 以降を取得")
-
-        df = yf.download(symbol, start=start_date, progress=False)
-
-        if df.empty:
-            print(f"  → 更新なし")
-            continue
-
-        df = df.reset_index()
-        df.columns = [c.lower() for c in df.columns]
-        required = {"date", "open", "high", "low", "close", "volume"}
-        if not required.issubset(set(df.columns)):
-            print("  → 必要列不足スキップ")
-            continue
-
-        df["code"] = code
-
-        conn.register("tmp_df", df)
-
-        conn.execute("""
-            INSERT INTO prices
-            SELECT
-                code,
-                date,
-                open,
-                high,
-                low,
-                close,
-                close - open AS change,
-                volume
-            FROM tmp_df
-        """)
-
-        print(f"  → {len(df)}件追加")
-
-    conn.close()
-    print("DuckDB更新完了")
-
-
-def load_all_data_from_duckdb(symbols):
-    conn = duckdb.connect(DB_PATH)
-
-    print("DuckDBから株価ロード中...")
-
-    all_data = {}
-
-    for code in symbols["コード"]:
-        df = conn.execute("""
-            SELECT date, open, high, low, close, volume
-            FROM prices
-            WHERE code = ?
-            ORDER BY date
-        """, [code]).df()
-
-        if df.empty:
-            continue
-
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.set_index("date")
-
-        df.columns = ["Open", "High", "Low", "Close", "Volume"]
-
-        all_data[f"{code}.T"] = df
-
-    conn.close()
-    print(f"ロード完了: {len(all_data)}銘柄")
-
-    return all_data
 
 
 # =========================================================
@@ -948,6 +730,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
