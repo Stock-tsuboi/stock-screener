@@ -863,7 +863,22 @@ def run_screening():
     print("\n===== 新AI（精度最大化）上位20 =====\n")
     for symbol, prob in ai_list:
         print(f"{symbol}: {prob:.3f}")
+    df_new_ai = pd.DataFrame(ai_list, columns=["symbol", "新AI確率"])
 
+    df_merge = df_merge.merge(
+        df_new_ai,
+        on="symbol",
+        how="left"
+    )
+
+    df_merge["新AI確率"] = df_merge["新AI確率"].fillna(0)
+
+    df_merge["新AI順位"] = (
+        df_merge["新AI確率"]
+        .rank(ascending=False, method="min")
+        .fillna(999)
+        .astype(int)
+    )
     if ai_list:
         print("\n===== 新AI バックテスト =====")
         codes_new = [s for s, p in ai_list]
@@ -911,6 +926,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
