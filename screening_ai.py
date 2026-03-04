@@ -218,6 +218,53 @@ def create_features(df):
 
     return df
 
+# =========================================================
+# Step8b　特徴量生成（推論専用・超軽量版）
+# =========================================================
+def create_features_fast(df):
+
+    df = df.tail(100).copy()  # ← 最新だけ使う
+
+    close = df["Close"]
+    volume = df["Volume"]
+    open_ = df["Open"]
+
+    sma5 = close.rolling(5).mean()
+    sma25 = close.rolling(25).mean()
+    sma75 = close.rolling(75).mean()
+
+    bb_mid = sma25
+    bb_std = close.rolling(25).std()
+
+    vol_ratio = volume.iloc[-1] / volume.rolling(25).mean().iloc[-1]
+
+    # ---- Slope10 軽量計算 ----
+    if len(close) >= 10:
+        y = close.iloc[-10:].values
+        x = np.arange(10)
+        slope10 = np.polyfit(x, y, 1)[0]
+    else:
+        slope10 = 0
+
+    latest = {
+        "SMA5": sma5.iloc[-1],
+        "SMA25": sma25.iloc[-1],
+        "SMA75": sma75.iloc[-1],
+        "Bias5": (close.iloc[-1] - sma5.iloc[-1]) / sma5.iloc[-1] if sma5.iloc[-1] != 0 else 0,
+        "Bias25": (close.iloc[-1] - sma25.iloc[-1]) / sma25.iloc[-1] if sma25.iloc[-1] != 0 else 0,
+        "Bias75": (close.iloc[-1] - sma75.iloc[-1]) / sma75.iloc[-1] if sma75.iloc[-1] != 0 else 0,
+        "BB_UP1": bb_mid.iloc[-1] + bb_std.iloc[-1],
+        "BB_LOW1": bb_mid.iloc[-1] - bb_std.iloc[-1],
+        "BB_UP2": bb_mid.iloc[-1] + 2 * bb_std.iloc[-1],
+        "BB_LOW2": bb_mid.iloc[-1] - 2 * bb_std.iloc[-1],
+        "VolRatio": vol_ratio,
+        "Bull": int(close.iloc[-1] > open_.iloc[-1]),
+        "BigBull": int((close.iloc[-1] - open_.iloc[-1]) / open_.iloc[-1] > 0.03),
+        "BigBear": int((open_.iloc[-1] - close.iloc[-1]) / open_.iloc[-1] > 0.03),
+        "Slope10": slope10,
+    }
+
+    return latest
 
 # =========================================================
 # Step9　学習処理（精度最大化版・安定化）
@@ -286,17 +333,15 @@ def train_ai_model(all_data):
 
 
 # =========================================================
-# Step10　推論処理（新AI・安定化）
+# Step10　推論処理（新AI・高速一括版）
 # =========================================================
 def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
-    print("新AIスコア計算中...")
+    print("新AI一括推論中...")
 
-    results = []
-    total = len(all_data)
-    success = 0
+    rows = []
 
-    for idx, (symbol, df) in enumerate(all_data.items(), 1):
+    for symbol, df in all_data.items():
 
         if df is None or len(df) < 80:
             continue
@@ -306,35 +351,35 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
             if df2.empty:
                 continue
 
-            latest = df2.iloc[-1]
+            latest = df2.iloc[-1].copy()
+            latest["symbol"] = symbol
 
-            X_pred = (
-                latest[feature_cols]
-                .fillna(0)
-                .values
-                .reshape(1, -1)
-            )
-
-            prob = model.predict_proba(X_pred)[0][1]
-
-            results.append((symbol, prob))
-            success += 1
+            rows.append(latest)
 
         except Exception as e:
-            print(f"[PREDICT ERROR] {symbol}: {e}")
+            print(f"[FEATURE ERROR] {symbol}: {e}")
 
-        # 🔥 進捗表示（50銘柄ごと）
-        if idx % 50 == 0:
-            print(f"進捗: {idx}/{total} 推論成功: {success}")
+    if not rows:
+        print("推論対象なし")
+        return []
 
-    print(f"✔ 推論完了: {success}銘柄")
+    df_all = pd.DataFrame(rows)
 
-    results.sort(key=lambda x: x[1], reverse=True)
-    filtered = [(s, p) for s, p in results if p >= threshold]
+    X = df_all[feature_cols].fillna(0)
 
-    print(f"✔ 閾値 {threshold} 以上: {len(filtered)}銘柄")
+    print("predict_proba 一括実行...")
+    probs = model.predict_proba(X)[:, 1]
 
-    return filtered[:top_n]
+    df_all["prob"] = probs
+
+    df_all = df_all.sort_values("prob", ascending=False)
+
+    df_filtered = df_all[df_all["prob"] >= threshold]
+
+    print(f"✔ 推論対象: {len(df_all)}銘柄")
+    print(f"✔ 閾値 {threshold} 以上: {len(df_filtered)}銘柄")
+
+    return list(zip(df_filtered["symbol"], df_filtered["prob"]))[:top_n]
 
 
 # =========================================================
@@ -727,9 +772,15 @@ def run_screening():
         backtest_ai_only(codes_old, all_data, days=200)
 
     print("\n\n===== 新AIロジック（精度最大化AI） =====")
-    print("新AIモデル学習中...")
+    print("新AIモデル確認中...")
 
-    model_new, feature_cols = train_ai_model(all_data)
+    if need_retrain(MODEL_PATH, days=7):
+        print("🔄 週次再学習を実行")
+        model_new, feature_cols = train_ai_model(all_data)
+        joblib.dump((model_new, feature_cols), MODEL_PATH)
+    else:
+        print("📦 既存モデルを使用")
+        model_new, feature_cols = joblib.load(MODEL_PATH)
 
     print("新AI推論中...")
     ai_list = ai_predict(model_new, feature_cols, all_data, threshold=0.55, top_n=20)
