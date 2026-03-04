@@ -787,7 +787,7 @@ def run_screening():
 
     # ★ 市場フィルタ
     symbols = symbols[symbols["市場"].isin(TARGET_MARKETS)]
-    symbols = symbols.head(200)
+    #テストで銘柄数を減らす時に使用→symbols = symbols.head(200)
 
     print(f"対象市場: {TARGET_MARKETS}")
     print(f"対象銘柄数: {len(symbols)}")
@@ -900,6 +900,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
