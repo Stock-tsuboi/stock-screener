@@ -778,75 +778,64 @@ def backtest_ai_only(ai_list, all_data, days=200):
 
 
 # =========================================================
-# Step14　メイン処理
+# Step14　メイン処理（完全修正版）
 # =========================================================
 def run_screening():
+
     print("日本株銘柄リストを読み込み中...")
     symbols = load_symbol_list()
 
-    # ★ グロース市場だけに絞る
+    # ★ 市場フィルタ
     symbols = symbols[symbols["市場"].isin(TARGET_MARKETS)]
     symbols = symbols.head(200)
+
     print(f"対象市場: {TARGET_MARKETS}")
     print(f"対象銘柄数: {len(symbols)}")
 
-    api_key = os.getenv("JQ_API_KEY")
-    if not api_key:
-        raise RuntimeError("環境変数 JQ_API_KEY が設定されていません。")
-    headers = {"x-api-key": api_key}
-
+    # =====================================================
+    # Step14-1 データ更新
+    # =====================================================
     print("\nDuckDB + yfinance 差分更新...")
     update_duckdb_from_yfinance(symbols, retrain=need_retrain(MODEL_PATH))
 
     print("\nDuckDBから株価読み込み...")
+    all_data = load_all_data_from_duckdb(symbols)
 
-    try:
-        all_data = load_all_data_from_duckdb(symbols)
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise
-
+    # =====================================================
+    # Step14-2 旧ロジック
+    # =====================================================
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
+
     model_old = load_ai_model()
 
     results = Parallel(n_jobs=-1, backend="loky")(
-        delayed(analyze_symbol)(row["コード"], row["銘柄名"], model_old, all_data)
+        delayed(analyze_symbol)(
+            row["コード"],
+            row["銘柄名"],
+            model_old,
+            all_data
+        )
         for _, row in symbols.iterrows()
     )
 
     results = [r for r in results if r is not None]
 
-    print("\n===== 初動→継続（旧ロジック）上位20 =====\n")
-    normal_signals = [r for r in results if r["route"] == "normal"]
-    if normal_signals:
-        df_normal = (
-            pd.DataFrame(normal_signals)
-            .sort_values("AI上昇確率", ascending=False)
-            .head(20)
-        )
-        print(df_normal.to_string(index=False))
+    df_old = pd.DataFrame(results)
+
+    if not df_old.empty:
+        df_old["旧ロジック判定"] = df_old["route"]
+        df_old["旧AI確率"] = df_old["AI上昇確率"]
+        df_old["symbol"] = df_old["コード"] + ".T"
+        df_old = df_old[["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]]
     else:
-        print("該当なし")
-
-    print("\n===== AI単独（旧ロジック）上位20 =====\n")
-    ai_only_signals = [r for r in results if r["route"] == "ai_only"]
-    if ai_only_signals:
-        df_ai = (
-            pd.DataFrame(ai_only_signals)
-            .sort_values("AI上昇確率", ascending=False)
-            .head(20)
+        df_old = pd.DataFrame(
+            columns=["symbol","銘柄名","旧ロジック判定","旧AI確率"]
         )
-        print(df_ai.to_string(index=False))
-    else:
-        print("該当なし")
 
-    if ai_only_signals:
-        print("\n===== 旧ロジック AI単独 バックテスト =====")
-        codes_old = [r["コード"] + ".T" for r in ai_only_signals]
-        backtest_ai_only(codes_old, all_data, days=200)
-
-    print("\n\n===== 新AIロジック（精度最大化AI） =====")
+    # =====================================================
+    # Step14-3 新AIロジック
+    # =====================================================
+    print("\n===== 新AIロジック（精度最大化AI） =====")
     print("新AIモデル確認中...")
 
     if need_retrain(MODEL_PATH, days=7):
@@ -858,57 +847,42 @@ def run_screening():
         model_new, feature_cols = joblib.load(MODEL_PATH)
 
     print("新AI推論中...")
-    ai_list = ai_predict(model_new, feature_cols, all_data, threshold=0.55, top_n=20)
+    ai_list = ai_predict(
+        model_new,
+        feature_cols,
+        all_data,
+        threshold=0.0,   # ← デバッグ用（後で戻す）
+        top_n=50
+    )
 
-    print("\n===== 新AI（精度最大化）上位20 =====\n")
+    print("\n===== 新AI 上位 =====\n")
     for symbol, prob in ai_list:
         print(f"{symbol}: {prob:.3f}")
-    df_new_ai = pd.DataFrame(ai_list, columns=["symbol", "新AI確率"])
 
-    df_merge = df_merge.merge(
-        df_new_ai,
-        on="symbol",
-        how="left"
-    )
+    df_new = pd.DataFrame(ai_list, columns=["symbol","新AI確率"])
 
-    df_merge["新AI確率"] = df_merge["新AI確率"].fillna(0)
-
-    df_merge["新AI順位"] = (
-        df_merge["新AI確率"]
-        .rank(ascending=False, method="min")
-        .fillna(999)
-        .astype(int)
-    )
-    if ai_list:
-        print("\n===== 新AI バックテスト =====")
-        codes_new = [s for s, p in ai_list]
-        backtest_ai_only(codes_new, all_data, days=200)
-
-    print("\n\n===== 統合ビュー（旧ロジック × 新AIロジック） =====")
-
-    df_old = pd.DataFrame(results)
-
-    def convert_route(row):
-        if row["route"] == "normal":
-            return row.get("タイプ", "初動/継続")
-        elif row["route"] == "ai_only":
-            return "AI単独（旧）"
-        return "該当なし"
-
-    if not df_old.empty:
-        df_old["旧ロジック判定"] = df_old.apply(convert_route, axis=1)
-        df_old["旧AI確率"] = df_old["AI上昇確率"]
-        df_old["symbol"] = df_old["コード"] + ".T"
-        df_old = df_old[["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]]
+    if not df_new.empty:
+        df_new["新AI順位"] = (
+            df_new["新AI確率"]
+            .rank(ascending=False, method="min")
+            .astype(int)
+        )
     else:
-        df_old = pd.DataFrame(
-            columns=["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]
+        df_new = pd.DataFrame(
+            columns=["symbol","新AI確率","新AI順位"]
         )
 
-    df_new = pd.DataFrame(ai_list, columns=["symbol", "新AI確率"])
-    df_new["新AI順位"] = df_new["新AI確率"].rank(ascending=False).astype(int)
+    # =====================================================
+    # Step14-4 統合ビュー（ここで初めてmerge）
+    # =====================================================
+    print("\n===== 統合ビュー（旧 × 新AI） =====")
 
-    df_merge = pd.merge(df_old, df_new, on="symbol", how="outer")
+    df_merge = pd.merge(
+        df_old,
+        df_new,
+        on="symbol",
+        how="outer"
+    )
 
     df_merge["銘柄名"] = df_merge["銘柄名"].fillna("不明")
     df_merge["旧ロジック判定"] = df_merge["旧ロジック判定"].fillna("該当なし")
@@ -926,6 +900,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
