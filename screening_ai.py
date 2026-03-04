@@ -333,7 +333,7 @@ def train_ai_model(all_data):
 
 
 # =========================================================
-# Step10　推論処理（新AI・高速一括版）
+# Step10　推論処理（新AI・超高速版）
 # =========================================================
 def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
@@ -347,14 +347,10 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
             continue
 
         try:
-            df2 = create_features(df)
-            if df2.empty:
-                continue
+            features = create_features_fast(df)
 
-            latest = df2.iloc[-1].copy()
-            latest["symbol"] = symbol
-
-            rows.append(latest)
+            features["symbol"] = symbol
+            rows.append(features)
 
         except Exception as e:
             print(f"[FEATURE ERROR] {symbol}: {e}")
@@ -390,118 +386,121 @@ EXCLUDE_CODES = []
 
 
 # =========================================================
-# Step11　本物のDuckDB差分更新（重複完全防止）
+# Step11　DuckDB差分更新（並列版）
 # =========================================================
-
-import duckdb
-import yfinance as yf
-import pandas as pd
-from datetime import timedelta
-
-DB_PATH = "market.db"
-
-
 def update_duckdb_from_yfinance(symbols):
+
+    print("DuckDB並列更新開始...")
+
+    codes = symbols["コード"].tolist()
+
+    # 並列実行（CPUの70%程度を推奨）
+    n_jobs = max(1, os.cpu_count() // 2)
+
+    results = Parallel(n_jobs=n_jobs, backend="loky")(
+        delayed(update_one_symbol)(code) for code in codes
+    )
+
+    total_rows = sum(results)
+
+    print(f"✔ 更新完了　追加件数合計: {total_rows}")
+    
+# =========================================================
+# Step11c　並列DL用：1銘柄更新関数
+# =========================================================
+def update_one_symbol(code):
+
+    import duckdb
+    import yfinance as yf
+    from datetime import timedelta
 
     conn = duckdb.connect(DB_PATH)
 
-    # ① テーブル作成（主キー付き）
+    last_date = conn.execute("""
+        SELECT MAX(date)
+        FROM prices
+        WHERE code = ?
+    """, [code]).fetchone()[0]
+
+    if last_date is None:
+        start_date = "2020-01-01"
+    else:
+        start_date = str(last_date + timedelta(days=1))
+
+    symbol = f"{code}.T"
+
+    df = yf.download(symbol, start=start_date, progress=False)
+
+    if df.empty:
+        conn.close()
+        return 0
+
+    df = df.reset_index()
+
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    df.columns = [str(c).lower() for c in df.columns]
+
+    required = {"date","open","high","low","close","volume"}
+    if not required.issubset(df.columns):
+        conn.close()
+        return 0
+
+    df["code"] = code
+    df = df[["code","date","open","high","low","close","volume"]]
+
+    conn.register("tmp_df", df)
+
     conn.execute("""
-    CREATE TABLE IF NOT EXISTS prices (
-        code TEXT,
-        date DATE,
-        open DOUBLE,
-        high DOUBLE,
-        low DOUBLE,
-        close DOUBLE,
-        volume DOUBLE,
-        PRIMARY KEY (code, date)
-    )
+        INSERT OR IGNORE INTO prices
+        SELECT * FROM tmp_df
     """)
 
-    print("DuckDB更新開始...")
-
-    for code in symbols["コード"]:
-        symbol = f"{code}.T"
-
-        # ② 銘柄ごとの最終日取得
-        last_date = conn.execute("""
-            SELECT MAX(date)
-            FROM prices
-            WHERE code = ?
-        """, [code]).fetchone()[0]
-
-        if last_date is None:
-            start_date = "2020-01-01"
-        else:
-            start_date = str(last_date + timedelta(days=1))
-
-        print(f"{symbol} → {start_date} 以降取得")
-
-        df = yf.download(symbol, start=start_date, progress=False)
-
-        if df.empty:
-            print("  → 更新なし")
-            continue
-
-        df = df.reset_index()
-        # MultiIndex対策
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        df.columns = [str(c).lower() for c in df.columns]
-
-        required = {"date", "open", "high", "low", "close", "volume"}
-        if not required.issubset(df.columns):
-            print("  → 必要列不足スキップ")
-            continue
-
-        df["code"] = code
-        df = df[["code", "date", "open", "high", "low", "close", "volume"]]
-
-        conn.register("tmp_df", df)
-
-        # ③ 重複を無視してINSERT
-        conn.execute("""
-            INSERT OR IGNORE INTO prices
-            SELECT * FROM tmp_df
-        """)
-
-        conn.unregister("tmp_df")
-
-        print(f"  → {len(df)}件処理")
-
+    conn.unregister("tmp_df")
     conn.close()
-    print("DuckDB更新完了")
-    
+
+    return len(df)
+
+# =========================================================
+# Step11b　DuckDB一括ロード高速版
+# =========================================================
 def load_all_data_from_duckdb(symbols):
 
     conn = duckdb.connect(DB_PATH)
 
-    print("DuckDBから株価ロード中...")
+    print("DuckDBから株価一括ロード中...")
+
+    # ① 対象コード取得
+    codes = tuple(symbols["コード"].tolist())
+
+    query = f"""
+        SELECT code, date, open, high, low, close, volume
+        FROM prices
+        WHERE code IN {codes}
+        ORDER BY code, date
+    """
+
+    df = conn.execute(query).df()
+    conn.close()
+
+    if df.empty:
+        print("データなし")
+        return {}
+
+    df["date"] = pd.to_datetime(df["date"])
 
     all_data = {}
 
-    for code in symbols["コード"]:
+    # ② groupbyで分割
+    for code, g in df.groupby("code"):
 
-        df = conn.execute("""
-            SELECT date, open, high, low, close, volume
-            FROM prices
-            WHERE code = ?
-            ORDER BY date
-        """, [code]).df()
+        g = g.set_index("date")
 
-        if df.empty:
-            continue
+        g = g[["open","high","low","close","volume"]]
+        g.columns = ["Open","High","Low","Close","Volume"]
 
-        df["date"] = pd.to_datetime(df["date"])
-        df = df.set_index("date")
-
-        df.columns = ["Open", "High", "Low", "Close", "Volume"]
-
-        all_data[f"{code}.T"] = df
-
-    conn.close()
+        all_data[f"{code}.T"] = g
 
     print(f"ロード完了: {len(all_data)}銘柄")
 
@@ -836,6 +835,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
