@@ -799,7 +799,7 @@ def run_screening():
     headers = {"x-api-key": api_key}
 
     print("\nDuckDB + yfinance 差分更新...")
-    update_duckdb_from_yfinance(symbols, retrain=need_retrain())
+    update_duckdb_from_yfinance(symbols, retrain=need_retrain(MODEL_PATH))
 
     print("\nDuckDBから株価読み込み...")
 
@@ -914,6 +914,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
