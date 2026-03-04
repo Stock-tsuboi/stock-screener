@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import numpy as np
 import pandas as pd
 import requests
+import duckdb
 from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LinearRegression
@@ -900,6 +901,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
