@@ -12,6 +12,18 @@ from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LinearRegression
 
+import datetime
+import joblib
+
+MODEL_PATH = "model_new.pkl"
+
+def need_retrain(model_path, days=7):
+    if not os.path.exists(model_path):
+        return True
+
+    mtime = datetime.datetime.fromtimestamp(os.path.getmtime(model_path))
+    return (datetime.datetime.now() - mtime).days >= days
+
 
 # =========================================================
 # Step1　設定：対象市場（全市場)
@@ -773,6 +785,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
