@@ -16,7 +16,15 @@ from sklearn.linear_model import LinearRegression
 import datetime
 import joblib
 
-MODEL_PATH = "model_new.pkl"
+
+# =========================================================
+# パス設定（絶対パス固定）
+# =========================================================
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+MODEL_PATH = os.path.join(BASE_DIR, "model_new.pkl")
+DB_PATH = os.path.join(BASE_DIR, "stock_data.duckdb")
+
 
 def need_retrain(model_path, days=7):
     if not os.path.exists(model_path):
@@ -24,11 +32,6 @@ def need_retrain(model_path, days=7):
 
     mtime = datetime.datetime.fromtimestamp(os.path.getmtime(model_path))
     return (datetime.datetime.now() - mtime).days >= days
-
-# =========================================================
-# DB設定
-# =========================================================
-DB_PATH = "stock_data.duckdb"
 
 
 # =========================================================
@@ -914,6 +917,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
