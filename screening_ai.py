@@ -24,6 +24,11 @@ def need_retrain(model_path, days=7):
     mtime = datetime.datetime.fromtimestamp(os.path.getmtime(model_path))
     return (datetime.datetime.now() - mtime).days >= days
 
+# =========================================================
+# DB設定
+# =========================================================
+DB_PATH = "stock_data.duckdb"
+
 
 # =========================================================
 # Step1　設定：対象市場（全市場)
@@ -895,6 +900,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
