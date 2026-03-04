@@ -386,24 +386,84 @@ EXCLUDE_CODES = []
 
 
 # =========================================================
-# Step11　DuckDB差分更新（並列版）
+# Step11　DuckDB差分更新（バッチDL版・最速）
 # =========================================================
 def update_duckdb_from_yfinance(symbols):
 
-    print("DuckDB並列更新開始...")
+    print("DuckDBバッチ更新開始...")
+
+    import yfinance as yf
+    import duckdb
+
+    conn = duckdb.connect(DB_PATH)
+
+    conn.execute("""
+    CREATE TABLE IF NOT EXISTS prices (
+        code TEXT,
+        date DATE,
+        open DOUBLE,
+        high DOUBLE,
+        low DOUBLE,
+        close DOUBLE,
+        volume DOUBLE,
+        PRIMARY KEY (code, date)
+    )
+    """)
 
     codes = symbols["コード"].tolist()
+    batch_size = 100  # ← ここ調整可能
 
-    # 並列実行（CPUの70%程度を推奨）
-    n_jobs = max(1, os.cpu_count() // 2)
+    total_inserted = 0
 
-    results = Parallel(n_jobs=n_jobs, backend="loky")(
-        delayed(update_one_symbol)(code) for code in codes
-    )
+    for i in range(0, len(codes), batch_size):
 
-    total_rows = sum(results)
+        batch_codes = codes[i:i+batch_size]
+        tickers = " ".join([f"{c}.T" for c in batch_codes])
 
-    print(f"✔ 更新完了　追加件数合計: {total_rows}")
+        print(f"取得中: {i} - {i+len(batch_codes)}")
+
+        df = yf.download(
+            tickers,
+            period="5d",
+            group_by="ticker",
+            progress=False,
+            threads=True
+        )
+
+        if df.empty:
+            continue
+
+        for code in batch_codes:
+
+            symbol = f"{code}.T"
+
+            if symbol not in df.columns.levels[0]:
+                continue
+
+            df_symbol = df[symbol].dropna().reset_index()
+
+            if df_symbol.empty:
+                continue
+
+            df_symbol.columns = [c.lower() for c in df_symbol.columns]
+
+            df_symbol["code"] = code
+            df_symbol = df_symbol[["code","date","open","high","low","close","volume"]]
+
+            conn.register("tmp_df", df_symbol)
+
+            conn.execute("""
+                INSERT OR IGNORE INTO prices
+                SELECT * FROM tmp_df
+            """)
+
+            conn.unregister("tmp_df")
+
+            total_inserted += len(df_symbol)
+
+    conn.close()
+
+    print(f"✔ 更新完了 追加件数: {total_inserted}")
     
 # =========================================================
 # Step11c　並列DL用：1銘柄更新関数
@@ -835,6 +895,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
