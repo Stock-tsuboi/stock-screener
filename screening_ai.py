@@ -419,7 +419,20 @@ def update_duckdb_from_yfinance(symbols):
     codes = symbols["コード"].tolist()
     batch_size = 100  # ← ここ調整可能
 
-    total_inserted = 0
+def update_duckdb_from_yfinance(symbols, retrain=False):
+
+    print("DuckDBバッチ更新開始...")
+
+    import yfinance as yf
+    import duckdb
+
+    conn = duckdb.connect(DB_PATH)
+
+    codes = symbols["コード"].tolist()
+    batch_size = 100
+
+    # 👇 ここを追加
+    period_setting = "1y" if retrain else "5d"
 
     for i in range(0, len(codes), batch_size):
 
@@ -430,7 +443,7 @@ def update_duckdb_from_yfinance(symbols):
 
         df = yf.download(
             tickers,
-            period="5d",
+            period=period_setting,
             group_by="ticker",
             progress=False,
             threads=True
@@ -786,7 +799,7 @@ def run_screening():
     headers = {"x-api-key": api_key}
 
     print("\nDuckDB + yfinance 差分更新...")
-    update_duckdb_from_yfinance(symbols)
+    update_duckdb_from_yfinance(symbols, retrain=need_retrain())
 
     print("\nDuckDBから株価読み込み...")
 
@@ -901,6 +914,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
