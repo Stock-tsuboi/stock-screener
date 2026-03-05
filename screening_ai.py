@@ -857,7 +857,7 @@ results = Parallel(
     for code, name in symbol_list
 )
 
-    results = [r for r in results if r is not None]
+results = [r for r in results if r is not None]
 
     df_old = pd.DataFrame(results)
 
@@ -939,6 +939,7 @@ results = Parallel(
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
