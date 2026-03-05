@@ -426,6 +426,9 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
 
     period_setting = "1y" if retrain else "5d"
 
+# =====================================================
+# Step11-2 バッチ取得ループ（安全版）
+# =====================================================
     for i in range(0, len(codes), batch_size):
 
         batch_codes = codes[i:i+batch_size]
@@ -442,25 +445,26 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
                 threads=True
             )
         except Exception as e:
-            print("DLエラー:", e)
+            print(f"⚠ ダウンロード失敗: {e}")
             continue
 
-        if df.empty:
+        if df is None or df.empty:
             continue
 
-        for code in batch_codes:
+    for code in batch_codes:
 
-            symbol = f"{code}.T"
+        symbol = f"{code}.T"
 
-            # マルチカラム構造対策
-            if symbol not in df.columns.get_level_values(0):
-                continue
+        if symbol not in df.columns.get_level_values(0):
+            continue
 
+        try:
             df_symbol = df[symbol].dropna().reset_index()
+        except Exception:
+            continue
 
-            if df_symbol.empty:
-                continue
-
+        if df_symbol.empty:
+            continue
             df_symbol.columns = [c.lower() for c in df_symbol.columns]
 
             df_symbol["code"] = code
@@ -900,6 +904,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
