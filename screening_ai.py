@@ -427,29 +427,40 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
     period_setting = "1y" if retrain else "5d"
 
 # =====================================================
-# Step11-2 バッチ取得ループ（安全版）
+# Step11-2 バッチ取得ループ（高速版）
 # =====================================================
-    for i in range(0, len(codes), batch_size):
 
-        batch_codes = codes[i:i+batch_size]
-        tickers = " ".join([f"{c}.T" for c in batch_codes])
+total_inserted = 0
 
-        print(f"取得中: {i} - {i+len(batch_codes)}")
+for i in range(0, len(codes), batch_size):
 
-        try:
-            df = yf.download(
-                tickers,
-                period=period_setting,
-                group_by="ticker",
-                progress=False,
-                threads=True
-            )
-        except Exception as e:
-            print(f"⚠ ダウンロード失敗: {e}")
-            continue
+    batch_codes = codes[i:i+batch_size]
+    tickers = " ".join([f"{c}.T" for c in batch_codes])
 
-        if df is None or df.empty:
-            continue
+    print(f"取得中: {i} - {i+len(batch_codes)}")
+
+    # -----------------------------
+    # Step11-2-1 Yahooから取得
+    # -----------------------------
+    try:
+        df = yf.download(
+            tickers,
+            period=period_setting,
+            group_by="ticker",
+            progress=False,
+            threads=True
+        )
+    except Exception as e:
+        print(f"⚠ ダウンロード失敗: {e}")
+        continue
+
+    if df is None or df.empty:
+        continue
+
+    # -----------------------------
+    # Step11-2-2 DataFrame整形
+    # -----------------------------
+    dfs = []
 
     for code in batch_codes:
 
@@ -465,25 +476,39 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
 
         if df_symbol.empty:
             continue
-            df_symbol.columns = [c.lower() for c in df_symbol.columns]
 
-            df_symbol["code"] = code
-            df_symbol = df_symbol[["code","date","open","high","low","close","volume"]]
+        df_symbol.columns = [c.lower() for c in df_symbol.columns]
 
-            conn.register("tmp_df", df_symbol)
+        df_symbol["code"] = code
 
-            conn.execute("""
-                INSERT OR IGNORE INTO prices
-                SELECT * FROM tmp_df
-            """)
+        df_symbol = df_symbol[
+            ["code","date","open","high","low","close","volume"]
+        ]
 
-            conn.unregister("tmp_df")
+        dfs.append(df_symbol)
 
-            total_inserted += len(df_symbol)
+    if not dfs:
+        continue
 
-    conn.close()
+    merged_df = pd.concat(dfs, ignore_index=True)
 
-    print(f"✔ 更新完了 追加件数: {total_inserted}")
+    # -----------------------------
+    # Step11-2-3 DuckDB一括INSERT
+    # -----------------------------
+    conn.register("tmp_df", merged_df)
+
+    conn.execute("""
+        INSERT OR IGNORE INTO prices
+        SELECT * FROM tmp_df
+    """)
+
+    conn.unregister("tmp_df")
+
+    total_inserted += len(merged_df)
+
+conn.close()
+
+print(f"✔ 更新完了 追加件数: {total_inserted}")
     
 # =========================================================
 # Step11c　並列DL用：1銘柄更新関数
@@ -904,6 +929,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
