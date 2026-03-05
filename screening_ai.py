@@ -815,7 +815,8 @@ def run_screening():
 
     # ★ 市場フィルタ
     symbols = symbols[symbols["市場"].isin(TARGET_MARKETS)]
-    #テストで銘柄数を減らす時に使用→symbols = symbols.head(200)
+    # テスト用
+    # symbols = symbols.head(200)
 
     print(f"対象市場: {TARGET_MARKETS}")
     print(f"対象銘柄数: {len(symbols)}")
@@ -836,40 +837,40 @@ def run_screening():
 
     model_old = load_ai_model()
 
-    # =========================================================
-    # Step14-2　旧ロジック解析（プロ高速版）
-    # =========================================================
-    
     print("旧ロジック解析開始...")
-    
+
     symbol_list = [
         (row["コード"], row["銘柄名"])
         for _, row in symbols.iterrows()
     ]
-    
+
     results = Parallel(
         n_jobs=-1,
-        backend="threading",   # ← loky → threading に変更
-        batch_size=50,         # ← バッチ処理
+        backend="threading",
+        batch_size=50,
         prefer="threads"
     )(
         delayed(analyze_symbol)(code, name, model_old, all_data)
         for code, name in symbol_list
     )
-    
+
     results = [r for r in results if r is not None]
-    
+
     df_old = pd.DataFrame(results)
-    
-        if not df_old.empty:
-            df_old["旧ロジック判定"] = df_old["route"]
-            df_old["旧AI確率"] = df_old["AI上昇確率"]
-            df_old["symbol"] = df_old["コード"] + ".T"
-            df_old = df_old[["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]]
-        else:
-            df_old = pd.DataFrame(
-                columns=["symbol","銘柄名","旧ロジック判定","旧AI確率"]
-            )
+
+    if not df_old.empty:
+        df_old["旧ロジック判定"] = df_old["route"]
+        df_old["旧AI確率"] = df_old["AI上昇確率"]
+        df_old["symbol"] = df_old["コード"] + ".T"
+
+        df_old = df_old[
+            ["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]
+        ]
+
+    else:
+        df_old = pd.DataFrame(
+            columns=["symbol","銘柄名","旧ロジック判定","旧AI確率"]
+        )
 
     # =====================================================
     # Step14-3 新AIロジック
@@ -878,41 +879,52 @@ def run_screening():
     print("新AIモデル確認中...")
 
     if need_retrain(MODEL_PATH, days=7):
+
         print("🔄 週次再学習を実行")
+
         model_new, feature_cols = train_ai_model(all_data)
+
         joblib.dump((model_new, feature_cols), MODEL_PATH)
+
     else:
+
         print("📦 既存モデルを使用")
+
         model_new, feature_cols = joblib.load(MODEL_PATH)
 
     print("新AI推論中...")
+
     ai_list = ai_predict(
         model_new,
         feature_cols,
         all_data,
-        threshold=0.0,   # ← デバッグ用（後で戻す）
+        threshold=0.0,
         top_n=50
     )
 
     print("\n===== 新AI 上位 =====\n")
+
     for symbol, prob in ai_list:
         print(f"{symbol}: {prob:.3f}")
 
     df_new = pd.DataFrame(ai_list, columns=["symbol","新AI確率"])
 
     if not df_new.empty:
+
         df_new["新AI順位"] = (
             df_new["新AI確率"]
             .rank(ascending=False, method="min")
             .astype(int)
         )
+
     else:
+
         df_new = pd.DataFrame(
             columns=["symbol","新AI確率","新AI順位"]
         )
 
     # =====================================================
-    # Step14-4 統合ビュー（ここで初めてmerge）
+    # Step14-4 統合ビュー
     # =====================================================
     print("\n===== 統合ビュー（旧 × 新AI） =====")
 
@@ -939,6 +951,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
