@@ -606,7 +606,8 @@ def load_all_data_from_duckdb(symbols):
         all_data[f"{code}.T"] = g
 
     print(f"ロード完了: {len(all_data)}銘柄")
-
+    import gc
+    gc.collect()
     return all_data
 
 # =========================================================
@@ -835,15 +836,26 @@ def run_screening():
 
     model_old = load_ai_model()
 
-    results = Parallel(n_jobs=-1, backend="loky")(
-        delayed(analyze_symbol)(
-            row["コード"],
-            row["銘柄名"],
-            model_old,
-            all_data
-        )
-        for _, row in symbols.iterrows()
-    )
+# =========================================================
+# Step14-2　旧ロジック解析（プロ高速版）
+# =========================================================
+
+print("旧ロジック解析開始...")
+
+symbol_list = [
+    (row["コード"], row["銘柄名"])
+    for _, row in symbols.iterrows()
+]
+
+results = Parallel(
+    n_jobs=-1,
+    backend="threading",   # ← loky → threading に変更
+    batch_size=50,         # ← バッチ処理
+    prefer="threads"
+)(
+    delayed(analyze_symbol)(code, name, model_old, all_data)
+    for code, name in symbol_list
+)
 
     results = [r for r in results if r is not None]
 
@@ -927,6 +939,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
