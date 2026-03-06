@@ -870,7 +870,7 @@ def backtest_ai_only(ai_list, all_data, days=200):
     print()
 
 # =========================================================
-# Step15　最強AIランキング（期待値AI）
+# Step15　最強AIランキング（本物の期待値AI）
 # =========================================================
 def strongest_ai_ranking(model, feature_cols, all_data):
 
@@ -878,35 +878,58 @@ def strongest_ai_ranking(model, feature_cols, all_data):
 
     for symbol, df in all_data.items():
 
-        if len(df) < 120:
+        if df is None or len(df) < 120:
             continue
 
-        df = add_features(df)
+        try:
 
-        if len(df) == 0:
+            df = create_features(df)
+
+            if df.empty:
+                continue
+
+            last = df.iloc[-1]
+
+            X = last[feature_cols].values.reshape(1, -1)
+
+            prob = model.predict_proba(X)[0][1]
+
+            # -------------------------
+            # 過去リターン計算
+            # -------------------------
+            future_returns = (
+                df["Close"].shift(-5) / df["Close"] - 1
+            )
+
+            avg_up = future_returns[future_returns > 0].mean()
+            avg_down = future_returns[future_returns < 0].mean()
+
+            if pd.isna(avg_up):
+                avg_up = 0
+
+            if pd.isna(avg_down):
+                avg_down = 0
+
+            # -------------------------
+            # 期待値
+            # -------------------------
+            expectancy = prob * avg_up + (1 - prob) * avg_down
+
+            rows.append({
+                "symbol": symbol,
+                "AI上昇確率": prob,
+                "平均上昇率": avg_up,
+                "平均下落率": avg_down,
+                "期待値": expectancy
+            })
+
+        except Exception:
             continue
-
-        last = df.iloc[-1]
-
-        X = last[feature_cols].values.reshape(1, -1)
-
-        prob = model.predict_proba(X)[0][1]
-
-        # ボラティリティから期待上昇幅推定
-        vol = df["close"].pct_change().std()
-
-        expected_move = vol * 3
-
-        expected_value = prob * expected_move
-
-        rows.append({
-            "symbol": symbol,
-            "AI上昇確率": prob,
-            "期待上昇率": expected_move,
-            "期待値": expected_value
-        })
 
     df_rank = pd.DataFrame(rows)
+
+    if df_rank.empty:
+        return df_rank
 
     df_rank = df_rank.sort_values(
         "期待値",
@@ -914,6 +937,7 @@ def strongest_ai_ranking(model, feature_cols, all_data):
     )
 
     return df_rank
+    
 # =========================================================
 # Step14　メイン処理（完全修正版）
 # =========================================================
@@ -1073,6 +1097,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
