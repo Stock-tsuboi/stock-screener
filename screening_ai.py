@@ -1031,6 +1031,24 @@ def run_screening():
 
     print("\nDuckDBから株価読み込み...")
     all_data = load_all_data_from_duckdb(symbols)
+    
+    # =====================================================
+    # 新AIモデル準備
+    # =====================================================
+    
+    if need_retrain(MODEL_PATH):
+    
+        print("\n===== 新AI 学習 =====")
+    
+        model_new, feature_cols = train_ai_model(all_data)
+    
+        joblib.dump((model_new, feature_cols), MODEL_PATH)
+    
+    else:
+    
+        print("\n===== 新AI 読み込み =====")
+    
+        model_new, feature_cols = joblib.load(MODEL_PATH)
 
     # =====================================================
     # Step14-2 旧ロジック
@@ -1209,6 +1227,7 @@ print(df_fast.head(20).to_string(index=False))
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
