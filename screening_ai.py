@@ -1130,12 +1130,6 @@ def run_screening():
     print("\n===== 最強AI（年利最大化ランキング） =====")
     print("===== 超高速AIランキング =====")
 
-    df_fast = fastest_ai_ranking(
-        model,
-        feature_cols,
-        all_data
-    )
-
     if not df_fast.empty:
         print(df_fast.head(20))
         
@@ -1170,12 +1164,31 @@ def run_screening():
 
     print(df_merge.to_string(index=False))
 
+    df_merge = df_merge.sort_values("新AI順位").head(50)
+
+    print(df_merge.to_string(index=False))
+
+
+# =========================================================
+# Step16 超高速AIランキング
+# =========================================================
+
+print("\n===== 超高速AIランキング =====")
+
+df_fast = strongest_ai_ranking(
+    model_new,
+    feature_cols,
+    all_data
+)
+
+print(df_fast.head(20).to_string(index=False))
 
 # =========================================================
 # Step15　実行
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
