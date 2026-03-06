@@ -15,7 +15,8 @@ from sklearn.linear_model import LinearRegression
 
 import datetime
 import joblib
-
+import warnings
+warnings.filterwarnings("ignore")
 
 # =========================================================
 # パス設定（絶対パス固定）
@@ -790,8 +791,8 @@ def analyze_symbol(code, name, model, all_data):
         ]
     )
 
-    ai_prob = model.predict_proba(features)[0][1]
-
+    ai_prob = model.predict_proba(features.values)[0][1]
+    
     if ai_prob >= BEST_TH:
         return {
             "route": "ai_only",
@@ -873,7 +874,7 @@ def backtest_ai_only(ai_list, all_data, days=200):
 # Step15　最強AIランキング（本物の期待値AI）
 # =========================================================
 def strongest_ai_ranking(model, feature_cols, all_data):
-
+    
     rows = []
 
     for symbol, df in all_data.items():
@@ -890,7 +891,9 @@ def strongest_ai_ranking(model, feature_cols, all_data):
 
             last = df.iloc[-1]
 
-            X = last[feature_cols].values.reshape(1, -1)
+            feat = last.to_dict()
+
+            X = pd.DataFrame([feat]).reindex(columns=feature_cols).fillna(0)
 
             prob = model.predict_proba(X)[0][1]
 
@@ -937,7 +940,73 @@ def strongest_ai_ranking(model, feature_cols, all_data):
     )
 
     return df_rank
-    
+# =========================================================
+# Step16　超高速AIランキングエンジン
+# =========================================================
+def fastest_ai_ranking(model, feature_cols, all_data):
+
+    import numpy as np
+    import pandas as pd
+    import warnings
+
+    warnings.filterwarnings("ignore")
+
+    rows = []
+
+    for symbol, df in all_data.items():
+
+        # データ不足スキップ
+        if len(df) < 120:
+            continue
+
+        # 特徴量生成
+        df_feat = create_features(df)
+
+        if len(df_feat) == 0:
+            continue
+
+        # 最新行
+        last = df_feat.iloc[-1]
+
+        try:
+            X = pd.DataFrame([last])[feature_cols].fillna(0)
+
+            prob = model.predict_proba(X)[0][1]
+
+        except:
+            continue
+
+        # ===== 実データベース期待値 =====
+
+        returns = df["close"].pct_change().dropna()
+
+        if len(returns) < 20:
+            continue
+
+        vol = returns.std()
+
+        expected_move = vol * 3
+
+        expected_value = prob * expected_move
+
+        rows.append({
+            "symbol": symbol,
+            "AI上昇確率": prob,
+            "期待上昇率": expected_move,
+            "期待値": expected_value
+        })
+
+    if len(rows) == 0:
+        return pd.DataFrame()
+
+    df_rank = pd.DataFrame(rows)
+
+    df_rank = df_rank.sort_values(
+        "期待値",
+        ascending=False
+    )
+
+    return df_rank    
 # =========================================================
 # Step14　メイン処理（完全修正版）
 # =========================================================
@@ -1059,7 +1128,17 @@ def run_screening():
     # Step16 最強AI（年利最大化）
     # =====================================================
     print("\n===== 最強AI（年利最大化ランキング） =====")
-    
+    print("===== 超高速AIランキング =====")
+
+    df_fast = fastest_ai_ranking(
+        model,
+        feature_cols,
+        all_data
+    )
+
+    if not df_fast.empty:
+        print(df_fast.head(20))
+        
     df_strong = strongest_ai_ranking(
         model_new,
         feature_cols,
@@ -1097,6 +1176,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
