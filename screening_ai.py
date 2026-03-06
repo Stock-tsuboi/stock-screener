@@ -869,7 +869,51 @@ def backtest_ai_only(ai_list, all_data, days=200):
     print(f"平均リターン：{avg_return*100:.2f}%")
     print()
 
+# =========================================================
+# Step15　最強AIランキング（期待値AI）
+# =========================================================
+def strongest_ai_ranking(model, feature_cols, all_data):
 
+    rows = []
+
+    for symbol, df in all_data.items():
+
+        if len(df) < 120:
+            continue
+
+        df = add_features(df)
+
+        if len(df) == 0:
+            continue
+
+        last = df.iloc[-1]
+
+        X = last[feature_cols].values.reshape(1, -1)
+
+        prob = model.predict_proba(X)[0][1]
+
+        # ボラティリティから期待上昇幅推定
+        vol = df["close"].pct_change().std()
+
+        expected_move = vol * 3
+
+        expected_value = prob * expected_move
+
+        rows.append({
+            "symbol": symbol,
+            "AI上昇確率": prob,
+            "期待上昇率": expected_move,
+            "期待値": expected_value
+        })
+
+    df_rank = pd.DataFrame(rows)
+
+    df_rank = df_rank.sort_values(
+        "期待値",
+        ascending=False
+    )
+
+    return df_rank
 # =========================================================
 # Step14　メイン処理（完全修正版）
 # =========================================================
@@ -1011,7 +1055,8 @@ def run_screening():
         on="symbol",
         how="outer"
     )
-
+    
+    df_merge = strongest_ai_ranking(df_merge)
     df_merge["銘柄名"] = df_merge["銘柄名"].fillna("不明")
     df_merge["旧ロジック判定"] = df_merge["旧ロジック判定"].fillna("該当なし")
     df_merge["旧AI確率"] = df_merge["旧AI確率"].fillna(0)
@@ -1028,6 +1073,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
