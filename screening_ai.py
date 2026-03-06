@@ -385,7 +385,72 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
     print(f"✔ 閾値 {threshold} 以上: {len(df_filtered)}銘柄")
 
     return list(zip(df_filtered["symbol"], df_filtered["prob"]))[:top_n]
+# =========================================================
+# Step10c　最強AIランキング（年利最大化）
+# =========================================================
+def strongest_ai_ranking(model, feature_cols, all_data):
 
+    print("最強AIランキング計算中...")
+
+    rows = []
+
+    for symbol, df in all_data.items():
+
+        if df is None or len(df) < 120:
+            continue
+
+        try:
+            feat = create_features_fast(df)
+        except:
+            continue
+
+        X = pd.DataFrame([feat])[feature_cols].fillna(0)
+
+        prob = model.predict_proba(X)[0][1]
+
+        high = df["High"]
+        low = df["Low"]
+        close = df["Close"]
+
+        atr = (high - low).rolling(14).mean().iloc[-1]
+        price = close.iloc[-1]
+
+        if price <= 0:
+            continue
+
+        expected_move = atr / price
+
+        ev = prob * expected_move
+        win = prob
+        moon = prob * (expected_move ** 2)
+
+        rows.append(
+            {
+                "symbol": symbol,
+                "EV": ev,
+                "WIN": win,
+                "MOON": moon
+            }
+        )
+
+    df = pd.DataFrame(rows)
+
+    if df.empty:
+        return df
+
+    df["EV_rank"] = df["EV"].rank(ascending=False)
+    df["WIN_rank"] = df["WIN"].rank(ascending=False)
+    df["MOON_rank"] = df["MOON"].rank(ascending=False)
+
+    df["TOTAL_SCORE"] = (
+        df["EV_rank"]
+        + df["WIN_rank"]
+        + df["MOON_rank"]
+    )
+
+    df = df.sort_values("TOTAL_SCORE")
+
+    return df.head(50)
 
 # =========================================================
 # Step10b　パラメータ設定
@@ -922,7 +987,19 @@ def run_screening():
         df_new = pd.DataFrame(
             columns=["symbol","新AI確率","新AI順位"]
         )
-
+    # =====================================================
+    # Step16 最強AI（年利最大化）
+    # =====================================================
+    print("\n===== 最強AI（年利最大化ランキング） =====")
+    
+    df_strong = strongest_ai_ranking(
+        model_new,
+        feature_cols,
+        all_data
+    )
+    
+    print(df_strong.head(20))
+    
     # =====================================================
     # Step14-4 統合ビュー
     # =====================================================
@@ -951,6 +1028,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
