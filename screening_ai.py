@@ -1038,7 +1038,28 @@ def run_screening():
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
 
     model_old = load_ai_model()
-
+    
+    # =====================================================
+    # Step14-3 新AIモデル
+    # =====================================================
+    print("\n===== 新AIモデル準備 =====")
+    
+    if need_retrain(MODEL_PATH):
+    
+        print("AI再学習開始...")
+    
+        model_new, feature_cols = train_ai_model(all_data)
+    
+        joblib.dump((model_new, feature_cols), MODEL_PATH)
+    
+        print("✔ 新AIモデル保存")
+    
+    else:
+    
+        print("保存モデル読み込み")
+    
+        model_new, feature_cols = joblib.load(MODEL_PATH)
+        
     print("旧ロジック解析開始...")
 
     symbol_list = [
@@ -1188,6 +1209,7 @@ print(df_fast.head(20).to_string(index=False))
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
