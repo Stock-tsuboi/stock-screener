@@ -1168,9 +1168,6 @@ def run_screening():
     # =====================================================
     print("\n===== 最強AI（年利最大化ランキング） =====")
     print("===== 超高速AIランキング =====")
-
-    if not df_fast.empty:
-        print(df_fast.head(20))
         
     df_strong = strongest_ai_ranking(
         model_new,
@@ -1207,26 +1204,12 @@ def run_screening():
 
     print(df_merge.to_string(index=False))
 
-
 # =========================================================
-# Step23 超高速AIランキング
-# =========================================================
-
-print("\n===== 超高速AIランキング =====")
-
-df_fast = strongest_ai_ranking(
-    model_new,
-    feature_cols,
-    all_data
-)
-
-print(df_fast.head(20).to_string(index=False))
-
-# =========================================================
-# Step24　実行
+# Step23　実行
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
