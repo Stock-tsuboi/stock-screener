@@ -686,7 +686,10 @@ def analyze_symbol(code, name, model, all_data):
     symbol = f"{code}.T"
 
     try:
-        data = all_data[symbol].dropna()
+        data = all_data[symbol].copy()
+
+        # 必要カラムのNaN除去
+        data = data.dropna(subset=["Close","High","Low","Volume"])
     except KeyError:
         return None
 
@@ -877,17 +880,12 @@ def strongest_ai_ranking(model, feature_cols, all_data):
     
     rows = []
 
-    for symbol, df in all_data.items():
+    for symbol, df in feature_data.items():
 
-        if df is None or len(df) < 120:
+        if df is None or len(df) == 0:
             continue
 
         try:
-
-            df = create_features(df)
-
-            if df.empty:
-                continue
 
             last = df.iloc[-1]
 
@@ -916,7 +914,7 @@ def strongest_ai_ranking(model, feature_cols, all_data):
             # -------------------------
             # STEP20-2 期待値
             # -------------------------
-            expectancy = prob * avg_up + (1 - prob) * avg_down
+            expectancy = prob * avg_up - (1 - prob) * avg_down
 
             rows.append({
                 "symbol": symbol,
@@ -1031,6 +1029,21 @@ def run_screening():
 
     print("\nDuckDBから株価読み込み...")
     all_data = load_all_data_from_duckdb(symbols)
+
+    # ==============================
+    # 特徴量を事前生成（高速化）
+    # ==============================
+    feature_data = {}
+
+    for symbol, df in all_data.items():
+
+        if df is None or len(df) < 120:
+            continue
+
+        try:
+            feature_data[symbol] = create_features(df)
+        except Exception:
+            continue
     
     # =====================================================
     # STEP22-2 新AIモデル準備
@@ -1139,7 +1152,7 @@ def run_screening():
     ai_list = ai_predict(
         model_new,
         feature_cols,
-        all_data,
+        feature_data,
         threshold=0.0,
         top_n=50
     )
@@ -1219,6 +1232,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
