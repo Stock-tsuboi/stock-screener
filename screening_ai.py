@@ -389,7 +389,7 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 # =========================================================
 # Step13　最強AIランキング（年利最大化）
 # =========================================================
-def strongest_ai_ranking(model, feature_cols, all_data):
+def strongest_ai_ranking_V1(model, feature_cols, all_data):
 
     print("最強AIランキング計算中...")
 
@@ -1176,6 +1176,8 @@ def run_screening():
     )
     
     print(df_strong.head(20))
+    # symbol列を作る
+    df_strong["symbol"] = df_strong["symbol"]
     
     # =====================================================
     # Step22-7 統合ビュー
@@ -1188,12 +1190,15 @@ def run_screening():
         on="symbol",
         how="outer"
     )
-    
-    df_merge = strongest_ai_ranking(
-        model_new,
-        feature_cols,
-        all_data
+    # 最強AIを統合
+    df_merge = pd.merge(
+        df_merge,
+        df_strong,
+        on="symbol",
+        how="left"
     )
+    
+
     df_merge["銘柄名"] = df_merge["銘柄名"].fillna("不明")
     df_merge["旧ロジック判定"] = df_merge["旧ロジック判定"].fillna("該当なし")
     df_merge["旧AI確率"] = df_merge["旧AI確率"].fillna(0)
@@ -1213,6 +1218,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
