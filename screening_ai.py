@@ -1189,7 +1189,11 @@ def run_screening():
         how="outer"
     )
     
-    df_merge = strongest_ai_ranking(df_merge)
+    df_merge = strongest_ai_ranking(
+        model_new,
+        feature_cols,
+        all_data
+    )
     df_merge["銘柄名"] = df_merge["銘柄名"].fillna("不明")
     df_merge["旧ロジック判定"] = df_merge["旧ロジック判定"].fillna("該当なし")
     df_merge["旧AI確率"] = df_merge["旧AI確率"].fillna(0)
@@ -1209,6 +1213,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
