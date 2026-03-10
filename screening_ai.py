@@ -978,7 +978,7 @@ def fastest_ai_ranking(model, feature_cols, all_data):
 
         # ===== 実データベース期待値 =====
 
-        returns = df["close"].pct_change().dropna()
+        returns = df["Close"].pct_change().dropna()
 
         if len(returns) < 20:
             continue
@@ -1083,6 +1083,7 @@ def run_screening():
     symbol_list = [
         (row["コード"], row["銘柄名"])
         for _, row in symbols.iterrows()
+        if f"{row['コード']}.T" in dict(ai_list)
     ]
 
     results = Parallel(
@@ -1218,6 +1219,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
