@@ -389,7 +389,7 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 # =========================================================
 # Step13　最強AIランキング（年利最大化）
 # =========================================================
-def strongest_ai_ranking_V1(model, feature_cols, all_data):
+def strongest_ai_ranking_V1(model, feature_cols, all_data, feature_data):
 
     print("最強AIランキング計算中...")
 
@@ -401,7 +401,9 @@ def strongest_ai_ranking_V1(model, feature_cols, all_data):
             continue
 
         try:
-            feat = create_features_fast(df)
+            feat = feature_data.get(symbol)
+            if feat is None:
+                continue
         except:
             continue
 
@@ -419,7 +421,10 @@ def strongest_ai_ranking_V1(model, feature_cols, all_data):
         if price <= 0:
             continue
 
-        expected_move = atr / price
+        ret20 = close.pct_change(20).iloc[-1]
+        volatility = atr / price
+
+        expected_move = (ret20 + volatility) / 2
 
         ev = prob * expected_move
         win = prob
@@ -705,6 +710,9 @@ def analyze_symbol(code, name, model, all_data):
     sma25 = close.rolling(25).mean()
     sma30 = close.rolling(30).mean()
     sma75 = close.rolling(75).mean()
+    # 長期トレンド判定
+    sma75_t = float(sma75.iloc[-1]) if sma75.iloc[-1] != 0 else None
+    uptrend = c_t > sma75_t if sma75_t else False
 
     rsi = calc_rsi(close)
     macd, signal = calc_macd(close)
@@ -810,7 +818,7 @@ def analyze_symbol(code, name, model, all_data):
             "AI上昇確率": round(ai_prob, 4),
         }
 
-    if not cond_initial and not cond_continue:
+    if (not cond_initial and not cond_continue) or not uptrend:
         return None
 
     if cond_initial and cond_continue:
@@ -1093,12 +1101,6 @@ def run_screening():
         
     print("旧ロジック解析開始...")
 
-    symbol_list = [
-        (row["コード"], row["銘柄名"])
-        for _, row in symbols.iterrows()
-        if f"{row['コード']}.T" in dict(ai_list)
-    ]
-
     results = Parallel(
         n_jobs=-1,
         backend="threading",
@@ -1154,9 +1156,15 @@ def run_screening():
         feature_cols,
         feature_data,
         threshold=0.0,
-        top_n=50
+        top_n=300
     )
+    ai_dict = dict(ai_list)
 
+    symbol_list = [
+        (row["コード"], row["銘柄名"])
+        for _, row in symbols.iterrows()
+        if f"{row['コード']}.T" in ai_dict
+    ]
     print("\n===== 新AI 上位 =====\n")
 
     for symbol, prob in ai_list:
@@ -1186,12 +1194,12 @@ def run_screening():
     df_strong = strongest_ai_ranking(
         model_new,
         feature_cols,
-        all_data
+        all_data,
+        feature_data
     )
     
     print(df_strong.head(20))
-    # symbol列を作る
-    df_strong["symbol"] = df_strong["symbol"]
+
     
     # =====================================================
     # Step22-7 統合ビュー
@@ -1232,6 +1240,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
