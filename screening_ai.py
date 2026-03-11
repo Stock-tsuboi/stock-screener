@@ -204,15 +204,15 @@ def create_features(df):
         (df["Open"] - df["Close"]) / df["Open"].replace(0, np.nan) > 0.03
     ).astype(int)
 
-    def calc_slope(series):
-        if len(series) < 10:
-            return np.nan
-        y = series.values.reshape(-1, 1)
-        x = np.arange(len(series)).reshape(-1, 1)
-        model = LinearRegression().fit(x, y)
-        return model.coef_[0][0]
-
-    df["Slope10"] = df["Close"].rolling(10).apply(calc_slope, raw=False)
+    #def calc_slope(series):
+        #if len(series) < 10:
+            #return np.nan
+        #y = series.values.reshape(-1, 1)
+        #x = np.arange(len(series)).reshape(-1, 1)
+        #model = LinearRegression().fit(x, y)
+        #return model.coef_[0][0]
+    #df["Slope10"] = df["Close"].rolling(10).apply(calc_slope, raw=False)
+    df["Slope10"] = df["Close"].pct_change(10)
     
     # ===== 追加（期待値AI用特徴量） =====
     df["ret20"] = df["Close"].pct_change(20)
@@ -1265,6 +1265,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
