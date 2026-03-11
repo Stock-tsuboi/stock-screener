@@ -400,7 +400,7 @@ def strongest_ai_ranking_V1(model, feature_cols, all_data, feature_data):
         if df is None or len(df) < 120:
             continue
 
-        try:
+        #try: ← 不要
             feat = feature_data.get(symbol)
             if feat is None:
                 continue
@@ -1078,59 +1078,13 @@ def run_screening():
 
     model_old = load_ai_model()
     
-    # =====================================================
-    # Step22-4 新AIモデル
-    # =====================================================
-    print("\n===== 新AIモデル準備 =====")
-    
-    if need_retrain(MODEL_PATH):
-    
-        print("AI再学習開始...")
-    
-        model_new, feature_cols = train_ai_model(all_data)
-    
-        joblib.dump((model_new, feature_cols), MODEL_PATH)
-    
-        print("✔ 新AIモデル保存")
-    
-    else:
-    
-        print("保存モデル読み込み")
-    
-        model_new, feature_cols = joblib.load(MODEL_PATH)
-        
-    print("旧ロジック解析開始...")
-
-    results = Parallel(
-        n_jobs=-1,
-        backend="threading",
-        batch_size=50,
-        prefer="threads"
-    )(
-        delayed(analyze_symbol)(code, name, model_old, all_data)
-        for code, name in symbol_list
-    )
-
-    results = [r for r in results if r is not None]
-
-    df_old = pd.DataFrame(results)
-
-    if not df_old.empty:
-        df_old["旧ロジック判定"] = df_old["route"]
-        df_old["旧AI確率"] = df_old["AI上昇確率"]
-        df_old["symbol"] = df_old["コード"] + ".T"
-
-        df_old = df_old[
-            ["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]
-        ]
-
-    else:
-        df_old = pd.DataFrame(
-            columns=["symbol","銘柄名","旧ロジック判定","旧AI確率"]
-        )
+    symbol_list = [
+    (row["コード"], row["銘柄名"])
+    for _, row in symbols.iterrows()
+    ]
 
     # =====================================================
-    # Step22-5 新AIロジック
+    # Step22-4 新AIロジック (旧Step22-5)
     # =====================================================
     print("\n===== 新AIロジック（精度最大化AI） =====")
     print("新AIモデル確認中...")
@@ -1161,10 +1115,11 @@ def run_screening():
     ai_dict = dict(ai_list)
 
     symbol_list = [
-        (row["コード"], row["銘柄名"])
-        for _, row in symbols.iterrows()
-        if f"{row['コード']}.T" in ai_dict
+    (code, name)
+    for code, name in symbol_list
+    if f"{code}.T" in ai_dict
     ]
+    
     print("\n===== 新AI 上位 =====\n")
 
     for symbol, prob in ai_list:
@@ -1185,6 +1140,58 @@ def run_screening():
         df_new = pd.DataFrame(
             columns=["symbol","新AI確率","新AI順位"]
         )
+    # =====================================================
+    # Step22-5 新AIモデル　#旧Step22-4
+    # =====================================================
+    print("\n===== 新AIモデル準備 =====")
+    
+    if need_retrain(MODEL_PATH):
+    
+        print("AI再学習開始...")
+    
+        model_new, feature_cols = train_ai_model(all_data)
+    
+        joblib.dump((model_new, feature_cols), MODEL_PATH)
+    
+        print("✔ 新AIモデル保存")
+    
+    else:
+    
+        print("保存モデル読み込み")
+    
+        model_new, feature_cols = joblib.load(MODEL_PATH)
+        
+    print("旧ロジック解析開始...")
+
+    results = Parallel(
+        n_jobs=-1,
+        backend="loky",
+        batch_size=50,
+        prefer="threads"
+    )(
+        delayed(analyze_symbol)(code, name, model_old, all_data)
+        for code, name in symbol_list
+    )
+
+    results = [r for r in results if r is not None]
+
+    df_old = pd.DataFrame(results)
+
+    if not df_old.empty:
+        df_old["旧ロジック判定"] = df_old["route"]
+        df_old["旧AI確率"] = df_old["AI上昇確率"]
+        df_old["symbol"] = df_old["コード"] + ".T"
+
+        df_old = df_old[
+            ["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]
+        ]
+
+    else:
+        df_old = pd.DataFrame(
+            columns=["symbol","銘柄名","旧ロジック判定","旧AI確率"]
+        )
+
+
     # =====================================================
     # Step22-6 最強AI（年利最大化）
     # =====================================================
@@ -1240,6 +1247,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
