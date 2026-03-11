@@ -417,7 +417,7 @@ def strongest_ai_ranking_V1(model, feature_cols, all_data, feature_data):
         if df is None or len(df) < 120:
             continue
 
-        #try: ← 不要
+        try:     
             feat = feature_data.get(symbol)
             if feat is None:
                 continue
@@ -1067,6 +1067,7 @@ def run_screening():
 
         try:
             feature_data[symbol] = create_features(df)
+            
         except Exception:
             continue
     
@@ -1264,6 +1265,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
