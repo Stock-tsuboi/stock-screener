@@ -1066,7 +1066,12 @@ def run_screening():
             continue
 
         try:
-            feature_data[symbol] = create_features(df)
+            feat_df = create_features(df)
+
+            if feat_df.empty:
+                continue
+
+            feature_data[symbol] = feat_df.iloc[-1]
             
         except Exception:
             continue
@@ -1265,6 +1270,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
