@@ -213,7 +213,13 @@ def create_features(df):
         return model.coef_[0][0]
 
     df["Slope10"] = df["Close"].rolling(10).apply(calc_slope, raw=False)
+    
+    # ===== 追加（期待値AI用特徴量） =====
+    df["ret20"] = df["Close"].pct_change(20)
 
+    atr = (df["High"] - df["Low"]).rolling(14).mean()
+    df["atr_ratio"] = atr / df["Close"].replace(0, np.nan)
+    
     df["Target"] = (df["Close"].shift(-5) / df["Close"] - 1 > 0.03).astype(int)
 
     feature_cols = [
@@ -221,7 +227,10 @@ def create_features(df):
         "Bias5","Bias25","Bias75",
         "BB_UP1","BB_LOW1","BB_UP2","BB_LOW2",
         "VolRatio","Bull","BigBull","BigBear",
-        "Slope10","Target"
+        "Slope10",
+        "ret20",
+        "atr_ratio",
+        "Target"
     ]
 
     df = df.dropna(subset=feature_cols)
@@ -378,7 +387,15 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
     df_all["prob"] = probs
 
-    df_all = df_all.sort_values("prob", ascending=False)
+    # 期待値計算
+    df_all["expected_move"] = (
+        df_all["ret20"].fillna(0) +
+        df_all["atr_ratio"].fillna(0)
+    ) / 2
+
+    df_all["EV"] = df_all["prob"] * df_all["expected_move"]
+
+    df_all = df_all.sort_values("EV", ascending=False)
 
     df_filtered = df_all[df_all["prob"] >= threshold]
 
@@ -1247,6 +1264,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
