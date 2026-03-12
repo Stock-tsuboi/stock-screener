@@ -360,7 +360,7 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
     rows = []
 
-    for symbol, df in all_data.items():
+    for symbol, feat in all_data.items():
 
         if feat is None:
             continue
@@ -683,7 +683,11 @@ def load_all_data_from_duckdb(symbols):
     all_data = {}
 
     # ② groupbyで分割
-    for code, g in df.groupby("code"):
+    df = df.sort_values(["code","date"])
+
+    for code in df["code"].unique():
+
+        g = df[df["code"] == code]
 
         g = g.set_index("date")
 
@@ -1065,13 +1069,13 @@ def run_screening():
             continue
 
         try:
-            feat_df = create_features(df)
+            feat_df = create_features(df.tail(120)).iloc[-1:]
 
             if feat_df.empty:
                 continue
 
-            feature_data[symbol] = feat_df.iloc[-1]
-            
+            feature_data[symbol] = feat_df.iloc[0]
+
         except Exception:
             continue
     
@@ -1269,6 +1273,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
