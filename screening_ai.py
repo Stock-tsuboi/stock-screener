@@ -1112,33 +1112,6 @@ def run_screening():
     # =====================================================
     # Step22-4 新AIロジック (旧Step22-5)
     # =====================================================
-    print("\n===== 新AIロジック（精度最大化AI） =====")
-    print("新AIモデル確認中...")
-
-    if need_retrain(MODEL_PATH, days=7):
-
-        print("🔄 週次再学習を実行")
-
-        model_new, feature_cols = train_ai_model(all_data)
-
-        joblib.dump((model_new, feature_cols), MODEL_PATH)
-
-    else:
-
-        print("📦 既存モデルを使用")
-
-        model_new, feature_cols = joblib.load(MODEL_PATH)
-
-    print("新AI推論中...")
-
-    ai_list = ai_predict(
-        model_new,
-        feature_cols,
-        feature_data,
-        threshold=0.0,
-        top_n=300
-    )
-    ai_dict = dict(ai_list)
 
     symbol_list = [
     (code, name)
@@ -1169,25 +1142,6 @@ def run_screening():
     # =====================================================
     # Step22-5 新AIモデル　#旧Step22-4
     # =====================================================
-    print("\n===== 新AIモデル準備 =====")
-    
-    if need_retrain(MODEL_PATH):
-    
-        print("AI再学習開始...")
-    
-        model_new, feature_cols = train_ai_model(all_data)
-    
-        joblib.dump((model_new, feature_cols), MODEL_PATH)
-    
-        print("✔ 新AIモデル保存")
-    
-    else:
-    
-        print("保存モデル読み込み")
-    
-        model_new, feature_cols = joblib.load(MODEL_PATH)
-        
-    print("旧ロジック解析開始...")
 
     results = Parallel(
         n_jobs=-1,
@@ -1273,6 +1227,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
