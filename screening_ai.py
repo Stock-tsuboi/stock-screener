@@ -362,14 +362,13 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
     for symbol, df in all_data.items():
 
-        if df is None or len(df) < 80:
+        if feat is None:
             continue
 
         try:
-            features = create_features_fast(df)
-
-            features["symbol"] = symbol
-            rows.append(features)
+            row = feat.copy()
+            row["symbol"] = symbol
+            rows.append(row)
 
         except Exception as e:
             print(f"[FEATURE ERROR] {symbol}: {e}")
@@ -406,7 +405,7 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 # =========================================================
 # Step13　最強AIランキング（年利最大化）
 # =========================================================
-def strongest_ai_ranking_V1(model, feature_cols, all_data, feature_data):
+def strongest_ai_ranking(model, feature_cols, all_data, feature_data):
 
     print("最強AIランキング計算中...")
 
@@ -1270,6 +1269,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
