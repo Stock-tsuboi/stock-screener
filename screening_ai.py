@@ -246,7 +246,9 @@ def create_features(df):
 def feature_worker(item):
 
     symbol, df = item
-
+    
+    print(symbol, len(df))
+    
     if df is None or len(df) < 120:
         return None
 
@@ -1275,6 +1277,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
