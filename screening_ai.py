@@ -220,7 +220,11 @@ def create_features(df):
     atr = (df["High"] - df["Low"]).rolling(14).mean()
     df["atr_ratio"] = atr / df["Close"].replace(0, np.nan)
     
-    df["Target"] = (df["Close"].shift(-5) / df["Close"] - 1 > 0.03).astype(int)
+    # ===== AI学習ラベル（急騰検出）=====
+    future_max = df["Close"].shift(-1).rolling(20).max()
+    future_return = future_max / df["Close"] - 1
+
+    df["Target"] = (future_return > 0.08).astype(int)
 
     feature_cols = [
         "SMA5","SMA25","SMA75",
@@ -230,7 +234,6 @@ def create_features(df):
         "Slope10",
         "ret20",
         "atr_ratio",
-        "Target"
     ]
 
     df = df.dropna(subset=feature_cols)
@@ -392,7 +395,9 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
         df_all["atr_ratio"].fillna(0)
     ) / 2
 
-    df_all["EV"] = df_all["prob"] * df_all["expected_move"]
+    df_all["risk"] = df_all["atr_ratio"].replace(0, 0.0001)
+
+    df_all["EV"] = (df_all["prob"] * df_all["ret20"]) / df_all["risk"]
 
     df_all = df_all.sort_values("EV", ascending=False)
 
@@ -402,6 +407,28 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
     print(f"✔ 閾値 {threshold} 以上: {len(df_filtered)}銘柄")
 
     return list(zip(df_filtered["symbol"], df_filtered["prob"]))[:top_n]
+    
+    # =========================================================
+    # STEP34-1 特徴量生成ワーカー
+    # =========================================================
+    def feature_worker(item):
+
+        symbol, df = item
+
+        if df is None or len(df) < 120:
+            return None
+
+        try:
+            feat_df = create_features(df.tail(120))
+
+            if feat_df.empty:
+                return None
+
+            return symbol, feat_df.iloc[-1]
+
+        except Exception:
+            return None
+
 # =========================================================
 # Step13　最強AIランキング（年利最大化）
 # =========================================================
@@ -668,6 +695,7 @@ def load_all_data_from_duckdb(symbols):
         SELECT code, date, open, high, low, close, volume
         FROM prices
         WHERE code IN {codes}
+        AND date >= CURRENT_DATE - INTERVAL 180 DAY
         ORDER BY code, date
     """
 
@@ -1059,25 +1087,26 @@ def run_screening():
     all_data = load_all_data_from_duckdb(symbols)
 
     # ==============================
-    # 特徴量を事前生成（高速化）
+    # 特徴量を事前生成（並列高速化）
     # ==============================
-    feature_data = {}
+    print("\n特徴量生成（並列処理）...")
 
-    for symbol, df in all_data.items():
+    results = Parallel(
+        n_jobs=-1,
+        backend="loky",
+        batch_size=50
+    )(
+        delayed(feature_worker)(item)
+        for item in all_data.items()
+    )
 
-        if df is None or len(df) < 120:
-            continue
+    feature_data = {
+        symbol: feat
+        for symbol, feat in results
+        if symbol is not None
+    }
 
-        try:
-            feat_df = create_features(df.tail(120)).iloc[-1:]
-
-            if feat_df.empty:
-                continue
-
-            feature_data[symbol] = feat_df.iloc[0]
-
-        except Exception:
-            continue
+    print(f"特徴量生成完了: {len(feature_data)}銘柄")
     
     # =====================================================
     # STEP22-2 新AIモデル準備
@@ -1170,7 +1199,22 @@ def run_screening():
         df_old = pd.DataFrame(
             columns=["symbol","銘柄名","旧ロジック判定","旧AI確率"]
         )
+    # =====================================================
+    # CODE STEP35-1 AI候補銘柄だけに絞る
+    # =====================================================
+    candidate_symbols = set(ai_dict.keys())
 
+    filtered_all_data = {
+        s: all_data[s]
+        for s in candidate_symbols
+        if s in all_data
+    }
+
+    filtered_feature_data = {
+        s: feature_data[s]
+        for s in candidate_symbols
+        if s in feature_data
+    }
 
     # =====================================================
     # Step22-6 最強AI（年利最大化）
@@ -1227,6 +1271,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
