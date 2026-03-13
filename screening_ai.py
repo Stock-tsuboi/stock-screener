@@ -236,7 +236,7 @@ def create_features(df):
         "atr_ratio",
     ]
 
-    df = df.dropna(subset=feature_cols)
+    #df = df.dropna(subset=feature_cols)
 
     return df
     
@@ -1277,6 +1277,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
