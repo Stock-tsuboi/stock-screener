@@ -239,7 +239,27 @@ def create_features(df):
     df = df.dropna(subset=feature_cols)
 
     return df
+    
+    # =========================================================
+    # STEP34-1 特徴量生成ワーカー
+    # =========================================================
+    def feature_worker(item):
 
+        symbol, df = item
+
+        if df is None or len(df) < 120:
+            return None
+
+        try:
+            feat_df = create_features(df.tail(120))
+
+            if feat_df.empty:
+                return None
+
+            return symbol, feat_df.iloc[-1]
+
+        except Exception:
+            return None
 # =========================================================
 # Step10　特徴量生成（推論専用・超軽量版）
 # =========================================================
@@ -407,27 +427,7 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
     print(f"✔ 閾値 {threshold} 以上: {len(df_filtered)}銘柄")
 
     return list(zip(df_filtered["symbol"], df_filtered["prob"]))[:top_n]
-    
-    # =========================================================
-    # STEP34-1 特徴量生成ワーカー
-    # =========================================================
-    def feature_worker(item):
 
-        symbol, df = item
-
-        if df is None or len(df) < 120:
-            return None
-
-        try:
-            feat_df = create_features(df.tail(120))
-
-            if feat_df.empty:
-                return None
-
-            return symbol, feat_df.iloc[-1]
-
-        except Exception:
-            return None
 
 # =========================================================
 # Step13　最強AIランキング（年利最大化）
@@ -1271,6 +1271,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
