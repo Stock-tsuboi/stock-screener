@@ -1100,11 +1100,15 @@ def run_screening():
         for item in all_data.items()
     )
 
-    feature_data = {
-        symbol: feat
-        for symbol, feat in results
-        if symbol is not None
-    }
+    feature_data = {}
+
+    for r in results:
+
+        if r is None:
+            continue
+
+        symbol, feat = r
+        feature_data[symbol] = feat
 
     print(f"特徴量生成完了: {len(feature_data)}銘柄")
     
@@ -1271,6 +1275,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
