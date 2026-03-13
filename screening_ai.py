@@ -240,26 +240,26 @@ def create_features(df):
 
     return df
     
-    # =========================================================
-    # STEP34-1 特徴量生成ワーカー
-    # =========================================================
-    def feature_worker(item):
+# =========================================================
+# STEP34-1 特徴量生成ワーカー
+# =========================================================
+def feature_worker(item):
 
-        symbol, df = item
+    symbol, df = item
 
-        if df is None or len(df) < 120:
+    if df is None or len(df) < 120:
+        return None
+
+    try:
+        feat_df = create_features(df.tail(120))
+
+        if feat_df.empty:
             return None
 
-        try:
-            feat_df = create_features(df.tail(120))
+        return symbol, feat_df.iloc[-1]
 
-            if feat_df.empty:
-                return None
-
-            return symbol, feat_df.iloc[-1]
-
-        except Exception:
-            return None
+    except Exception:
+        return None
 # =========================================================
 # Step10　特徴量生成（推論専用・超軽量版）
 # =========================================================
@@ -1271,6 +1271,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
