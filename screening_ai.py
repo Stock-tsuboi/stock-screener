@@ -278,7 +278,8 @@ def create_features_fast(df):
     bb_mid = sma25
     bb_std = close.rolling(25).std()
 
-    vol_ratio = volume.iloc[-1] / volume.rolling(25).mean().iloc[-1]
+    vol_mean = volume.rolling(25).mean().iloc[-1]
+    vol_ratio = volume.iloc[-1] / vol_mean if vol_mean and not np.isnan(vol_mean) else 0
 
     # ---- Slope10 軽量計算 ----
     if len(close) >= 10:
@@ -1275,6 +1276,7 @@ def run_screening():
 # =========================================================
 if __name__ == "__main__":
     run_screening()
+
 
 
 
