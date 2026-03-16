@@ -230,10 +230,11 @@ def create_features(df):
         "SMA5","SMA25","SMA75",
         "Bias5","Bias25","Bias75",
         "BB_UP1","BB_LOW1","BB_UP2","BB_LOW2",
-        "VolRatio","Bull","BigBull","BigBear",
+        "VolRatio",
+        "Bull","BigBull","BigBear",
         "Slope10",
         "ret20",
-        "atr_ratio",
+        "atr_ratio"
     ]
 
     #df = df.dropna(subset=feature_cols)
@@ -325,7 +326,16 @@ def train_ai_model(all_data):
 
         try:
             df2 = create_features(df)
-            if df2.empty:
+
+            df2 = df2.dropna(subset=[
+                "SMA5","SMA25","SMA75",
+                "Bias5","Bias25","Bias75",
+                "BB_UP1","BB_LOW1","BB_UP2","BB_LOW2",
+                "VolRatio","Bull","BigBull","BigBear",
+                "Slope10","ret20","atr_ratio","Target"
+            ])
+
+            if len(df2) < 30:
                 continue
 
             df2["symbol"] = symbol
