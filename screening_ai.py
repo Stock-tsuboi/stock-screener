@@ -330,6 +330,8 @@ def train_ai_model(all_data):
 
             df2 = create_features(df)
 
+            print(symbol, "rows:", len(df2) if df2 is not None else 0)
+
             # データ無し防止
             if df2 is None or len(df2) == 0:
                 continue
