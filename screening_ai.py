@@ -246,19 +246,20 @@ def create_features(df):
 def feature_worker(item):
 
     symbol, df = item
-       
+
     if df is None or len(df) < 80:
         return None
 
     try:
         feat = create_features_fast(df)
 
-        if feat_df.empty:
+        if feat is None:
             return None
 
-        return symbol, feat_df.iloc[-1]
+        return symbol, feat
 
-    except Exception:
+    except Exception as e:
+        print("FEATURE ERROR:", symbol, e)
         return None
 # =========================================================
 # Step10　特徴量生成（推論専用・超軽量版）
