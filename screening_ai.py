@@ -218,7 +218,7 @@ def create_features(df):
     df["ret20"] = df["Close"].pct_change(20)
 
     atr = (df["High"] - df["Low"]).rolling(14).mean()
-    df["atr_ratio"] = atr / df["Close"].replace(0, np.nan)
+    df["atr_ratio"] = (atr / df["Close"]).replace(0)
     
     # ===== AI学習ラベル（急騰検出）=====
     future_max = df["Close"].shift(-1).rolling(20).max()
@@ -328,11 +328,9 @@ def train_ai_model(all_data):
             df2 = create_features(df)
 
             df2 = df2.dropna(subset=[
-                "SMA5","SMA25","SMA75",
-                "Bias5","Bias25","Bias75",
-                "BB_UP1","BB_LOW1","BB_UP2","BB_LOW2",
-                "VolRatio","Bull","BigBull","BigBear",
-                "Slope10","ret20","atr_ratio","Target"
+                "SMA25",
+                "VolRatio",
+                "Target"
             ])
 
             if len(df2) < 30:
@@ -360,6 +358,8 @@ def train_ai_model(all_data):
         "VolRatio",
         "Bull", "BigBull", "BigBear",
         "Slope10",
+        "ret20",
+        "atr_ratio"
     ]
 
     print(f"✔ 学習データ件数: {len(data)}")
