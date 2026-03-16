@@ -327,13 +327,7 @@ def train_ai_model(all_data):
         try:
             df2 = create_features(df)
 
-            df2 = df2.dropna(subset=[
-                "SMA25",
-                "VolRatio",
-                "Target"
-            ])
-
-            if len(df2) < 30:
+            if df2 is None or len(df2) == 0:
                 continue
 
             df2["symbol"] = symbol
@@ -349,6 +343,7 @@ def train_ai_model(all_data):
     print(f"✔ 学習対象銘柄数: {used_symbols}")
 
     data = pd.concat(dfs, ignore_index=True)
+    data = data.replace([np.inf, -np.inf], np.nan)
 
     feature_cols = [
         "SMA5", "SMA25", "SMA75",
