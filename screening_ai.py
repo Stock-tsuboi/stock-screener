@@ -218,7 +218,7 @@ def create_features(df):
     df["ret20"] = df["Close"].pct_change(20)
 
     atr = (df["High"] - df["Low"]).rolling(14).mean()
-    df["atr_ratio"] = (atr / df["Close"]).replace(0)
+    df["atr_ratio"] = atr / df["Close"].replace(0, np.nan)
     
     # ===== AI学習ラベル（急騰検出）=====
     future_max = df["Close"].shift(-1).rolling(20).max()
