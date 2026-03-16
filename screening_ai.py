@@ -312,66 +312,92 @@ def create_features_fast(df):
     return latest
 
 # =========================================================
-# Step11　学習処理（精度最大化版・安定化）
+# Step11　学習処理（安定版）
 # =========================================================
 def train_ai_model(all_data):
+
     print("AI学習データ生成中...")
 
     dfs = []
     used_symbols = 0
 
     for symbol, df in all_data.items():
+
         if df is None or len(df) < 120:
             continue
 
         try:
+
             df2 = create_features(df)
 
+            # データ無し防止
             if df2 is None or len(df2) == 0:
                 continue
 
+            # Target列が無い銘柄防止
+            if "Target" not in df2.columns:
+                continue
+
+            # inf対策
+            df2 = df2.replace([np.inf, -np.inf], np.nan)
+
+            # TargetがNaNの行削除
+            df2 = df2[df2["Target"].notna()]
+
+            if len(df2) == 0:
+                continue
+
             df2["symbol"] = symbol
+
             dfs.append(df2)
             used_symbols += 1
 
         except Exception as e:
             print(f"[FEATURE ERROR] {symbol}: {e}")
 
-    if not dfs:
+    # 学習データ確認
+    if len(dfs) == 0:
         raise RuntimeError("学習用データがありません。")
 
     print(f"✔ 学習対象銘柄数: {used_symbols}")
 
     data = pd.concat(dfs, ignore_index=True)
-    data = data.replace([np.inf, -np.inf], np.nan)
 
     feature_cols = [
-        "SMA5", "SMA25", "SMA75",
-        "Bias5", "Bias25", "Bias75",
-        "BB_UP1", "BB_LOW1",
-        "BB_UP2", "BB_LOW2",
+        "SMA5","SMA25","SMA75",
+        "Bias5","Bias25","Bias75",
+        "BB_UP1","BB_LOW1",
+        "BB_UP2","BB_LOW2",
         "VolRatio",
-        "Bull", "BigBull", "BigBear",
+        "Bull","BigBull","BigBear",
         "Slope10",
         "ret20",
         "atr_ratio"
     ]
 
-    print(f"✔ 学習データ件数: {len(data)}")
-
+    # 欠損補完
     X = data[feature_cols].fillna(0)
-    y = data["Target"]
+
+    if "Target" not in data.columns:
+        raise RuntimeError("Target列がありません")
+
+    y = data["Target"].fillna(0)
+
+    print(f"✔ 学習データ件数: {len(X)}")
+
+    if len(X) == 0:
+        raise RuntimeError("学習データが0件です")
 
     print("RandomForest 学習開始...")
 
     model = RandomForestClassifier(
-        n_estimators=300,          # ← 400→300で高速化
+        n_estimators=300,
         max_depth=10,
         min_samples_split=5,
         min_samples_leaf=3,
         max_features="sqrt",
         random_state=42,
-        n_jobs=-1,
+        n_jobs=-1
     )
 
     model.fit(X, y)
