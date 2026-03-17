@@ -312,7 +312,7 @@ def create_features_fast(df):
     return latest
 
 # =========================================================
-# Step11　学習処理（安定版）
+# Step11　学習処理（安定版・修正版）
 # =========================================================
 def train_ai_model(all_data):
 
@@ -342,6 +342,12 @@ def train_ai_model(all_data):
 
             # inf対策
             df2 = df2.replace([np.inf, -np.inf], np.nan)
+
+            # =========================
+            # ★修正①：未来データ分を先に削除
+            # =========================
+            if len(df2) > 5:
+                df2 = df2.iloc[:-5]
 
             # TargetがNaNの行削除
             df2 = df2[df2["Target"].notna()]
@@ -377,13 +383,15 @@ def train_ai_model(all_data):
         "atr_ratio"
     ]
 
-    # 欠損補完
-    X = data[feature_cols].fillna(0)
+    # =========================
+    # ★修正②：欠損はdropnaで除外
+    # =========================
+    X = data[feature_cols].dropna()
 
     if "Target" not in data.columns:
         raise RuntimeError("Target列がありません")
 
-    y = data["Target"].fillna(0)
+    y = data.loc[X.index, "Target"]
 
     print(f"✔ 学習データ件数: {len(X)}")
 
