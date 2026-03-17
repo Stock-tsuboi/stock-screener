@@ -794,6 +794,8 @@ def analyze_symbol(code, name, model, all_data):
     sma30 = close.rolling(30).mean()
     sma75 = close.rolling(75).mean()
     # 長期トレンド判定
+    c_t = float(close.iloc[-1])  # ← 先に定義
+    
     sma75_t = float(sma75.iloc[-1]) if sma75.iloc[-1] != 0 else None
     uptrend = c_t > sma75_t if sma75_t else False
 
@@ -814,7 +816,6 @@ def analyze_symbol(code, name, model, all_data):
     vol_y = float(volume.iloc[-2])
     vol_avg5_y = float(volume.iloc[-7:-2].mean())
 
-    c_t = float(close.iloc[-1])
     h_t = float(high.iloc[-1])
     l_t = float(low.iloc[-1])
     vol_t = float(volume.iloc[-1])
@@ -967,7 +968,7 @@ def backtest_ai_only(ai_list, all_data, days=200):
 # =========================================================
 # Step20　最強AIランキング（本物の期待値AI）
 # =========================================================
-def strongest_ai_ranking(model, feature_cols, all_data):
+def strongest_ai_ranking(model, feature_cols, feature_data):
     
     rows = []
 
@@ -978,11 +979,15 @@ def strongest_ai_ranking(model, feature_cols, all_data):
 
         try:
 
-            last = df.iloc[-1]
+            # 特徴量が揃っているかチェック
+            if not set(feature_cols).issubset(df.columns):
+                continue
 
-            feat = last.to_dict()
+            df_feat = df[feature_cols].dropna()
+            if df_feat.empty:
+                continue
 
-            X = pd.DataFrame([feat]).reindex(columns=feature_cols).fillna(0)
+            X = df_feat.iloc[[-1]]
 
             prob = model.predict_proba(X)[0][1]
 
@@ -1176,6 +1181,18 @@ def run_screening():
     (row["コード"], row["銘柄名"])
     for _, row in symbols.iterrows()
     ]
+    # ==============================
+    # Step22-3-1 新AI推論（←これを追加）
+    # ==============================
+    ai_list = ai_predict(
+        model_new,
+        feature_cols,
+        feature_data,
+        threshold=BEST_TH,
+        top_n=50
+    )
+
+    ai_dict = dict(ai_list)
 
     # =====================================================
     # Step22-4 新AIロジック (旧Step22-5)
@@ -1184,7 +1201,7 @@ def run_screening():
     symbol_list = [
     (code, name)
     for code, name in symbol_list
-    if f"{code}.T" in ai_dict
+    if f"{code}.T" in ai_dict.keys()
     ]
     
     print("\n===== 新AI 上位 =====\n")
@@ -1264,7 +1281,7 @@ def run_screening():
     df_strong = strongest_ai_ranking(
         model_new,
         feature_cols,
-        all_data,
+        feature_cols,
         feature_data
     )
     
