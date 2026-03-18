@@ -745,7 +745,7 @@ def load_all_data_from_duckdb(symbols):
         SELECT code, date, open, high, low, close, volume
         FROM prices
         WHERE code IN {codes}
-        AND date >= CURRENT_DATE - INTERVAL 180 DAY
+        AND date >= CURRENT_DATE - INTERVAL 400 DAY
         ORDER BY code, date
     """
 
