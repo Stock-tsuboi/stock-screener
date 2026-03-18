@@ -369,7 +369,8 @@ def train_ai_model(all_data):
 
     # 学習データ確認
     if len(dfs) == 0:
-        raise RuntimeError("学習用データがありません。")
+        print("⚠ 学習データなし → 今回はスキップ")
+        return None, None
 
     print(f"✔ 学習対象銘柄数: {used_symbols}")
 
@@ -1174,7 +1175,11 @@ def run_screening():
         print("\n===== 新AI 学習 =====")
     
         model_new, feature_cols = train_ai_model(all_data)
-    
+        
+        if model_new is None:
+            print("AI学習スキップ → 既存モデルを使用")
+            return
+        
         joblib.dump((model_new, feature_cols), MODEL_PATH)
     
     else:
