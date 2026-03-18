@@ -241,7 +241,7 @@ def create_features(df):
         "atr_ratio"
     ]
 
-    df = df.dropna(subset=feature_cols)
+    df = df.dropna(subset=["SMA75", "BB_STD"])
 
     return df
     
