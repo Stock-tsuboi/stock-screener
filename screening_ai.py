@@ -226,7 +226,7 @@ def create_features(df):
 
     df["Target"] = np.where(
         future_return.notna(),
-        (future_return > 0.08).astype(int),
+        (future_return > 0.03).astype(int),
         np.nan
     )
 
