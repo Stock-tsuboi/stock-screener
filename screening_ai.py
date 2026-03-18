@@ -390,7 +390,8 @@ def train_ai_model(all_data):
     # =========================
     # ★修正②：欠損はdropnaで除外
     # =========================
-    X = data[feature_cols].dropna()
+    X = data[feature_cols].fillna(0)
+    y = data["Target"]
 
     if "Target" not in data.columns:
         raise RuntimeError("Target列がありません")
