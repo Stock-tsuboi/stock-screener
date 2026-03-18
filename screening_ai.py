@@ -224,7 +224,11 @@ def create_features(df):
     future_max = df["Close"].shift(-1).rolling(20).max()
     future_return = future_max / df["Close"] - 1
 
-    df["Target"] = (future_return > 0.08).astype(int)
+    df["Target"] = np.where(
+        future_return.notna(),
+        (future_return > 0.08).astype(int),
+        np.nan
+    )
 
     feature_cols = [
         "SMA5","SMA25","SMA75",
@@ -237,7 +241,7 @@ def create_features(df):
         "atr_ratio"
     ]
 
-    #df = df.dropna(subset=feature_cols)
+    df = df.dropna(subset=feature_cols)
 
     return df
     
