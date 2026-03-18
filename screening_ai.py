@@ -355,6 +355,7 @@ def train_ai_model(all_data):
 
             # TargetがNaNの行削除
             df2 = df2[df2["Target"].notna()]
+            print(symbol, "Target有効件数:", df2["Target"].notna().sum())
 
             if len(df2) == 0:
                 continue
@@ -1178,7 +1179,13 @@ def run_screening():
         
         if model_new is None:
             print("AI学習スキップ → 既存モデルを使用")
-            return
+    
+            if os.path.exists(MODEL_PATH):
+                model_new, feature_cols = joblib.load(MODEL_PATH)
+                print("既存モデル読み込み完了")
+            else:
+                print("❌ モデルが存在しないため処理終了")
+                return
         
         joblib.dump((model_new, feature_cols), MODEL_PATH)
     
