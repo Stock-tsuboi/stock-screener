@@ -221,7 +221,7 @@ def create_features(df):
     df["atr_ratio"] = atr / df["Close"].replace(0, np.nan)
     
     # ===== AI学習ラベル（急騰検出）=====
-    future_max = df["Close"].shift(-1).rolling(20).max()
+    future_max = df["Close"].rolling(20).max().shift(-1)
     future_return = future_max / df["Close"] - 1
 
     df["Target"] = np.where(
