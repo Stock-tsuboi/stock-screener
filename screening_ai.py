@@ -1343,7 +1343,23 @@ def run_screening():
     #print(df_merge.to_string(index=False))
     #df_merge = df_merge.sort_values("新AI順位").head(50)
 
-    print(df_merge.to_string(index=False))
+    # =========================
+    # 表示用に整形
+    # =========================
+    df_view = df_merge.copy()
+
+    # 表示列を厳選
+    df_view = df_view[
+        ["symbol", "銘柄名", "新AI確率", "AI上昇確率", "期待値"]
+    ]
+
+    # 数値フォーマット（桁揃え）
+    df_view["新AI確率"] = df_view["新AI確率"].map(lambda x: f"{x:.3f}")
+    df_view["AI上昇確率"] = df_view["AI上昇確率"].map(lambda x: f"{x:.3f}")
+    df_view["期待値"] = df_view["期待値"].map(lambda x: f"{x:.3f}")
+
+    # 表示
+    print(df_view.to_string(index=False))
 
 # =========================================================
 # Step23　実行
