@@ -1311,7 +1311,6 @@ def run_screening():
     df_strong = strongest_ai_ranking(
         model_new,
         feature_cols,
-        feature_cols,
         feature_data
     )
     
