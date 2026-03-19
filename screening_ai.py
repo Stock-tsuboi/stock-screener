@@ -992,45 +992,29 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
     
     rows = []
 
-    for symbol, df in feature_data.items():
+    for symbol, feat in feature_data.items():
 
-        if df is None or len(df) == 0:
+        if feat is None:
             continue
 
         try:
 
-            # 特徴量が揃っているかチェック
-            if not set(feature_cols).issubset(df.columns):
-                continue
-
-            df_feat = df[feature_cols].dropna()
-            if df_feat.empty:
-                continue
-
-            X = df_feat.iloc[[-1]]
-
+            X = pd.DataFrame([feat])[feature_cols].fillna(0)
             prob = model.predict_proba(X)[0][1]
 
             # -------------------------
-            # STEP20-1 過去リターン計算
+            # STEP20-1 簡易リターン（featベース）
             # -------------------------
-            future_returns = (
-                df["Close"].shift(-5) / df["Close"] - 1
-            )
+            ret20 = feat.get("ret20", 0)
+            vol = feat.get("atr_ratio", 0)
 
-            avg_up = future_returns[future_returns > 0].mean()
-            avg_down = future_returns[future_returns < 0].mean()
-
-            if pd.isna(avg_up):
-                avg_up = 0
-
-            if pd.isna(avg_down):
-                avg_down = 0
+            avg_up = max(ret20, 0)
+            avg_down = min(ret20, 0)
 
             # -------------------------
             # STEP20-2 期待値
             # -------------------------
-            expectancy = prob * avg_up - (1 - prob) * avg_down
+            expectancy = prob * avg_up - (1 - prob) * abs(avg_down)
 
             rows.append({
                 "symbol": symbol,
@@ -1047,9 +1031,6 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
     
     if df_rank.empty:
         return pd.DataFrame(columns=["symbol","AI上昇確率","平均上昇率","平均下落率","期待値"])
-    
-    if df_rank.empty:
-        return df_rank
 
     df_rank = df_rank.sort_values(
         "期待値",
