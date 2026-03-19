@@ -1044,7 +1044,10 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             continue
 
     df_rank = pd.DataFrame(rows)
-
+    
+    if df_rank.empty:
+        return pd.DataFrame(columns=["symbol","AI上昇確率","平均上昇率","平均下落率","期待値"])
+    
     if df_rank.empty:
         return df_rank
 
@@ -1316,6 +1319,9 @@ def run_screening():
     
     print(df_strong.head(20))
 
+    # ★ここを追加（安全対策）
+    if df_strong.empty:
+        df_strong = pd.DataFrame(columns=["symbol"])
     
     # =====================================================
     # Step22-7 統合ビュー
