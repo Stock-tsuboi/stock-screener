@@ -1290,7 +1290,6 @@ def run_screening():
     # Step22-6 最強AI（年利最大化）
     # =====================================================
     print("\n===== 最強AI（年利最大化ランキング） =====")
-    print("===== 超高速AIランキング =====")
         
     df_strong = strongest_ai_ranking(
         model_new,
@@ -1330,11 +1329,19 @@ def run_screening():
     df_merge["新AI確率"] = df_merge["新AI確率"].fillna(0)
     df_merge["新AI順位"] = df_merge["新AI順位"].fillna(999).astype(int)
 
-    df_merge = df_merge.sort_values("新AI順位").head(50)
+    # ★最強AI（期待値）も補完
+    df_merge["期待値"] = df_merge["期待値"].fillna(-999)
 
-    print(df_merge.to_string(index=False))
-
-    df_merge = df_merge.sort_values("新AI順位").head(50)
+    # ★ここが最重要：期待値でソート
+    df_merge = df_merge.sort_values(
+        "期待値",
+        ascending=False
+    ).head(50)
+    
+    #上記の変更が問題なければ削除、一旦保留
+    #df_merge = df_merge.sort_values("新AI順位").head(50)
+    #print(df_merge.to_string(index=False))
+    #df_merge = df_merge.sort_values("新AI順位").head(50)
 
     print(df_merge.to_string(index=False))
 
