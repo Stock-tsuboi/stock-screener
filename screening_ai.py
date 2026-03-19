@@ -1008,8 +1008,11 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             ret20 = feat.get("ret20", 0)
             vol = feat.get("atr_ratio", 0)
 
+            # 異常値防止（重要）
+            ret20 = np.clip(ret20, -1, 1)
+
             avg_up = max(ret20, 0)
-            avg_down = min(ret20, 0)
+            avg_down = -abs(vol)
 
             # -------------------------
             # STEP20-2 期待値
@@ -1353,13 +1356,20 @@ def run_screening():
         ["symbol", "銘柄名", "新AI確率", "AI上昇確率", "期待値"]
     ]
 
-    # 数値フォーマット（桁揃え）
-    df_view["新AI確率"] = df_view["新AI確率"].map(lambda x: f"{x:.3f}")
-    df_view["AI上昇確率"] = df_view["AI上昇確率"].map(lambda x: f"{x:.3f}")
-    df_view["期待値"] = df_view["期待値"].map(lambda x: f"{x:.3f}")
-
-    # 表示
-    print(df_view.to_string(index=False))
+    # =========================
+    # 見やすい固定幅表示
+    # =========================
+    print("\n symbol   銘柄名        新AI   上昇AI   期待値")
+    print("-" * 50)
+    
+    for _, row in df_view.iterrows():
+        print(
+            f"{row['symbol']:<8} "
+            f"{str(row['銘柄名'])[:12]:<12} "
+            f"{float(row['新AI確率']):>6.3f} "
+            f"{float(row['AI上昇確率']):>6.3f} "
+            f"{float(row['期待値']):>7.3f}"
+        )
 
 # =========================================================
 # Step23　実行
