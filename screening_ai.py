@@ -311,6 +311,11 @@ def create_features_fast(df):
         "BigBull": int((close.iloc[-1] - open_.iloc[-1]) / open_.iloc[-1] > 0.03),
         "BigBear": int((open_.iloc[-1] - close.iloc[-1]) / open_.iloc[-1] > 0.03),
         "Slope10": slope10,
+        "ret20": close.pct_change(20).iloc[-1] if len(close) >= 20 else 0,
+        "atr_ratio": (
+            ((df["High"] - df["Low"]).rolling(14).mean().iloc[-1]) 
+            / close.iloc[-1]
+        ) if close.iloc[-1] != 0 else 0,
     }
 
     return latest
