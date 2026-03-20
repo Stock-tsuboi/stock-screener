@@ -220,13 +220,19 @@ def create_features(df):
     atr = (df["High"] - df["Low"]).rolling(14).mean()
     df["atr_ratio"] = atr / df["Close"].replace(0, np.nan)
     
-    # ===== AI学習ラベル（急騰検出）=====
-    future_max = df["Close"].rolling(20).max().shift(-1)
-    future_return = future_max / df["Close"] - 1
+    # ===== AI学習ラベル（トレンド特化型：初動＋継続）=====
+    future_max = df["High"].shift(-1).rolling(5).max()
+    future_close_5 = df["Close"].shift(-5)
+
+    future_return_max = future_max / df["Close"] - 1
+    future_return_5 = future_close_5 / df["Close"] - 1
 
     df["Target"] = np.where(
-        future_return.notna(),
-        (future_return > 0.03).astype(int),
+        future_return_max.notna(),
+        (
+            (future_return_max > 0.04) &   # 初動 +4%
+            (future_return_5 > 0.03)       # 継続 +3%
+        ).astype(int),
         np.nan
     )
 
