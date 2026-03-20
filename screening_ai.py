@@ -1012,8 +1012,8 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
             vol = feat.get("atr_ratio", 0)
 
-            # 上昇側：ラベル条件に合わせる（固定期待値）
-            avg_up = 0.035   # +3.5%（初動4%＋継続3%の中間）
+            # ===== 上昇幅を確率連動に変更 =====
+            avg_up = 0.02 + (prob * 0.05)
 
             # 下落側：ボラティリティ依存
             avg_down = -max(vol, 0.01)  # 最低リスク確保
