@@ -1015,8 +1015,8 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             # ===== 上昇幅を確率連動に変更 =====
             avg_up = 0.02 + (prob * 0.05)
 
-            # 下落側：ボラティリティ依存
-            avg_down = -max(vol, 0.01)  # 最低リスク確保
+            # ===== 損切り固定（実戦仕様）=====
+            avg_down = -0.03  # -3%
 
             # 期待値
             expectancy = prob * avg_up - (1 - prob) * abs(avg_down)
