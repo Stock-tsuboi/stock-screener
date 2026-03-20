@@ -1331,7 +1331,7 @@ def run_screening():
     # 最強AIを統合
     df_merge = pd.merge(
         df_merge,
-        df_strong,
+        df_rank,
         on="symbol",
         how="left"
     )
