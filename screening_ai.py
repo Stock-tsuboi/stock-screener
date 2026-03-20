@@ -246,7 +246,7 @@ def create_features(df):
     return df
     
 # =========================================================
-# STEP34-1 特徴量生成ワーカー
+# STEP10 特徴量生成ワーカー
 # =========================================================
 def feature_worker(item):
 
@@ -267,7 +267,7 @@ def feature_worker(item):
         print("FEATURE ERROR:", symbol, e)
         return None
 # =========================================================
-# Step10　特徴量生成（推論専用・超軽量版）
+# Step11　特徴量生成（推論専用・超軽量版）
 # =========================================================
 def create_features_fast(df):
 
@@ -321,7 +321,7 @@ def create_features_fast(df):
     return latest
 
 # =========================================================
-# Step11　学習処理（安定版・修正版）
+# Step12　学習処理（安定版・修正版）
 # =========================================================
 def train_ai_model(all_data):
 
@@ -353,7 +353,7 @@ def train_ai_model(all_data):
             df2 = df2.replace([np.inf, -np.inf], np.nan)
 
             # =========================
-            # ★修正①：未来データ分を先に削除
+            # Step12-1：未来データ分を先に削除
             # =========================
             if len(df2) > 5:
                 df2 = df2.iloc[:-5]
@@ -395,7 +395,7 @@ def train_ai_model(all_data):
     ]
 
     # =========================
-    # ★修正②：欠損はdropnaで除外
+    # Step12-2：欠損はdropnaで除外
     # =========================
     X = data[feature_cols].fillna(0)
     y = data["Target"]
@@ -430,7 +430,7 @@ def train_ai_model(all_data):
 
 
 # =========================================================
-# Step12　推論処理（新AI・超高速版）
+# Step13　推論処理（新AI・超高速版）
 # =========================================================
 def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
@@ -485,7 +485,7 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
 
 # =========================================================
-# Step13　最強AIランキング（年利最大化）
+# Step14　最強AIランキング（年利最大化）
 # =========================================================
 def strongest_ai_ranking(model, feature_cols, all_data, feature_data):
 
@@ -557,14 +557,14 @@ def strongest_ai_ranking(model, feature_cols, all_data, feature_data):
     return df.head(50)
 
 # =========================================================
-# Step14　パラメータ設定
+# Step15　パラメータ設定
 # =========================================================
 BEST_TH = 0.55
 EXCLUDE_CODES = []
 
 
 # =========================================================
-# Step15　DuckDB差分更新（バッチDL版・最終安定版）
+# Step16　DuckDB差分更新（バッチDL版・最終安定版）
 # =========================================================
 def update_duckdb_from_yfinance(symbols, retrain=False):
 
@@ -597,7 +597,7 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
     period_setting = "1y" if retrain else "5d"
 
     # =====================================================
-    # Step15-1 バッチ取得ループ（高速版）
+    # Step16-1 バッチ取得ループ（高速版）
     # =====================================================
     for i in range(0, len(codes), batch_size):
 
@@ -607,7 +607,7 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
         print(f"取得中: {i} - {i+len(batch_codes)}")
 
         # -----------------------------
-        # Step15-1-1 Yahooから取得
+        # Step16-1-1 Yahooから取得
         # -----------------------------
         try:
             df = yf.download(
@@ -625,7 +625,7 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
             continue
 
         # -----------------------------
-        # Step15-1-2 DataFrame整形
+        # Step16-1-2 DataFrame整形
         # -----------------------------
         dfs = []
 
@@ -660,7 +660,7 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
         merged_df = pd.concat(dfs, ignore_index=True)
 
         # -----------------------------
-        # Step15-1-3 DuckDB一括INSERT
+        # Step16-1-3 DuckDB一括INSERT
         # -----------------------------
         conn.register("tmp_df", merged_df)
 
@@ -678,7 +678,7 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
     print(f"✔ 更新完了 追加件数: {total_inserted}")
     
 # =========================================================
-# Step16　並列DL用：1銘柄更新関数
+# Step17　並列DL用：1銘柄更新関数
 # =========================================================
 def update_one_symbol(code):
 
@@ -735,7 +735,7 @@ def update_one_symbol(code):
     return len(df)
 
 # =========================================================
-# Step17　DuckDB一括ロード高速版
+# Step18　DuckDB一括ロード高速版
 # =========================================================
 def load_all_data_from_duckdb(symbols):
 
@@ -785,7 +785,7 @@ def load_all_data_from_duckdb(symbols):
     return all_data
 
 # =========================================================
-# Step18　銘柄解析（旧ロジック）
+# Step19　銘柄解析（旧ロジック）
 # =========================================================
 def analyze_symbol(code, name, model, all_data):
     if code in EXCLUDE_CODES:
@@ -948,7 +948,7 @@ def analyze_symbol(code, name, model, all_data):
 
 
 # =========================================================
-# Step19　バックテスト（all_data 再利用）
+# Step20　バックテスト（all_data 再利用）
 # =========================================================
 def backtest_ai_only(ai_list, all_data, days=200):
     rets = []
@@ -986,7 +986,7 @@ def backtest_ai_only(ai_list, all_data, days=200):
     print()
 
 # =========================================================
-# Step20　最強AIランキング（本物の期待値AI）
+# Step21　最強AIランキング（本物の期待値AI）
 # =========================================================
 def strongest_ai_ranking(model, feature_cols, feature_data):
     
@@ -1003,7 +1003,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             prob = model.predict_proba(X)[0][1]
 
             # -------------------------
-            # STEP20-1 簡易リターン（featベース）
+            # STEP21-1 簡易リターン（featベース）
             # -------------------------
             ret20 = feat.get("ret20", 0)
             vol = feat.get("atr_ratio", 0)
@@ -1015,7 +1015,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             avg_down = -abs(vol)
 
             # -------------------------
-            # STEP20-2 期待値
+            # STEP21-2 期待値
             # -------------------------
             expectancy = prob * avg_up - (1 - prob) * abs(avg_down)
 
@@ -1042,7 +1042,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
     return df_rank
 # =========================================================
-# Step21　超高速AIランキングエンジン
+# Step22　超高速AIランキングエンジン
 # =========================================================
 def fastest_ai_ranking(model, feature_cols, all_data):
 
@@ -1109,7 +1109,7 @@ def fastest_ai_ranking(model, feature_cols, all_data):
 
     return df_rank    
 # =========================================================
-# Step22　メイン処理（完全修正版）
+# Step23　メイン処理（完全修正版）
 # =========================================================
 def run_screening():
 
@@ -1125,7 +1125,7 @@ def run_screening():
     print(f"対象銘柄数: {len(symbols)}")
 
     # =====================================================
-    # Step22-1 データ更新
+    # Step23-1 データ更新
     # =====================================================
     print("\nDuckDB + yfinance 差分更新...")
     update_duckdb_from_yfinance(symbols, retrain=need_retrain(MODEL_PATH))
@@ -1134,7 +1134,7 @@ def run_screening():
     all_data = load_all_data_from_duckdb(symbols)
 
     # ==============================
-    # 特徴量を事前生成（並列高速化）
+    # Step23-2 特徴量を事前生成（並列高速化）
     # ==============================
     print("\n特徴量生成（並列処理）...")
 
@@ -1160,7 +1160,7 @@ def run_screening():
     print(f"特徴量生成完了: {len(feature_data)}銘柄")
     
     # =====================================================
-    # STEP22-2 新AIモデル準備
+    # STEP23-3 新AIモデル準備
     # =====================================================
     
     if need_retrain(MODEL_PATH):
@@ -1188,7 +1188,7 @@ def run_screening():
         model_new, feature_cols = joblib.load(MODEL_PATH)
 
     # =====================================================
-    # Step22-3 旧ロジック
+    # Step23-4 旧ロジック
     # =====================================================
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
 
@@ -1199,7 +1199,7 @@ def run_screening():
     for _, row in symbols.iterrows()
     ]
     # ==============================
-    # Step22-3-1 新AI推論（←これを追加）
+    # Step23-5 新AI推論
     # ==============================
     ai_list = ai_predict(
         model_new,
@@ -1212,7 +1212,7 @@ def run_screening():
     ai_dict = dict(ai_list)
 
     # =====================================================
-    # Step22-4 新AIロジック (旧Step22-5)
+    # Step23-6 新AIロジック (旧Step22-5)
     # =====================================================
 
     symbol_list = [
@@ -1242,7 +1242,7 @@ def run_screening():
             columns=["symbol","新AI確率","新AI順位"]
         )
     # =====================================================
-    # Step22-5 新AIモデル　#旧Step22-4
+    # Step23-7 新AIモデル　#旧Step22-4
     # =====================================================
 
     results = Parallel(
@@ -1273,7 +1273,7 @@ def run_screening():
             columns=["symbol","銘柄名","旧ロジック判定","旧AI確率"]
         )
     # =====================================================
-    # CODE STEP35-1 AI候補銘柄だけに絞る
+    # Step23-8 AI候補銘柄だけに絞る
     # =====================================================
     candidate_symbols = set(ai_dict.keys())
 
@@ -1290,7 +1290,7 @@ def run_screening():
     }
 
     # =====================================================
-    # Step22-6 最強AI（年利最大化）
+    # Step23-9 最強AI（年利最大化）
     # =====================================================
     print("\n===== 最強AI（年利最大化ランキング） =====")
         
@@ -1307,7 +1307,7 @@ def run_screening():
         df_strong = pd.DataFrame(columns=["symbol"])
     
     # =====================================================
-    # Step22-7 統合ビュー
+    # Step23-10 統合ビュー
     # =====================================================
     print("\n===== 統合ビュー（旧 × 新AI） =====")
 
@@ -1347,7 +1347,7 @@ def run_screening():
     #df_merge = df_merge.sort_values("新AI順位").head(50)
 
     # =========================
-    # 表示用に整形
+    # Step23-11 表示用に整形
     # =========================
     df_view = df_merge.copy()
 
@@ -1357,7 +1357,7 @@ def run_screening():
     ]
 
     # =========================
-    # 見やすい固定幅表示
+    # Step23-12 見やすい固定幅表示
     # =========================
     print("\n symbol   銘柄名        新AI   上昇AI   期待値")
     print("-" * 50)
@@ -1372,7 +1372,7 @@ def run_screening():
         )
 
 # =========================================================
-# Step23　実行
+# Step24　実行
 # =========================================================
 if __name__ == "__main__":
     run_screening()
