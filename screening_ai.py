@@ -1045,10 +1045,6 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
     # 識別用ラベル付与（任意だが分かりやすくする）
     df_rank_top5["戦略"] = "現実向け_TOP5"
 
-    # ===== 表示 =====
-    print("\n===== 最強AI（現実向け_TOP5） =====")
-    print(df_rank_top5)
-
     # ===== 従来（パターンA）はそのまま返す =====
     return df_rank
 # =========================================================
@@ -1303,6 +1299,10 @@ def run_screening():
     # Step23-9 最強AI（年利最大化）
     # =====================================================
     print("\n===== 最強AI（年利最大化ランキング） =====")
+    print(df_rank.head(20))
+
+    print("\n===== 最強AI（現実向け_TOP5） =====")
+    print(df_rank.head(5))
         
     df_strong = strongest_ai_ranking(
         model_new,
