@@ -1037,11 +1037,19 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
     if df_rank.empty:
         return pd.DataFrame(columns=["symbol","AI上昇確率","平均上昇率","平均下落率","期待値"])
 
-    df_rank = df_rank.sort_values(
-        "期待値",
-        ascending=False
-    )
+    df_rank = df_rank.sort_values("期待値", ascending=False)
 
+    # ===== パターンB（現実向け）：上位5銘柄 =====
+    df_rank_top5 = df_rank.head(5).copy()
+
+    # 識別用ラベル付与（任意だが分かりやすくする）
+    df_rank_top5["戦略"] = "現実向け_TOP5"
+
+    # ===== 表示 =====
+    print("\n===== 最強AI（現実向け_TOP5） =====")
+    print(df_rank_top5)
+
+    # ===== 従来（パターンA）はそのまま返す =====
     return df_rank
 # =========================================================
 # Step22　超高速AIランキングエンジン
@@ -1311,7 +1319,7 @@ def run_screening():
     # =====================================================
     # Step23-10 統合ビュー
     # =====================================================
-    print("\n===== 統合ビュー（旧 × 新AI） =====")
+    print("\n===== 統合ビュー（旧 × 新AI）超厳選型 =====")
 
     df_merge = pd.merge(
         df_old,
