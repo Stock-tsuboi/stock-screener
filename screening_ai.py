@@ -1008,21 +1008,17 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             X = pd.DataFrame([feat])[feature_cols].fillna(0)
             prob = model.predict_proba(X)[0][1]
 
-            # -------------------------
-            # STEP21-1 簡易リターン（featベース）
-            # -------------------------
-            ret20 = feat.get("ret20", 0)
+            # ===== 期待値ロジック修正（未来整合型） =====
+
             vol = feat.get("atr_ratio", 0)
 
-            # 異常値防止（重要）
-            ret20 = np.clip(ret20, -1, 1)
+            # 上昇側：ラベル条件に合わせる（固定期待値）
+            avg_up = 0.035   # +3.5%（初動4%＋継続3%の中間）
 
-            avg_up = max(ret20, 0)
-            avg_down = -abs(vol)
+            # 下落側：ボラティリティ依存
+            avg_down = -max(vol, 0.01)  # 最低リスク確保
 
-            # -------------------------
-            # STEP21-2 期待値
-            # -------------------------
+            # 期待値
             expectancy = prob * avg_up - (1 - prob) * abs(avg_down)
 
             rows.append({
