@@ -1298,23 +1298,24 @@ def run_screening():
     # =====================================================
     # Step23-9 最強AI（年利最大化）
     # =====================================================
+
+    # ===== 先に作る =====
+    df_rank = strongest_ai_ranking(
+        model_new,
+        feature_cols,
+        feature_data
+    )
+
+    # ★空対策
+    if df_rank.empty:
+        df_rank = pd.DataFrame(columns=["symbol"])
+
+    # ===== 表示 =====
     print("\n===== 最強AI（年利最大化ランキング） =====")
     print(df_rank.head(20))
 
     print("\n===== 最強AI（現実向け_TOP5） =====")
     print(df_rank.head(5))
-        
-    df_strong = strongest_ai_ranking(
-        model_new,
-        feature_cols,
-        feature_data
-    )
-    
-    print(df_strong.head(20))
-
-    # ★ここを追加（安全対策）
-    if df_strong.empty:
-        df_strong = pd.DataFrame(columns=["symbol"])
     
     # =====================================================
     # Step23-10 統合ビュー
