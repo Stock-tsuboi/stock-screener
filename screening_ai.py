@@ -469,6 +469,10 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
     df_all = pd.DataFrame(rows)
 
+    # ===== 特徴量生成 =====
+    df_all = create_features(df_all)
+
+    # ===== 推論用データ =====
     X = df_all[feature_cols].fillna(0)
 
     print("predict_proba 一括実行...")
