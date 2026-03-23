@@ -215,6 +215,8 @@ def create_features(df):
     df["Slope10"] = df["Close"].pct_change(10)
     
     # ===== 追加（期待値AI用特徴量） =====
+    df["ret3"] = df["Close"].pct_change(3)
+    df["ret5"] = df["Close"].pct_change(5)
     df["ret20"] = df["Close"].pct_change(20)
 
     atr = (df["High"] - df["Low"]).rolling(14).mean()
