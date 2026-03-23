@@ -469,6 +469,15 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
     df_all = pd.DataFrame(rows)
 
+    # ===== カラム名統一（小文字→大文字）=====
+    df_all = df_all.rename(columns={
+        "open": "Open",
+        "high": "High",
+        "low": "Low",
+        "close": "Close",
+        "volume": "Volume"
+    })
+    
     # ===== 特徴量生成 =====
     df_all = create_features(df_all)
 
