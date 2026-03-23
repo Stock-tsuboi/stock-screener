@@ -243,6 +243,8 @@ def create_features(df):
         "VolRatio",
         "Bull","BigBull","BigBear",
         "Slope10",
+        "ret3",
+        "ret5",
         "ret20",
         "atr_ratio"
     ]
@@ -396,6 +398,8 @@ def train_ai_model(all_data):
         "VolRatio",
         "Bull","BigBull","BigBear",
         "Slope10",
+        "ret3",
+        "ret5",
         "ret20",
         "atr_ratio"
     ]
@@ -510,7 +514,11 @@ def strongest_ai_ranking(model, feature_cols, all_data, feature_data):
                 continue
         except:
             continue
-
+            
+        # ===== デバッグ（最初の1回だけ表示）=====
+        print("DEBUG keys:", list(feat.keys())[:20])
+        break
+        
         X = pd.DataFrame([feat])[feature_cols].fillna(0)
 
         prob = model.predict_proba(X)[0][1]
@@ -1007,6 +1015,14 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
             X = pd.DataFrame([feat])[feature_cols].fillna(0)
             prob = model.predict_proba(X)[0][1]
+
+            # ===== 崩壊検知フィルタ（ここに追加） =====
+            recent_ret5 = feat.get("ret5", 0)
+            recent_ret3 = feat.get("ret3", 0)
+
+            # 直近で下げている銘柄は除外
+            if (recent_ret5 < -0.03) or (recent_ret3 < -0.02):
+                continue
 
             # ===== 期待値ロジック修正（未来整合型） =====
 
