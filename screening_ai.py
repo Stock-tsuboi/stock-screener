@@ -204,14 +204,6 @@ def create_features(df):
         (df["Open"] - df["Close"]) / df["Open"].replace(0, np.nan) > 0.03
     ).astype(int)
 
-    #def calc_slope(series):
-        #if len(series) < 10:
-            #return np.nan
-        #y = series.values.reshape(-1, 1)
-        #x = np.arange(len(series)).reshape(-1, 1)
-        #model = LinearRegression().fit(x, y)
-        #return model.coef_[0][0]
-    #df["Slope10"] = df["Close"].rolling(10).apply(calc_slope, raw=False)
     df["Slope10"] = df["Close"].pct_change(10)
     
     # ===== 追加（期待値AI用特徴量） =====
@@ -321,6 +313,8 @@ def create_features_fast(df):
         "BigBull": int((close.iloc[-1] - open_.iloc[-1]) / open_.iloc[-1] > 0.03),
         "BigBear": int((open_.iloc[-1] - close.iloc[-1]) / open_.iloc[-1] > 0.03),
         "Slope10": slope10,
+        "ret3": close.pct_change(3).iloc[-1] if len(close) >= 3 else 0,
+        "ret5": close.pct_change(5).iloc[-1] if len(close) >= 5 else 0,
         "ret20": close.pct_change(20).iloc[-1] if len(close) >= 20 else 0,
         "atr_ratio": (
             ((df["High"] - df["Low"]).rolling(14).mean().iloc[-1]) 
