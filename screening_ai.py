@@ -570,7 +570,8 @@ def strongest_ai_ranking(model, feature_cols, all_data, feature_data):
 # =========================================================
 # Step15　パラメータ設定
 # =========================================================
-BEST_TH = 0.55
+
+#BEST_TH = 0.55　厳しすぎる為使用しない
 EXCLUDE_CODES = []
 
 
@@ -1193,7 +1194,8 @@ def fastest_ai_ranking(model, feature_cols, all_data):
 # Step23　メイン処理（完全修正版）
 # =========================================================
 def run_screening():
-
+    
+    global BEST_TH   # ← これ追加（絶対）
     print("日本株銘柄リストを読み込み中...")
     symbols = load_symbol_list()
 
@@ -1267,27 +1269,29 @@ def run_screening():
         print("\n===== 新AI 読み込み =====")
     
         model_new, feature_cols = joblib.load(MODEL_PATH)
-        
-        print("\n===== 閾値最適化バックテスト =====")
 
-        thresholds = np.arange(0.20, 0.60, 0.05)
+    # ==============================
+    # ★ここに追加（これ1回だけ）
+    # ==============================
+    print("\n===== 閾値最適化バックテスト =====")
 
-        df_th = backtest_threshold(
-            model_new,
-            feature_cols,
-            all_data,
-            thresholds
-        )
+    thresholds = np.arange(0.20, 0.60, 0.05)
 
-        # 最適閾値
-        best_row = df_th.sort_values("avg_return", ascending=False).iloc[0]
-        BEST_TH = best_row["threshold"]
+    df_th = backtest_threshold(
+        model_new,
+        feature_cols,
+        all_data,
+        thresholds
+    )
 
-        print("\n===== 閾値ランキング =====")
-        print(df_th.sort_values("avg_return", ascending=False))
+    best_row = df_th.sort_values("avg_return", ascending=False).iloc[0]
+    BEST_TH = best_row["threshold"]
 
-        print(f"\n🔥 最適閾値: {BEST_TH:.2f}")
+    print("\n===== 閾値ランキング =====")
+    print(df_th.sort_values("avg_return", ascending=False))
 
+    print(f"\n🔥 最適閾値: {BEST_TH:.2f}")
+ 
     # =====================================================
     # Step23-4 旧ロジック
     # =====================================================
@@ -1299,6 +1303,7 @@ def run_screening():
     (row["コード"], row["銘柄名"])
     for _, row in symbols.iterrows()
     ]
+
     # ==============================
     # Step23-5 新AI推論
     # ==============================
