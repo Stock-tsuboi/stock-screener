@@ -997,6 +997,68 @@ def backtest_ai_only(ai_list, all_data, days=200):
     print()
 
 # =========================================================
+# Step20-1　閾値最適化バックテスト（追加）
+# =========================================================
+def backtest_threshold(model, feature_cols, all_data, thresholds):
+
+    results = []
+
+    for th in thresholds:
+
+        selected = []
+
+        for symbol, df in all_data.items():
+
+            if df is None or len(df) < 120:
+                continue
+
+            try:
+                df_feat = create_features(df)
+
+                if len(df_feat) < 10:
+                    continue
+
+                # ★未来リーク防止（ここ重要）
+                last = df_feat.iloc[-6]
+
+                X = pd.DataFrame([last])[feature_cols].fillna(0)
+
+                prob = model.predict_proba(X)[0][1]
+
+                if prob >= th:
+                    selected.append((symbol, df))
+
+            except:
+                continue
+
+        # ===== リターン計算 =====
+        rets = []
+
+        for symbol, df in selected:
+
+            try:
+                entry = df["Close"].iloc[-6]
+                exit_ = df["Close"].iloc[-1]
+
+                ret = (exit_ - entry) / entry
+                rets.append(ret)
+
+            except:
+                continue
+
+        avg_ret = np.mean(rets) if len(rets) > 0 else 0
+
+        results.append({
+            "threshold": th,
+            "count": len(rets),
+            "avg_return": avg_ret
+        })
+
+        print(f"TH={th:.2f} 件数={len(rets)} 平均リターン={avg_ret:.4f}")
+
+    return pd.DataFrame(results)
+
+# =========================================================
 # Step21　最強AIランキング（本物の期待値AI）
 # =========================================================
 def strongest_ai_ranking(model, feature_cols, feature_data):
@@ -1205,6 +1267,26 @@ def run_screening():
         print("\n===== 新AI 読み込み =====")
     
         model_new, feature_cols = joblib.load(MODEL_PATH)
+        
+        print("\n===== 閾値最適化バックテスト =====")
+
+        thresholds = np.arange(0.20, 0.60, 0.05)
+
+        df_th = backtest_threshold(
+            model_new,
+            feature_cols,
+            all_data,
+            thresholds
+        )
+
+        # 最適閾値
+        best_row = df_th.sort_values("avg_return", ascending=False).iloc[0]
+        BEST_TH = best_row["threshold"]
+
+        print("\n===== 閾値ランキング =====")
+        print(df_th.sort_values("avg_return", ascending=False))
+
+        print(f"\n🔥 最適閾値: {BEST_TH:.2f}")
 
     # =====================================================
     # Step23-4 旧ロジック
