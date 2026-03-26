@@ -1333,8 +1333,16 @@ def run_screening():
     for symbol, prob in ai_list:
         print(f"{symbol}: {prob:.3f}")
 
+    # 銘柄名マッピング作成
+    name_map = {
+        f"{row['コード']}.T": row["銘柄名"]
+        for _, row in symbols.iterrows()
+    }
+
     df_new = pd.DataFrame(ai_list, columns=["symbol","新AI確率"])
 
+    # 銘柄名を付与
+    df_new["銘柄名"] = df_new["symbol"].map(name_map)
     if not df_new.empty:
 
         df_new["新AI順位"] = (
