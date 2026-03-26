@@ -571,7 +571,7 @@ def strongest_ai_ranking(model, feature_cols, all_data, feature_data):
 # Step15　パラメータ設定
 # =========================================================
 
-#BEST_TH = 0.55　厳しすぎる為使用しない
+BEST_TH = 0.45　#数値を調整する
 EXCLUDE_CODES = []
 
 
@@ -1271,26 +1271,27 @@ def run_screening():
         model_new, feature_cols = joblib.load(MODEL_PATH)
 
     # ==============================
-    # ★ここに追加（これ1回だけ）
+    # ★ここに追加（これ1回だけ）閾値最適化したいときに実行
     # ==============================
-    print("\n===== 閾値最適化バックテスト =====")
+    
+    #print("\n===== 閾値最適化バックテスト =====")
 
-    thresholds = np.arange(0.20, 0.60, 0.05)
+    #thresholds = np.arange(0.20, 0.60, 0.05)
 
-    df_th = backtest_threshold(
-        model_new,
-        feature_cols,
-        all_data,
-        thresholds
-    )
+    #df_th = backtest_threshold(
+        #model_new,
+        #feature_cols,
+        #all_data,
+        #thresholds
+    #)
 
-    best_row = df_th.sort_values("avg_return", ascending=False).iloc[0]
-    BEST_TH = best_row["threshold"]
+    #best_row = df_th.sort_values("avg_return", ascending=False).iloc[0]
+    #BEST_TH = best_row["threshold"]
 
-    print("\n===== 閾値ランキング =====")
-    print(df_th.sort_values("avg_return", ascending=False))
+    #print("\n===== 閾値ランキング =====")
+    #print(df_th.sort_values("avg_return", ascending=False))
 
-    print(f"\n🔥 最適閾値: {BEST_TH:.2f}")
+    #print(f"\n🔥 最適閾値: {BEST_TH:.2f}")
  
     # =====================================================
     # Step24-4 旧ロジック
