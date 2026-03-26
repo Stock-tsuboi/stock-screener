@@ -1409,7 +1409,7 @@ def run_screening():
 
     # ★空対策
     if df_rank.empty:
-        df_rank = pd.DataFrame(columns=["symbol"])
+        df_rank = pd.DataFrame(columns=["symbol", "期待値"])
 
     # ===== 表示 =====
     print("\n===== 最強AI（年利最大化ランキング） =====")
