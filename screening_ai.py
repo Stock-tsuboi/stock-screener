@@ -1464,7 +1464,7 @@ def run_screening():
 
     # 表示列を厳選
     df_view = df_view[
-        ["symbol", "銘柄名", "新AI確率", "AI上昇確率", "期待値"]
+        ["symbol", "銘柄名", "新AI確率", "旧AI確率", "期待値"]
     ]
 
     # =========================
@@ -1478,7 +1478,7 @@ def run_screening():
             f"{row['symbol']:<8} "
             f"{str(row['銘柄名'])[:12]:<12} "
             f"{float(row['新AI確率']):>6.3f} "
-            f"{float(row['AI上昇確率']):>6.3f} "
+            f"{float(row['旧AI確率']):>6.3f} "
             f"{float(row['期待値']):>7.3f}"
         )
 
