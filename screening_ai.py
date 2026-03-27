@@ -1090,7 +1090,9 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             vol = feat.get("atr_ratio", 0)
 
             # ===== 上昇幅を確率連動に変更 =====
-            avg_up = 0.02 + (prob * 0.05)
+            
+            # 最低上昇15%、上昇伸び+10%
+            avg_up = 0.015 + (prob * 0.10)
 
             # ===== 損切り固定（実戦仕様）=====
             avg_down = -0.03  # -3%
