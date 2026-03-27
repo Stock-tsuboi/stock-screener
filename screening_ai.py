@@ -997,6 +997,33 @@ def backtest_ai_only(ai_list, all_data, days=200):
     print(f"平均リターン：{avg_return*100:.2f}%")
     print()
 
+    # =========================================================
+# Step20-2　トレードシミュレーション（追加）
+# =========================================================
+def simulate_trade(df, entry_index, prob):
+
+    STOP_LOSS = -0.03
+    TAKE_PROFIT = 0.02 + (prob * 0.08)
+
+    entry_price = df["Close"].iloc[entry_index]
+
+    for i in range(entry_index + 1, len(df)):
+
+        high = df["High"].iloc[i]
+        low = df["Low"].iloc[i]
+
+        # 利確
+        if (high - entry_price) / entry_price >= TAKE_PROFIT:
+            return TAKE_PROFIT
+
+        # 損切り
+        if (low - entry_price) / entry_price <= STOP_LOSS:
+            return STOP_LOSS
+
+    # 最後まで行った場合
+    exit_price = df["Close"].iloc[-1]
+    return (exit_price - entry_price) / entry_price
+
 # =========================================================
 # Step21　閾値最適化バックテスト（追加）
 # =========================================================
@@ -1027,7 +1054,7 @@ def backtest_threshold(model, feature_cols, all_data, thresholds):
                 prob = model.predict_proba(X)[0][1]
 
                 if prob >= th:
-                    selected.append((symbol, df))
+                    selected.append((symbol, df, prob))
 
             except:
                 continue
@@ -1035,13 +1062,10 @@ def backtest_threshold(model, feature_cols, all_data, thresholds):
         # ===== リターン計算 =====
         rets = []
 
-        for symbol, df in selected:
+        for symbol, df, prob in selected:
 
             try:
-                entry = df["Close"].iloc[-6]
-                exit_ = df["Close"].iloc[-1]
-
-                ret = (exit_ - entry) / entry
+                ret = simulate_trade(df, -6, prob)
                 rets.append(ret)
 
             except:
