@@ -1445,6 +1445,10 @@ def run_screening():
         how="left"
     )
     
+    # ===== 銘柄名統合（これ追加）=====
+    if "銘柄名_x" in df_merge.columns and "銘柄名_y" in df_merge.columns:
+        df_merge["銘柄名"] = df_merge["銘柄名_x"].combine_first(df_merge["銘柄名_y"])
+        df_merge = df_merge.drop(columns=["銘柄名_x", "銘柄名_y"])
 
     df_merge["銘柄名"] = df_merge["銘柄名"].fillna("不明")
     df_merge["旧ロジック判定"] = df_merge["旧ロジック判定"].fillna("該当なし")
