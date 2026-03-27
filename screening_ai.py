@@ -1461,6 +1461,10 @@ def run_screening():
     df_merge["期待値"] = df_merge["期待値"].fillna(-999)
 
     # ★ここが最重要：期待値でソート
+
+    # 旧AIが0の銘柄は除外（精度強化）
+    df_merge = df_merge[df_merge["旧AI確率"] > 0]
+    
     df_merge = df_merge.sort_values(
         "期待値",
         ascending=False
