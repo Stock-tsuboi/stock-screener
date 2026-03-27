@@ -1080,9 +1080,10 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             recent_ret5 = feat.get("ret5", 0)
             recent_ret3 = feat.get("ret3", 0)
 
-            # 直近で下げている銘柄は除外
-            if (recent_ret5 < -0.03) or (recent_ret3 < -0.02):
-                continue
+            # フィルタ緩和（完全に外す）（上少しきつめ、下ゆるめ）
+            # if (recent_ret5 < -0.03) or (recent_ret3 < -0.02):
+            # if (recent_ret5 < -0.07) or (recent_ret3 < -0.05):
+            #     continue
 
             # ===== 期待値ロジック修正（未来整合型） =====
 
