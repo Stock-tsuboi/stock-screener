@@ -16,6 +16,8 @@ jobs:
     env:
       JQ_API_KEY: ${{ secrets.JQ_API_KEY }}
       JQ_PASSWORD: ${{ secrets.JQ_PASSWORD }}
+      LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
+      LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
 
     steps:
       # 1. リポジトリ取得
