@@ -1612,17 +1612,27 @@ def run_screening():
         lines.append(line)
 
     # =========================
-    # LINE送信用メッセージ作成
+    # LINE送信（総合TOP5）
     # =========================
-    if lines:
 
-        message = "【AI買いシグナル】\n\n" + "\n".join(lines[:20])
+    lines_total = ["【総合ランキング TOP5】"]
 
-        send_line(message)
+    for i, (_, row) in enumerate(df_total.iterrows(), start=1):
 
-        print("\nLINE送信完了")
-    else:
-        print("\n送信対象なし")
+        line = (
+            f"{i}位 {row['symbol']} "
+            f"{str(row['銘柄名'])[:10]} "
+            f"{row['新AI確率']:.2f} "
+            f"{row['期待値']:.3f}"
+        )
+
+        lines_total.append(line)
+
+    message = "\n".join(lines_total)
+
+    send_line(message)
+
+    print("\nLINE送信完了（総合TOP5）")
 
 # =========================================================
 # Step25　実行
