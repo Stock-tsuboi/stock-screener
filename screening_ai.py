@@ -33,7 +33,7 @@ def send_line(message):
 
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {LINE_BOT_TOKEN}"
+        "Authorization": f"Bearer {LINE_ACCESS_TOKEN}"
     }
 
     data = {
