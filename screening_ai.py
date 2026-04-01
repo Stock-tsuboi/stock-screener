@@ -19,6 +19,43 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # =========================================================
+# Step0-2　LINE送信関数（環境変数版）
+# =========================================================
+LINE_ACCESS_TOKEN = os.getenv("LINE_BOT_TOKEN")
+LINE_USER_ID = os.getenv("LINE_USER_ID")
+
+if not LINE_ACCESS_TOKEN or not LINE_USER_ID:
+    raise ValueError("LINE環境変数が設定されていません")
+
+def send_line(message):
+
+    url = "https://api.line.me/v2/bot/message/push"
+
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {LINE_BOT_TOKEN}"
+    }
+
+    data = {
+        "to": LINE_USER_ID,
+        "messages": [
+            {
+                "type": "text",
+                "text": message
+            }
+        ]
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data)
+
+        if response.status_code != 200:
+            print("LINE送信失敗:", response.text)
+
+    except Exception as e:
+        print("LINE送信エラー:", e)
+
+# =========================================================
 # STEP1　パス設定（絶対パス固定）
 # =========================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -1518,17 +1555,36 @@ def run_screening():
     # =========================
     # Step24-12 見やすい固定幅表示
     # =========================
+    
     print("\n symbol   銘柄名        新AI   上昇AI   期待値")
     print("-" * 50)
-    
+
+    lines = []
+
     for _, row in df_view.iterrows():
-        print(
-            f"{row['symbol']:<8} "
-            f"{str(row['銘柄名'])[:12]:<12} "
-            f"{float(row['新AI確率']):>6.3f} "
-            f"{float(row['旧AI確率']):>6.3f} "
-            f"{float(row['期待値']):>7.3f}"
+
+        line = (
+            f"{row['symbol']} "
+            f"{str(row['銘柄名'])[:10]} "
+            f"{float(row['新AI確率']):.2f} "
+            f"{float(row['期待値']):.3f}"
         )
+
+        print(line)
+        lines.append(line)
+
+    # =========================
+    # LINE送信用メッセージ作成
+    # =========================
+    if lines:
+
+        message = "【AI買いシグナル】\n\n" + "\n".join(lines[:20])
+
+        send_line(message)
+
+        print("\nLINE送信完了")
+    else:
+        print("\n送信対象なし")
 
 # =========================================================
 # Step25　実行
