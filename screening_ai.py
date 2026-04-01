@@ -1558,6 +1558,28 @@ def run_screening():
     #print(df_merge.to_string(index=False))
     #df_merge = df_merge.sort_values("新AI順位").head(50)
 
+    # =====================================================
+    # Step24-10-2 総合ランキングTOP5
+    # =====================================================
+
+    df_total = df_merge.copy()
+
+    # TOTAL_SCOREでランキング
+    df_total = df_total.sort_values(
+        "TOTAL_SCORE",
+        ascending=False
+    ).head(5)
+
+    print("\n===== 総合ランキング TOP5 =====\n")
+
+    for i, (_, row) in enumerate(df_total.iterrows(), start=1):
+        print(
+            f"{i}位 {row['symbol']} "
+            f"{str(row['銘柄名'])[:12]} "
+            f"確率:{row['新AI確率']:.3f} "
+            f"期待値:{row['期待値']:.3f}"
+        )
+
     # =========================
     # Step24-11 表示用に整形
     # =========================
