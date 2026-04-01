@@ -1527,6 +1527,22 @@ def run_screening():
     # ★最強AI（期待値）も補完
     df_merge["期待値"] = df_merge["期待値"].fillna(-999)
 
+    # =========================
+    # Step24-10-1 総合スコア作成
+    # =========================
+
+    # スコア正規化（0〜1）
+    df_merge["score_prob"] = df_merge["新AI確率"]
+    df_merge["score_old"] = df_merge["旧AI確率"]
+    df_merge["score_ev"] = df_merge["期待値"]
+
+    # 重み付き合計（ここが戦略）
+    df_merge["TOTAL_SCORE"] = (
+        df_merge["score_prob"] * 0.5 +
+        df_merge["score_ev"] * 0.4 +
+        df_merge["score_old"] * 0.1
+    )
+    
     # ★ここが最重要：期待値でソート
 
     # 旧AIが0の銘柄は除外（精度強化）
