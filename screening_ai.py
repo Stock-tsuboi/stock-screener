@@ -1266,7 +1266,7 @@ def run_screening():
     # =====================================================
     # Step1 実行時間判定（ここに入れる）
     # =====================================================
-    now = datetime.now()
+    now = datetime.datetime.now()
     hour = now.hour
 
     if hour < 12:
