@@ -1270,11 +1270,11 @@ def run_screening():
     hour = now.hour
 
     if hour < 12:
-        MODE = "MORNING"
+        RUN_MODE = "OPEN"
     else:
-        MODE = "CLOSE"
+        RUN_MODE = "CLOSE"
 
-    print(f"\n===== 実行モード: {MODE} =====")
+    print(f"\n===== 実行モード: {RUN_MODE} =====")
     
     global BEST_TH   # ← これ追加（絶対）
     print("日本株銘柄リストを読み込み中...")
