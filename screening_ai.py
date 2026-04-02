@@ -1262,6 +1262,19 @@ def fastest_ai_ranking(model, feature_cols, all_data):
 # Step24　メイン処理（完全修正版）
 # =========================================================
 def run_screening():
+
+    # =====================================================
+    # Step1 実行時間判定（ここに入れる）
+    # =====================================================
+    now = datetime.now()
+    hour = now.hour
+
+    if hour < 12:
+        MODE = "MORNING"
+    else:
+        MODE = "CLOSE"
+
+    print(f"\n===== 実行モード: {MODE} =====")
     
     global BEST_TH   # ← これ追加（絶対）
     print("日本株銘柄リストを読み込み中...")
