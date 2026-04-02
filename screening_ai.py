@@ -1507,6 +1507,18 @@ def run_screening():
     print("\n===== 最強AI（現実向け_TOP5） =====")
     print(df_rank.head(5))
 
+    # =========================
+    # モード分岐（朝 or 引け）
+    # =========================
+    if RUN_MODE == "OPEN":
+        print("\n>>> 朝モード処理（勝率重視）")
+
+        # 朝は厳選（勝率重視）
+        df_rank = df_rank[df_rank["AI上昇確率"] > 0.5]
+
+    else:
+        print("\n>>> 引けモード処理（今まで通り）")
+
     if MODE == "MORNING":
         print("\n>>> 朝モード処理（まだ中身なし）")
     else:
