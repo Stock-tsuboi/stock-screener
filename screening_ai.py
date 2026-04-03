@@ -1512,8 +1512,13 @@ def run_screening():
     if RUN_MODE == "OPEN":
         print("\n>>> 朝モード処理（勝率重視）")
 
-        # 朝は厳選（勝率重視）
-        df_rank = df_rank[df_rank["AI上昇確率"] > 0.5]
+        # ★件数ゼロ防止（重要）
+        df_tmp = df_rank[df_rank["AI上昇確率"] > 0.5]
+
+        if len(df_tmp) > 0:
+            df_rank = df_tmp
+        else:
+            print("⚠ 朝フィルタで0件 → フィルタ無効化")
 
     else:
         print("\n>>> 引けモード処理（今まで通り）")
