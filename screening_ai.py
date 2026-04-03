@@ -549,9 +549,8 @@ def strongest_ai_ranking(model, feature_cols, all_data, feature_data):
         except:
             continue
             
-        # ===== デバッグ（最初の1回だけ表示）=====
-        print("DEBUG keys:", list(feat.keys())[:20])
-        break
+        # ===== デバッグ（必要なら使用）=====
+        # print("DEBUG keys:", list(feat.keys())[:20])
         
         X = pd.DataFrame([feat])[feature_cols].fillna(0)
 
