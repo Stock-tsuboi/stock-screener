@@ -1149,17 +1149,20 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
             vol = feat.get("atr_ratio", 0)
 
-            # ===== 上昇幅を確率連動に変更 =====
-            
-            # 最低上昇15%、上昇伸び+10%
-            avg_up = 0.015 + (prob * 0.10)
+            # ===== 期待値ロジック修正（未来整合型） =====
 
-            # ===== 損切り固定（実戦仕様）=====
-            avg_down = -0.03  # -3%
+            ret20 = feat.get("ret20", 0)
+            vol = feat.get("atr_ratio", 0)
+
+            # 上昇幅：トレンド + ボラ
+            avg_up = max(0.02, ret20 + vol * 2)
+
+            # 下落幅：ボラ依存（現実的）
+            avg_down = -max(0.02, vol * 1.5)
 
             # 期待値
             expectancy = prob * avg_up - (1 - prob) * abs(avg_down)
-            
+
             # ★ここに追加
             if expectancy <= 0:
                 continue
