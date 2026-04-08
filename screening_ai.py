@@ -1182,6 +1182,20 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
     df_rank = df_rank.sort_values("期待値", ascending=False)
 
+    # ==========================================
+    # df_rank 空対策（超重要）
+    # ==========================================
+    if df_rank is None or len(df_rank) == 0:
+        print("⚠ df_rank が空 → スキップ")
+    
+        df_rank = pd.DataFrame(columns=[
+            "symbol",
+            "AI上昇確率",
+            "平均上昇率",
+            "平均下落率",
+            "期待値"
+        ])
+
     # ===== パターンB（現実向け）：上位5銘柄 =====
     df_rank_top5 = df_rank.head(5).copy()
 
@@ -1247,7 +1261,13 @@ def fastest_ai_ranking(model, feature_cols, all_data):
         })
 
     if len(rows) == 0:
-        return pd.DataFrame()
+        print("⚠ データ0件 → 空DFで返す")
+        return pd.DataFrame(columns=[
+            "symbol",
+            "AI上昇確率",
+            "期待上昇率",
+            "期待値"
+        ])
 
     df_rank = pd.DataFrame(rows)
 
@@ -1256,6 +1276,20 @@ def fastest_ai_ranking(model, feature_cols, all_data):
         ascending=False
     )
 
+    # ==========================================
+    # df_rank 空対策（超重要）
+    # ==========================================
+    if df_rank is None or len(df_rank) == 0:
+        print("⚠ df_rank が空 → スキップ")
+    
+        df_rank = pd.DataFrame(columns=[
+            "symbol",
+            "AI上昇確率",
+            "平均上昇率",
+            "平均下落率",
+            "期待値"
+        ])
+        
     return df_rank    
 # =========================================================
 # Step24　メイン処理（完全修正版）
@@ -1512,6 +1546,11 @@ def run_screening():
     if RUN_MODE == "OPEN":
         print("\n>>> 朝モード処理（勝率重視）")
 
+        if df_rank.empty:
+            print("⚠ 該当銘柄なし")
+            send_line("本日該当銘柄なし")
+            return
+        
         # ★件数ゼロ防止（重要）
         df_tmp = df_rank[df_rank["AI上昇確率"] > 0.5]
 
