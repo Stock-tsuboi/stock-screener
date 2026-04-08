@@ -1540,6 +1540,14 @@ def run_screening():
     print(df_rank.head(5))
 
     # =========================
+    # 強制終了ガード（超重要）
+    # =========================
+    if "AI上昇確率" not in df_rank.columns:
+        print("⚠ AI上昇確率カラムなし → 強制停止")
+        send_line("エラー：AI上昇確率カラムなし")
+        return
+
+    # =========================
     # モード分岐（朝 or 引け）
     # =========================
     if RUN_MODE == "OPEN":
@@ -1551,7 +1559,11 @@ def run_screening():
             return
         
         # ★件数ゼロ防止（重要）
-        df_tmp = df_rank[df_rank["AI上昇確率"] > 0.5]
+        if "AI上昇確率" in df_rank.columns:
+            df_tmp = df_rank[df_rank["AI上昇確率"] > 0.5]
+        else:
+            print("⚠ フィルタスキップ（列なし）")
+            df_tmp = df_rank
 
         if len(df_tmp) > 0:
             df_rank = df_tmp
@@ -1700,6 +1712,10 @@ def run_screening():
 
     message = "\n".join(lines_total)
 
+    if len(lines_total) <= 1:
+        print("⚠ 送信内容なし → 強制メッセージ送信")
+        message = "本日シグナルなし"
+
     send_line(message)
 
     print("\nLINE送信完了（総合TOP5）")
@@ -1708,7 +1724,11 @@ def run_screening():
 # Step25　実行
 # =========================================================
 if __name__ == "__main__":
-    run_screening()
+    try:
+        run_screening()
+    except Exception as e:
+        print("致命的エラー:", e)
+        send_line(f"システムエラー: {str(e)}")
 
 
 
