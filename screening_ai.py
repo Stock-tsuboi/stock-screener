@@ -1285,8 +1285,7 @@ def fastest_ai_ranking(model, feature_cols, all_data):
         df_rank = pd.DataFrame(columns=[
             "symbol",
             "AI上昇確率",
-            "平均上昇率",
-            "平均下落率",
+            "期待上昇率",
             "期待値"
         ])
         
