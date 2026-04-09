@@ -1157,7 +1157,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
             X = pd.DataFrame([feat])[feature_cols].fillna(0)
             if isinstance(model, tuple):
-            model = model[0]
+                model = model[0]
             prob = model.predict_proba(X)[0][1]
 
             # ===== 崩壊検知フィルタ（ここに追加） =====
