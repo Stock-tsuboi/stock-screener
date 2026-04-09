@@ -175,7 +175,28 @@ def load_symbol_list():
     print(f"銘柄数ロード完了: {len(df)}")
 
     return df
+    
+# =========================================================
+# Step7-5　model.pkl 自動ダウンロード
+# =========================================================
+def download_model():
 
+    if os.path.exists("model.pkl"):
+        print("model.pkl 既に存在")
+        return
+
+    print("model.pkl ダウンロード開始...")
+
+    url = "ここにReleaseのURL"
+
+    import requests
+
+    r = requests.get(url)
+
+    with open("model.pkl", "wb") as f:
+        f.write(r.content)
+
+    print("model.pkl ダウンロード完了")
 
 # =========================================================
 # Step8　AIモデル読み込み（旧ロジック用）
