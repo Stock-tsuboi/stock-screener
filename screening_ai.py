@@ -1425,6 +1425,10 @@ def run_screening():
         # 読み込み
         # =========================
         model_new, feature_cols = joblib.load(MODEL_PATH)
+        
+        #一時的に追加
+        obj = joblib.load(MODEL_PATH)
+        print("DEBUG TYPE:", type(obj))
 
     # ==============================
     # ★ここに追加（これ1回だけ）閾値最適化したいときに実行
