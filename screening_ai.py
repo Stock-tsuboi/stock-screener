@@ -1391,7 +1391,22 @@ def run_screening():
             print("AI学習スキップ → 既存モデルを使用")
     
             if os.path.exists(MODEL_PATH):
-                model_new, feature_cols = joblib.load(MODEL_PATH)
+                loaded = joblib.load(MODEL_PATH)
+
+                if isinstance(loaded, tuple):
+                    model_new, feature_cols = loaded
+                else:
+                    model_new = loaded
+                    feature_cols = [
+                        "SMA5","SMA25","SMA75",
+                        "Bias5","Bias25","Bias75",
+                        "BB_UP1","BB_LOW1","BB_UP2","BB_LOW2",
+                        "VolRatio",
+                        "Bull","BigBull","BigBear",
+                        "Slope10",
+                        "ret3","ret5","ret20","atr_ratio"
+                    ]
+                    
                 print("既存モデル読み込み完了")
             else:
                 print("❌ モデルが存在しないため処理終了")
