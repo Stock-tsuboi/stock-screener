@@ -60,7 +60,8 @@ def send_line(message):
 # =========================================================
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-MODEL_PATH = os.path.join(BASE_DIR, "model_new.pkl")
+#MODEL_PATH = os.path.join(BASE_DIR, "model_new.pkl")下に書き換えた
+MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
 DB_PATH = os.path.join(BASE_DIR, "market.db")
 
 
@@ -1399,9 +1400,30 @@ def run_screening():
         joblib.dump((model_new, feature_cols), MODEL_PATH)
     
     else:
-    
+
         print("\n===== 新AI 読み込み =====")
-    
+
+        # =========================
+        # ★ローカルに無ければDL
+        # =========================
+        if not os.path.exists(MODEL_PATH):
+
+            print("model.pkl が無い → GitHubからDL")
+
+            import requests
+
+            url = "https://github.com/Stock-tsuboi/stock-screener/releases/download/v1.0/model.pkl"
+
+            r = requests.get(url)
+
+            with open(MODEL_PATH, "wb") as f:
+                f.write(r.content)
+
+            print("✔ ダウンロード完了")
+
+        # =========================
+        # 読み込み
+        # =========================
         model_new, feature_cols = joblib.load(MODEL_PATH)
 
     # ==============================
