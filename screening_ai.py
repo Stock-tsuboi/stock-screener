@@ -1421,14 +1421,21 @@ def run_screening():
 
             print("✔ ダウンロード完了")
 
-        # =========================
-        # 読み込み
-        # =========================
-        model_new, feature_cols = joblib.load(MODEL_PATH)
-        
-        #一時的に追加
-        obj = joblib.load(MODEL_PATH)
-        print("DEBUG TYPE:", type(obj))
+        loaded = joblib.load(MODEL_PATH)
+
+        if isinstance(loaded, tuple):
+            model_new, feature_cols = loaded
+        else:
+            model_new = loaded
+            feature_cols = [
+                "SMA5","SMA25","SMA75",
+                "Bias5","Bias25","Bias75",
+                "BB_UP1","BB_LOW1","BB_UP2","BB_LOW2",
+                "VolRatio",
+                "Bull","BigBull","BigBear",
+                "Slope10",
+                "ret3","ret5","ret20","atr_ratio"
+            ]
 
     # ==============================
     # ★ここに追加（これ1回だけ）閾値最適化したいときに実行
