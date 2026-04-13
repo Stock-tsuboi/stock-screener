@@ -63,7 +63,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 #MODEL_PATH = os.path.join(BASE_DIR, "model_new.pkl")下に書き換えた
 MODEL_PATH = os.path.join(BASE_DIR, "model.pkl")
 DB_PATH = os.path.join(BASE_DIR, "market.db")
-
+OLD_MODEL_PATH = os.path.join(BASE_DIR, "model_old.pkl")
 
 def need_retrain(model_path, days=7):
     if not os.path.exists(model_path):
@@ -204,33 +204,14 @@ def download_model():
 # =========================================================
 def load_ai_model():
     import joblib
-    import zipfile as zf
 
     print("AIモデル読み込み中...")
 
-    if os.path.exists("model.pkl"):
-        print("✔ model.pkl を検出")
-        loaded = joblib.load("model.pkl")
+    if os.path.exists(OLD_MODEL_PATH):
+        print("✔ model_old.pkl を検出")
+        return joblib.load(OLD_MODEL_PATH)
 
-        # ★ 追加：新AIモデル（tuple）の場合は拒否
-        if isinstance(loaded, tuple):
-            raise ValueError("model.pkl が新AIモデル（tuple）になっているため旧ロジックで使用不可")
-
-        return loaded
-        
-    if os.path.exists("model_2.zip"):
-        print("✔ model_2.zip を検出 → 展開")
-
-        with zf.ZipFile("model_2.zip") as z:
-            if "model.pkl" not in z.namelist():
-                raise FileNotFoundError("ZIP内に model.pkl が存在しません")
-
-            z.extract("model.pkl")
-
-        print("✔ ZIP展開完了")
-        return joblib.load("model.pkl")
-
-    raise FileNotFoundError("model.pkl / model_2.zip が見つかりません")
+    raise FileNotFoundError("旧モデル（model_old.pkl）が存在しません")
 
 
 # =========================================================
