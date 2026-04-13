@@ -976,6 +976,10 @@ def analyze_symbol(code, name, model, all_data):
         ]
     )
 
+    # ★ tuple対策（最重要）
+    if isinstance(model, tuple):
+        model = model[0]
+
     ai_prob = model.predict_proba(features.values)[0][1]
     
     if ai_prob >= BEST_TH:
