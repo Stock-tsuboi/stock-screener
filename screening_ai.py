@@ -210,8 +210,14 @@ def load_ai_model():
 
     if os.path.exists("model.pkl"):
         print("✔ model.pkl を検出")
-        return joblib.load("model.pkl")
+        loaded = joblib.load("model.pkl")
 
+        # ★ 追加：新AIモデル（tuple）の場合は拒否
+        if isinstance(loaded, tuple):
+            raise ValueError("model.pkl が新AIモデル（tuple）になっているため旧ロジックで使用不可")
+
+        return loaded
+        
     if os.path.exists("model_2.zip"):
         print("✔ model_2.zip を検出 → 展開")
 
