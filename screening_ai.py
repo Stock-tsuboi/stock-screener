@@ -1556,8 +1556,13 @@ def run_screening():
     # Step24-4 旧ロジック
     # =====================================================
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
-
-    model_old = load_ai_model()
+    
+    # ★旧モデル自動生成対応
+    if not os.path.exists(OLD_MODEL_PATH):
+        print("旧モデルが無い → 新規作成")
+        model_old = train_old_model(all_data)
+    else:
+        model_old = load_ai_model()
     
     symbol_list = [
     (row["コード"], row["銘柄名"])
