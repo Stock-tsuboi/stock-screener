@@ -482,6 +482,90 @@ def train_ai_model(all_data):
 
 
 # =========================================================
+# Step12-OLD　旧AIモデル学習（旧ロジック専用）
+# =========================================================
+def train_old_model(all_data):
+
+    print("旧AIモデル学習中...")
+
+    rows = []
+
+    for symbol, df in all_data.items():
+
+        if df is None or len(df) < 120:
+            continue
+
+        try:
+            close = df["Close"]
+            high = df["High"]
+            low = df["Low"]
+            volume = df["Volume"]
+
+            sma5 = close.rolling(5).mean()
+            sma25 = close.rolling(25).mean()
+            sma75 = close.rolling(75).mean()
+
+            rsi = calc_rsi(close)
+            macd, signal = calc_macd(close)
+            adx = calc_adx(df)
+
+            for i in range(80, len(df)-5):
+
+                future = close.iloc[i+5]
+                now = close.iloc[i]
+
+                if now <= 0:
+                    continue
+
+                ret = (future - now) / now
+                target = 1 if ret > 0.03 else 0
+
+                rows.append({
+                    "終値": close.iloc[i],
+                    "高値": high.iloc[i],
+                    "出来高": volume.iloc[i],
+                    "RSI": rsi.iloc[i],
+                    "MACD": macd.iloc[i],
+                    "MACD_signal": signal.iloc[i],
+                    "MACD_hist": macd.iloc[i] - signal.iloc[i],
+                    "ADX": adx.iloc[i],
+                    "SMA5乖離": safe_div(close.iloc[i], sma5.iloc[i]),
+                    "SMA25乖離": safe_div(close.iloc[i], sma25.iloc[i]),
+                    "SMA75乖離": safe_div(close.iloc[i], sma75.iloc[i]),
+                    "出来高比率": safe_div(volume.iloc[i], volume.iloc[i-5:i].mean()),
+                    "Target": target
+                })
+
+        except Exception:
+            continue
+
+    if len(rows) == 0:
+        raise RuntimeError("旧モデル用データなし")
+
+    df = pd.DataFrame(rows).dropna()
+
+    X = df.drop("Target", axis=1)
+    y = df["Target"]
+
+    print(f"旧モデルデータ件数: {len(X)}")
+
+    model = RandomForestClassifier(
+        n_estimators=200,
+        max_depth=8,
+        random_state=42,
+        n_jobs=-1
+    )
+
+    model.fit(X, y)
+
+    joblib.dump(model, OLD_MODEL_PATH)
+
+    print("✔ model_old.pkl 保存完了")
+
+    return model
+
+
+# =========================================================
 # Step13　推論処理（新AI・超高速版）
 # =========================================================
 def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
