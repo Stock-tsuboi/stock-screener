@@ -646,7 +646,6 @@ def strongest_ai_ranking(model, feature_cols, all_data, feature_data):
         # print("DEBUG keys:", list(feat.keys())[:20])
         
         X = pd.DataFrame([feat])[feature_cols].fillna(0)
-
         prob = model.predict_proba(X)[0][1]
 
         high = df["High"]
@@ -1051,7 +1050,7 @@ def analyze_symbol(code, name, model, all_data):
     if isinstance(model, tuple):
         model = model[0]
 
-    ai_prob = model.predict_proba(features.values)[0][1]
+    ai_prob = model.predict_proba(features)[0][1]
     
     if ai_prob >= BEST_TH:
         return {
@@ -1183,7 +1182,6 @@ def backtest_threshold(model, feature_cols, all_data, thresholds):
                 last = df_feat.iloc[-6]
 
                 X = pd.DataFrame([last])[feature_cols].fillna(0)
-
                 prob = model.predict_proba(X)[0][1]
 
                 if prob >= th:
@@ -1333,7 +1331,6 @@ def fastest_ai_ranking(model, feature_cols, all_data):
 
         try:
             X = pd.DataFrame([last])[feature_cols].fillna(0)
-
             prob = model.predict_proba(X)[0][1]
 
         except:
