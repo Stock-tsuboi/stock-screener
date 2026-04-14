@@ -1027,6 +1027,9 @@ def analyze_symbol(code, name, model, all_data):
     vol_avg = float(volume.iloc[-6:-1].mean())
     vol_ratio = vol_t / vol_avg if vol_avg != 0 else 0
 
+    ret1 = (c_t / c_y) - 1
+    ret3 = (c_t / float(close.iloc[-4])) - 1
+
     features = pd.DataFrame(
         [
             {
@@ -1064,6 +1067,10 @@ def analyze_symbol(code, name, model, all_data):
             "出来高": vol_t,
             "継続スコア": cont_score,
             "AI上昇確率": round(ai_prob, 4),
+        
+            "ret1": ret1,
+            "ret3": ret3,
+            "vol_ratio": vol_ratio,
         }
 
     if (not cond_initial and not cond_continue) or not uptrend:
@@ -1088,9 +1095,12 @@ def analyze_symbol(code, name, model, all_data):
         "出来高": vol_t,
         "継続スコア": cont_score,
         "AI上昇確率": round(ai_prob, 4),
+        
+        "ret1": ret1,
+        "ret3": ret3,
+        "vol_ratio": vol_ratio,
     }
-
-
+    
 # =========================================================
 # Step20　バックテスト（all_data 再利用）
 # =========================================================
@@ -1231,11 +1241,31 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             X = pd.DataFrame([feat])[feature_cols].fillna(0)
             if isinstance(model, tuple):
                 model = model[0]
+                
+            # ===== AI確率 =====
             prob = model.predict_proba(X)[0][1]
+
+            # ===== 爆上げ候補フィルタ（ここから追加） =====
+            ret1 = feat.get("ret1", 0)
+            ret3 = feat.get("ret3", 0)
+            vol_ratio = feat.get("vol_ratio", 1)
+
+            # パターン①：初動ブレイク
+            breakout = (ret1 > 0.03 and vol_ratio > 1.5)
+
+            # パターン②：仕込み後ブレイク
+            pre_break = (ret3 > 0.05 and ret1 > 0.02)
+
+            # パターン③：AIトレンド強
+            trend = (prob > 0.45 and ret3 > 0.03)
+
+            # 条件外は即除外（←これが一番重要）
+            if not (breakout or pre_break or trend):
+                continue
 
             # ===== 崩壊検知フィルタ（ここに追加） =====
             recent_ret5 = feat.get("ret5", 0)
-            recent_ret3 = feat.get("ret3", 0)
+            recent_ret3_check = feat.get("ret3", 0)
 
             # フィルタ緩和（完全に外す）（上少しきつめ、下ゆるめ）
             # if (recent_ret5 < -0.03) or (recent_ret3 < -0.02):
