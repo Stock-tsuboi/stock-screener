@@ -1870,6 +1870,11 @@ def run_screening():
     # =========================
     # 総合ランキング TOP5（最終表示）
     # =========================
+    from datetime import datetime
+
+    today = datetime.now().strftime("%Y-%m-%d")
+    df_merge.to_csv(f"log_{today}.csv", index=False)
+    
     print("\n===== 総合ランキング TOP5 =====\n")
 
     for i, (_, row) in enumerate(df_total.iterrows(), start=1):
