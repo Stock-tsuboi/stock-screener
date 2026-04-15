@@ -1,10 +1,10 @@
 name: Stock Analysis and DB Update
 
 on:
-  schedule:
+ # schedule:
     # 平日（月-金）の日本時間 21:00 (UTC 12:00) に自動実行
     #- cron: '0 12 * * 1-5'
-  workflow_dispatch: # 手動実行ボタンを有効化
+ # workflow_dispatch: # 手動実行ボタンを有効化
 
 jobs:
   run-analysis:
