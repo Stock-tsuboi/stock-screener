@@ -1296,7 +1296,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
                 "AI上昇確率": prob,
                 "平均上昇率": avg_up,
                 "平均下落率": avg_down,
-                "期待値": expectancy
+                "期待値": expectancy,
                 
                 # ★ここ追加
                 "ret1": ret1,
