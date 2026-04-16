@@ -1262,7 +1262,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             # 条件外は即除外（←これが一番重要）
             if not (breakout or pre_break or trend):
                 continue
-            if vol_ratio < 1.2:
+            if vol_ratio < 1.1:
                 continue
 
             # ===== 崩壊検知フィルタ（ここに追加） =====
