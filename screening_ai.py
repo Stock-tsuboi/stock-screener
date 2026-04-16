@@ -1871,7 +1871,7 @@ def run_screening():
     # =========================
     
     today = datetime.now().strftime("%Y-%m-%d")
-    df_merge.to_csv(f"log_{today}.csv", index=False)
+    df_total.to_csv(f"log_{today}.csv", index=False)
     
     print("\n===== 総合ランキング TOP5 =====\n")
 
