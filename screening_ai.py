@@ -68,8 +68,8 @@ def need_retrain(model_path, days=7):
     if not os.path.exists(model_path):
         return True
 
-    mtime = datetime.datetime.fromtimestamp(os.path.getmtime(model_path))
-    return (datetime.datetime.now() - mtime).days >= days
+    mtime = datetime.fromtimestamp(os.path.getmtime(model_path))
+    return (datetime.now() - mtime).days >= days
 
 
 # =========================================================
@@ -1424,7 +1424,7 @@ def run_screening():
     # =====================================================
     # Step1 実行時間判定（ここに入れる）
     # =====================================================
-    now = datetime.datetime.now()
+    now = datetime.now()
     hour = now.hour
 
     if hour < 12:
