@@ -1297,6 +1297,12 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
                 "平均上昇率": avg_up,
                 "平均下落率": avg_down,
                 "期待値": expectancy
+                
+                # ★ここ追加
+                "ret1": ret1,
+                "ret3": ret3,
+                "ret5": recent_ret5,
+                "vol_ratio": vol_ratio
             })
 
         except Exception:
