@@ -1893,7 +1893,7 @@ def run_screening():
         )
 
     # =========================
-    # LINE送信（総合TOP5）
+    # LINE送信（総合 + 爆上げ）
     # =========================
 
     lines_total = ["【総合ランキング TOP5】"]
@@ -1909,6 +1909,29 @@ def run_screening():
 
         lines_total.append(line)
 
+    # =========================
+    # 爆上げ追加（ここ重要）
+    # =========================
+
+    lines_total.append("\n🔥 爆上げ候補 🔥")
+
+    if df_rank is not None and len(df_rank) > 0:
+
+        for i, (_, row) in enumerate(df_rank.head(3).iterrows(), start=1):
+            line = (
+                f"{i}位 {row['symbol']} "
+                f"確率:{row['AI上昇確率']:.3f} "
+                f"期待値:{row['期待値']:.3f}"
+            )
+            lines_total.append(line)
+
+    else:
+        lines_total.append("該当なし")
+
+    # =========================
+    # 送信
+    # =========================
+
     message = "\n".join(lines_total)
 
     if len(lines_total) <= 1:
@@ -1917,7 +1940,7 @@ def run_screening():
 
     send_line(message)
 
-    print("\nLINE送信完了（総合TOP5）")
+    print("\nLINE送信完了（総合＋爆上げ）")
 
 # =========================================================
 # Step25　実行
