@@ -1288,6 +1288,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
             # 期待値
             expectancy = prob * avg_up - (1 - prob) * abs(avg_down)
+            expectancy = expectancy + ret3 * 0.5
 
             # ★ここに追加
             if expectancy <= 0:
