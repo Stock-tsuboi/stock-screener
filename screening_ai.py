@@ -1260,6 +1260,8 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             trend = (prob > 0.42)
 
             # 条件外は即除外（←これが一番重要）
+            print(symbol, prob, ret1, ret3, vol_ratio)
+            
             if not (breakout or pre_break or trend):
                 continue
             if breakout and vol_ratio < 1.2:
