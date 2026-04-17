@@ -1249,20 +1249,21 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             ret3 = feat.get("ret3", 0)
             vol_ratio = feat.get("vol_ratio", 1)
 
-            # パターン①：初動ブレイク
-            breakout = (ret1 > 0.03 and vol_ratio > 1.5)
+            # ===== パターン①：爆上げ初動（ここが本命） =====
+            bakugae = (
+                ret3 > -0.08 and
+                ret3 < 0.02 and
+                ret1 > 0.02 and
+                vol_ratio > 1.2
+            )
 
-            # パターン②：仕込み後ブレイク
-            pre_break = (ret3 > 0.05 and ret1 > 0.02)
-
-            # パターン③：AIトレンド強
-            trend = (prob > 0.42 and ret3 > -0.08)
-            #trend = (prob > 0.42)
+            # ===== パターン②：トレンド継続 =====
+            trend = (prob > 0.42 and ret3 > 0.03)
 
             # 条件外は即除外（←これが一番重要）
             print(symbol, prob, ret1, ret3, vol_ratio)
             
-            if not (breakout or pre_break or trend):
+            if not (bakugae or trend):
                 continue
             if breakout and vol_ratio < 1.2:
                 continue
