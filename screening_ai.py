@@ -1913,7 +1913,8 @@ def run_screening():
     # 爆上げ追加（ここ重要）
     # =========================
 
-    lines_total.append("\n🔥 爆上げ候補 🔥")
+    lines_total.append("")
+    lines_total.append("🔥 爆上げ候補 🔥")
 
     if df_rank is not None and len(df_rank) > 0:
 
