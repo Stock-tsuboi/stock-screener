@@ -1256,8 +1256,8 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             pre_break = (ret3 > 0.05 and ret1 > 0.02)
 
             # パターン③：AIトレンド強
-            #trend = (prob > 0.45 and ret3 > 0.03)　厳しいトレンド用
-            trend = (prob > 0.42)
+            trend = (prob > 0.42 and ret3 > -0.02)　#　厳しいトレンド用
+            #trend = (prob > 0.42)
 
             # 条件外は即除外（←これが一番重要）
             print(symbol, prob, ret1, ret3, vol_ratio)
