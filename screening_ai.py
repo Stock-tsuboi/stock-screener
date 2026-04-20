@@ -1253,7 +1253,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             bakugae = (
                 ret3 > -0.08 and
                 ret3 < 0.02 and
-                ret1 > 0.005 and
+                ret1 > 0 and
                 vol_ratio > 1.2
             )
 
