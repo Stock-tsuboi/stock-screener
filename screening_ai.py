@@ -1265,7 +1265,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             
             if not (bakugae or trend):
                 continue
-            if breakout and vol_ratio < 1.2:
+            if breakout and vol_ratio < 1.1:
                 continue
 
             # ===== 崩壊検知フィルタ（ここに追加） =====
