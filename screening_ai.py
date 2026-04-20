@@ -1251,10 +1251,8 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
             # ===== パターン①：爆上げ初動（ここが本命） =====
             bakugae = (
-                ret3 > -0.08 and
-                ret3 < 0.02 and
-                ret1 > 0 and
-                vol_ratio > 1.2
+                ret3 < 0 and
+                ret1 > 0
             )
 
             # ===== パターン②：トレンド継続 =====
