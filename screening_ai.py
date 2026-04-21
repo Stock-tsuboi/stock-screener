@@ -1292,7 +1292,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             expectancy = expectancy + max(ret3, 0) * 0.5
 
             # ★ここに追加
-            if expectancy <= 0:
+            if expectancy <= -0.01:
                 continue
                 
             rows.append({
