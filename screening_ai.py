@@ -1257,7 +1257,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             )
 
             # ===== パターン②：トレンド継続 =====
-            trend = (prob > 0.42 and ret1 > 0 and ret3 < 0.05)
+            trend = (prob > 0.42 and ret1 > -0.01 and ret3 < 0.10)
 
             # 条件外は即除外（←これが一番重要）
             print(symbol, prob, ret1, ret3, vol_ratio)
