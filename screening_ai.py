@@ -684,11 +684,38 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
     df_all["risk"] = df_all["atr_ratio"].replace(0, 0.0001)
 
-    df_all["EV"] = (df_all["prob"] * df_all["ret20"]) / df_all["risk"]
+    # =====================================================
+    # ★ここから追加：トレンド転換スコア
+    # =====================================================
 
+    # slope転換 + 短期崩れ + 反発初期
+    df_all["turn_score"] = (
+        (df_all["Slope10"] > 0).astype(int) +
+        (df_all["ret1"] > -0.02).astype(int) +
+        (df_all["ret3"] < 0).astype(int)
+    )
+
+    # =====================================================
+    # ★統合EV（AI × 期待値 × 転換）
+    # =====================================================
+    df_all["EV"] = (
+        df_all["prob"] *
+        df_all["expected_move"] *
+        df_all["turn_score"]
+    ) / df_all["risk"].replace(0, 0.0001)
+    
+    # =====================================================
+    # ソート
+    # =====================================================
     df_all = df_all.sort_values("EV", ascending=False)
 
-    df_filtered = df_all[df_all["prob"] >= threshold]
+    # =====================================================
+    # フィルタ（重要）
+    # =====================================================
+    df_filtered = df_all[
+        (df_all["prob"] >= threshold) &
+        (df_all["turn_score"] >= 2)
+    ]
 
     print(f"✔ 推論対象: {len(df_all)}銘柄")
     print(f"✔ 閾値 {threshold} 以上: {len(df_filtered)}銘柄")
