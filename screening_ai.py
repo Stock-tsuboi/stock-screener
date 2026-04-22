@@ -778,11 +778,11 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
     # =====================================================
     df_filtered = df_all[
         (df_all["prob"] >= threshold) &
-        (df_all["turn_score"] >= 2) &
+        # (df_all["turn_score"] >= 2) &
         (df_all["Slope10"] > 0) &
         (df_all["SlopeAccel"] > -0.0005) &
-        (df_all["ret3"] >= 0) &
-        (df_all["VolRatio"] > 1.0)
+        # (df_all["ret3"] >= 0) &
+        # (df_all["VolRatio"] > 1.0)
     ]
 
     print(f"✔ 推論対象: {len(df_all)}銘柄")
