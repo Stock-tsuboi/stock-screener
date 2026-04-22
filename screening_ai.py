@@ -438,6 +438,11 @@ def train_ai_model(all_data):
             # inf対策
             df2 = df2.replace([np.inf, -np.inf], np.nan)
 
+            # ===== ここ追加（絶対ここ）=====
+            df2["Slope20"] = df2["Slope10"].rolling(20).mean().fillna(0)
+            df2["SlopeAccel"] = df2["Slope10"].diff().fillna(0)
+            # ==============================
+
             # =========================
             # Step12-1：未来データ分を先に削除
             # =========================
