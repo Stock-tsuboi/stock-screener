@@ -1252,11 +1252,13 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
             # ===== パターン①：爆上げ初動（ここが本命） =====
             slope = feat.get("Slope10", 0)
+            ret5 = feat.get("ret5", 0)
 
             bakugae = (
-                ret3 < 0 and
-                ret1 > -0.05 and
-                slope > 0   # ←これが転換検知
+                ret3 < 0 and            # 直近はまだ弱い
+                ret1 > -0.01 and        # 直近は下げ止まり
+                ret5 < -0.05 and        # 直前はしっかり下げてる（←重要）
+                slope > 0               # 上昇転換開始
             )
 
             # ===== パターン②：トレンド継続 =====
