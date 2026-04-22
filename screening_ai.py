@@ -1607,6 +1607,8 @@ def run_screening():
         print("\n===== 新AI 学習 =====")
     
         model_new, feature_cols = train_ai_model(all_data)
+
+        model_reg = train_reg_model(all_data)
         
         if model_new is None:
             print("AI学習スキップ → 既存モデルを使用")
