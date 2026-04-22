@@ -1251,13 +1251,25 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             vol_ratio = feat.get("vol_ratio", 1)
 
             # ===== パターン①：爆上げ初動（ここが本命） =====
+            slope = feat.get("Slope10", 0)
+
             bakugae = (
-                ret3 < 0 and
-                ret1 > -0.01
+                -0.05 < ret3 < 0.02 and
+                ret1 > -0.01 and
+                slope > 0   # ←これが効く
             )
 
             # ===== パターン②：トレンド継続 =====
-            trend = (prob > 0.42 and ret1 > 0 and 0 < ret3 < 0.06)
+            ret5 = feat.get("ret5", 0)
+            ret20 = feat.get("ret20", 0)
+
+            trend = (
+                prob > 0.42 and
+                ret1 > 0 and
+                0 < ret3 < 0.06 and
+                ret5 < 0.08 and     # 直近過熱防止
+                ret20 < 0.15        # 中期過熱防止
+            )
 
             # 条件外は即除外（←これが一番重要）
             print(symbol, prob, ret1, ret3, vol_ratio)
@@ -1301,7 +1313,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
             # 期待値
             expectancy = prob * avg_up - (1 - prob) * abs(avg_down)
-            expectancy = expectancy + max(ret3, 0) * 0.5
+            expectancy = expectancy + max(ret3, 0) * 0.3
 
             # ===== 出来高で期待値を補正 =====
             expectancy = expectancy * volume_boost
