@@ -480,79 +480,79 @@ def train_ai_model(all_data):
 
     return model, feature_cols
 
-    # =========================
-    # Step12-REG　回帰モデル（未来リターン予測）
-    # =========================
-    def train_reg_model(all_data):
+# =========================
+# Step12-REG　回帰モデル（未来リターン予測）
+# =========================
+def train_reg_model(all_data):
 
-        print("回帰モデル学習中...")
+    print("回帰モデル学習中...")
     
-        dfs = []
+    dfs = []
     
-        for symbol, df in all_data.items():
+    for symbol, df in all_data.items():
     
-            if df is None or len(df) < 120:
+        if df is None or len(df) < 120:
+            continue
+    
+        try:
+            df2 = create_features(df)
+    
+            if df2 is None or len(df2) == 0:
                 continue
     
-            try:
-                df2 = create_features(df)
+            # 未来リターン（教師データ）
+            df2["future_ret5"] = df2["Close"].shift(-5) / df2["Close"] - 1
     
-                if df2 is None or len(df2) == 0:
-                    continue
+            # 未来データ削除
+            if len(df2) > 5:
+                df2 = df2.iloc[:-5]
     
-                # 未来リターン（教師データ）
-                df2["future_ret5"] = df2["Close"].shift(-5) / df2["Close"] - 1
+            df2 = df2.replace([np.inf, -np.inf], np.nan)
     
-                # 未来データ削除
-                if len(df2) > 5:
-                    df2 = df2.iloc[:-5]
+            df2 = df2.dropna(subset=["future_ret5"])
     
-                df2 = df2.replace([np.inf, -np.inf], np.nan)
+            dfs.append(df2)
     
-                df2 = df2.dropna(subset=["future_ret5"])
+        except Exception as e:
+            print(f"[REG ERROR] {symbol}: {e}")
     
-                dfs.append(df2)
+    if len(dfs) == 0:
+        print("⚠ 回帰データなし")
+        return None
     
-            except Exception as e:
-                print(f"[REG ERROR] {symbol}: {e}")
+    data = pd.concat(dfs, ignore_index=True)
     
-        if len(dfs) == 0:
-            print("⚠ 回帰データなし")
-            return None
+    feature_cols = [
+        "SMA5","SMA25","SMA75",
+        "Bias5","Bias25","Bias75",
+        "BB_UP1","BB_LOW1",
+        "BB_UP2","BB_LOW2",
+        "VolRatio",
+        "Bull","BigBull","BigBear",
+        "Slope10",
+        "ret3",
+        "ret5",
+        "ret20",
+        "atr_ratio"
+    ]
     
-        data = pd.concat(dfs, ignore_index=True)
+    X = data[feature_cols].fillna(0)
+    y = data["future_ret5"]
     
-        feature_cols = [
-            "SMA5","SMA25","SMA75",
-            "Bias5","Bias25","Bias75",
-            "BB_UP1","BB_LOW1",
-            "BB_UP2","BB_LOW2",
-            "VolRatio",
-            "Bull","BigBull","BigBear",
-            "Slope10",
-            "ret3",
-            "ret5",
-            "ret20",
-            "atr_ratio"
-        ]
+    print(f"回帰データ件数: {len(X)}")
     
-        X = data[feature_cols].fillna(0)
-        y = data["future_ret5"]
+    model = RandomForestRegressor(
+        n_estimators=300,
+        max_depth=10,
+        random_state=42,
+        n_jobs=-1
+    )
     
-        print(f"回帰データ件数: {len(X)}")
+    model.fit(X, y)
     
-        model = RandomForestRegressor(
-            n_estimators=300,
-            max_depth=10,
-            random_state=42,
-            n_jobs=-1
-        )
+    print("✔ 回帰モデル学習完了")
     
-        model.fit(X, y)
-    
-        print("✔ 回帰モデル学習完了")
-    
-        return model
+    return model
 
 
 # =========================================================
