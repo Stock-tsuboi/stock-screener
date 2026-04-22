@@ -347,16 +347,28 @@ def create_features_fast(df):
         slope10 = 0
     
     
-    # ---- STEP2：Slope加速度（転換検知強化）----
+    # ---- Slope20（中期トレンド）----
     try:
         if len(close) >= 20:
-            y10_now = close.iloc[-10:].values
-            y10_prev = close.iloc[-11:-1].values  # 1本ずらし
+            y = close.iloc[-20:].values
+            x = np.arange(len(y))
+            slope20 = np.polyfit(x, y, 1)[0]
+        else:
+            slope20 = 0
+    except:
+        slope20 = 0
+    
+    
+    # ---- SlopeAccel（転換加速度）----
+    try:
+        if len(close) >= 20:
+            y_now = close.iloc[-10:].values
+            y_prev = close.iloc[-20:-10].values
     
             x = np.arange(10)
     
-            slope_now = np.polyfit(x, y10_now, 1)[0]
-            slope_prev = np.polyfit(x, y10_prev, 1)[0]
+            slope_now = np.polyfit(x, y_now, 1)[0]
+            slope_prev = np.polyfit(x, y_prev, 1)[0]
     
             slope_accel = slope_now - slope_prev
         else:
@@ -382,6 +394,7 @@ def create_features_fast(df):
         "BigBull": int((close.iloc[-1] - open_.iloc[-1]) / open_.iloc[-1] > 0.03),
         "BigBear": int((open_.iloc[-1] - close.iloc[-1]) / open_.iloc[-1] > 0.03),
         "Slope10": slope10,
+        "Slope20": slope20,
         "SlopeAccel": slope_accel,
         "ret5": close.pct_change(5).iloc[-1] if len(close) >= 5 else 0,
         "ret20": close.pct_change(20).iloc[-1] if len(close) >= 20 else 0,
