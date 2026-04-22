@@ -480,6 +480,80 @@ def train_ai_model(all_data):
 
     return model, feature_cols
 
+    # =========================
+    # Step12-REG　回帰モデル（未来リターン予測）
+    # =========================
+    def train_reg_model(all_data):
+
+        print("回帰モデル学習中...")
+    
+        dfs = []
+    
+        for symbol, df in all_data.items():
+    
+            if df is None or len(df) < 120:
+                continue
+    
+            try:
+                df2 = create_features(df)
+    
+                if df2 is None or len(df2) == 0:
+                    continue
+    
+                # 未来リターン（教師データ）
+                df2["future_ret5"] = df2["Close"].shift(-5) / df2["Close"] - 1
+    
+                # 未来データ削除
+                if len(df2) > 5:
+                    df2 = df2.iloc[:-5]
+    
+                df2 = df2.replace([np.inf, -np.inf], np.nan)
+    
+                df2 = df2.dropna(subset=["future_ret5"])
+    
+                dfs.append(df2)
+    
+            except Exception as e:
+                print(f"[REG ERROR] {symbol}: {e}")
+    
+        if len(dfs) == 0:
+            print("⚠ 回帰データなし")
+            return None
+    
+        data = pd.concat(dfs, ignore_index=True)
+    
+        feature_cols = [
+            "SMA5","SMA25","SMA75",
+            "Bias5","Bias25","Bias75",
+            "BB_UP1","BB_LOW1",
+            "BB_UP2","BB_LOW2",
+            "VolRatio",
+            "Bull","BigBull","BigBear",
+            "Slope10",
+            "ret3",
+            "ret5",
+            "ret20",
+            "atr_ratio"
+        ]
+    
+        X = data[feature_cols].fillna(0)
+        y = data["future_ret5"]
+    
+        print(f"回帰データ件数: {len(X)}")
+    
+        model = RandomForestRegressor(
+            n_estimators=300,
+            max_depth=10,
+            random_state=42,
+            n_jobs=-1
+        )
+    
+        model.fit(X, y)
+    
+        print("✔ 回帰モデル学習完了")
+    
+        return model
+
 
 # =========================================================
 # Step12-OLD　旧AIモデル学習（旧ロジック専用）
@@ -1256,7 +1330,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
             bakugae = (
                 ret3 < 0 and            # 直近はまだ弱い
-                ret1 > -0.01 and        # 直近は下げ止まり
+                ret1 > -0 and        # 直近は下げ止まり
                 ret5 < -0.05 and        # 直前はしっかり下げてる（←重要）
                 slope > 0               # 上昇転換開始
             )
