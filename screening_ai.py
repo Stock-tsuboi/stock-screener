@@ -1254,9 +1254,9 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             slope = feat.get("Slope10", 0)
 
             bakugae = (
-                -0.05 < ret3 < 0.02 and
-                ret1 > -0.01 and
-                slope > 0   # ←これが効く
+                ret3 < 0 and
+                ret1 > -0.05 and
+                slope > 0   # ←これが転換検知
             )
 
             # ===== パターン②：トレンド継続 =====
@@ -1273,7 +1273,11 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
             # 条件外は即除外（←これが一番重要）
             print(symbol, prob, ret1, ret3, vol_ratio)
-            
+
+            # ===== AI強制通過（追加）=====
+            if prob > 0.45:
+                bakugae = True
+
             # ===== 初動条件 =====
             if not (bakugae or trend):
                 continue
