@@ -11,6 +11,7 @@ import requests
 import duckdb
 from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 
 import joblib
