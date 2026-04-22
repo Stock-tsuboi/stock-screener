@@ -468,6 +468,16 @@ def train_ai_model(all_data):
 
     data = pd.concat(dfs, ignore_index=True)
 
+    # =====================================================
+    # ★安全補完（Slope系の欠損対策・統一）
+    # =====================================================
+    
+    if "Slope20" not in data.columns:
+        data["Slope20"] = 0
+    
+    if "SlopeAccel" not in data.columns:
+        data["SlopeAccel"] = 0
+
     feature_cols = [
         # ===== トレンド（今回強化）=====
         "SMA5","SMA25","SMA75",
