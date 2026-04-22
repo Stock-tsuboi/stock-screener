@@ -1266,9 +1266,10 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             if not (bakugae or trend):
                 continue
 
-            # ===== 出来高フィルタ（追加）=====
-            if vol_ratio < 1.2:
-                continue
+            # ===== 出来高ブースト（除外ではなく加点）=====
+            volume_boost = 1.0
+            if vol_ratio >= 1.2:
+                volume_boost = 1.2
 
             # ===== 崩壊検知フィルタ（ここに追加） =====
             recent_ret5 = feat.get("ret5", 0)
@@ -1294,6 +1295,9 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             # 期待値
             expectancy = prob * avg_up - (1 - prob) * abs(avg_down)
             expectancy = expectancy + max(ret3, 0) * 0.5
+
+            # ===== 出来高で期待値を補正 =====
+            expectancy = expectancy * volume_boost
 
             # ★ここに追加
             if expectancy <= -0.01:
