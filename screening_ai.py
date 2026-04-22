@@ -1268,8 +1268,15 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
 
             # ===== 出来高ブースト（除外ではなく加点）=====
             volume_boost = 1.0
-            if vol_ratio >= 1.2:
-                volume_boost = 1.2
+
+            if vol_ratio >= 1.5:
+                volume_boost = 1.3
+            elif vol_ratio >= 1.2:
+                volume_boost = 1.15
+            elif vol_ratio >= 1.0:
+                volume_boost = 1.05
+
+            score = prob * volume_boost
 
             # ===== 崩壊検知フィルタ（ここに追加） =====
             recent_ret5 = feat.get("ret5", 0)
