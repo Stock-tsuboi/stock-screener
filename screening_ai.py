@@ -335,13 +335,34 @@ def create_features_fast(df):
     vol_mean = volume.rolling(25).mean().iloc[-1]
     vol_ratio = volume.iloc[-1] / vol_mean if vol_mean and not np.isnan(vol_mean) else 0
 
-    # ---- Slope10 軽量計算 ----
-    if len(close) >= 10:
-        y = close.iloc[-10:].values
-        x = np.arange(10)
-        slope10 = np.polyfit(x, y, 1)[0]
-    else:
+    # ---- Slope10 改良版（正規化）----
+    try:
+        if len(close) >= 10:
+            y = close.iloc[-10:].values
+            x = np.arange(len(y))
+            slope10 = np.polyfit(x, y, 1)[0]
+        else:
+            slope10 = 0
+    except:
         slope10 = 0
+    
+    
+    # ---- STEP2：Slope加速度（転換検知強化）----
+    try:
+        if len(close) >= 20:
+            y10_now = close.iloc[-10:].values
+            y10_prev = close.iloc[-11:-1].values  # 1本ずらし
+    
+            x = np.arange(10)
+    
+            slope_now = np.polyfit(x, y10_now, 1)[0]
+            slope_prev = np.polyfit(x, y10_prev, 1)[0]
+    
+            slope_accel = slope_now - slope_prev
+        else:
+            slope_accel = 0
+    except:
+        slope_accel = 0
 
     latest = {
         "SMA5": sma5.iloc[-1],
@@ -361,6 +382,7 @@ def create_features_fast(df):
         "BigBull": int((close.iloc[-1] - open_.iloc[-1]) / open_.iloc[-1] > 0.03),
         "BigBear": int((open_.iloc[-1] - close.iloc[-1]) / open_.iloc[-1] > 0.03),
         "Slope10": slope10,
+        "SlopeAccel": slope_accel,
         "ret5": close.pct_change(5).iloc[-1] if len(close) >= 5 else 0,
         "ret20": close.pct_change(20).iloc[-1] if len(close) >= 20 else 0,
         "atr_ratio": (
@@ -434,19 +456,33 @@ def train_ai_model(all_data):
     data = pd.concat(dfs, ignore_index=True)
 
     feature_cols = [
+        # ===== トレンド（今回強化）=====
         "SMA5","SMA25","SMA75",
         "Bias5","Bias25","Bias75",
+    
+        # ===== ボリンジャー =====
         "BB_UP1","BB_LOW1",
         "BB_UP2","BB_LOW2",
+    
+        # ===== 出来高 =====
         "VolRatio",
+    
+        # ===== ローソク勢い =====
         "Bull","BigBull","BigBear",
+    
+        # ===== 転換検知（今回の主役）=====
         "Slope10",
+        "Slope20",
+        "SlopeAccel",
+    
+        # ===== リターン =====
         "ret3",
         "ret5",
         "ret20",
+    
+        # ===== リスク =====
         "atr_ratio"
     ]
-
     # =========================
     # Step12-2：欠損はdropnaで除外
     # =========================
@@ -714,7 +750,11 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
     # =====================================================
     df_filtered = df_all[
         (df_all["prob"] >= threshold) &
-        (df_all["turn_score"] >= 2)
+        (df_all["turn_score"] >= 2) &
+        (df_all["Slope10"] > 0) &
+        (df_all["SlopeAccel"] > 0) &
+        (df_all["ret3"] >= 0) &
+        (df_all["VolRatio"] > 1.0)
     ]
 
     print(f"✔ 推論対象: {len(df_all)}銘柄")
