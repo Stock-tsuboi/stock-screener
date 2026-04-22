@@ -1262,7 +1262,12 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             # 条件外は即除外（←これが一番重要）
             print(symbol, prob, ret1, ret3, vol_ratio)
             
+            # ===== 初動条件 =====
             if not (bakugae or trend):
+                continue
+
+            # ===== 出来高フィルタ（追加）=====
+            if vol_ratio < 1.2:
                 continue
 
             # ===== 崩壊検知フィルタ（ここに追加） =====
