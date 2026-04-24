@@ -795,7 +795,7 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
         (df_all["prob"] >= threshold) &
         (df_all["Slope10"] > 0) &
         (df_all["SlopeAccel"] > -0.002) &
-        (df_all["ret3"] > 0) &
+        (df_all["ret3"] > -0.01) &
         (df_all["VolRatio"] > 1.05)
     ]
 
