@@ -707,7 +707,7 @@ def train_old_model(all_data):
 # =========================================================
 # Step13　推論処理（新AI・超高速版）
 # =========================================================
-def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
+def ai_predict(model, feature_cols, all_data, threshold=0.35, top_n=20):
 
     print("新AI一括推論中...")
 
