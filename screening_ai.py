@@ -707,7 +707,7 @@ def train_old_model(all_data):
 # =========================================================
 # Step13　推論処理（新AI・超高速版）
 # =========================================================
-def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
+def ai_predict(model, feature_cols, all_data, reg_model=None, threshold=0.55, top_n=20):
 
     print("新AI一括推論中...")
 
@@ -736,9 +736,15 @@ def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
     X = df_all[feature_cols].fillna(0)
 
     print("predict_proba 一括実行...")
+    
     probs = model.predict_proba(X)[:, 1]
-
     df_all["prob"] = probs
+
+    # ===== 回帰モデル予測（追加・まだ使わない）=====
+    if reg_model is not None:
+        df_all["pred_ret"] = reg_model.predict(X)
+    else:
+        df_all["pred_ret"] = 0
 
     # 期待値計算
     df_all["expected_move"] = (
