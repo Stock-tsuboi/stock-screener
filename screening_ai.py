@@ -707,7 +707,7 @@ def train_old_model(all_data):
 # =========================================================
 # Step13　推論処理（新AI・超高速版）
 # =========================================================
-def ai_predict(model, feature_cols, all_data, threshold=0.35, top_n=20):
+def ai_predict(model, feature_cols, all_data, threshold=0.55, top_n=20):
 
     print("新AI一括推論中...")
 
@@ -883,7 +883,7 @@ def strongest_ai_ranking(model, feature_cols, all_data, feature_data):
 # Step15　パラメータ設定
 # =========================================================
 
-BEST_TH = 0.40  # 数値を調整する
+BEST_TH = 0.35  # 数値を調整する
 EXCLUDE_CODES = []
 
 
