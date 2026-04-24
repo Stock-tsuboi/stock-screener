@@ -883,7 +883,7 @@ def strongest_ai_ranking(model, feature_cols, all_data, feature_data):
 # Step15　パラメータ設定
 # =========================================================
 
-BEST_TH = 0.35  # 数値を調整する
+BEST_TH = 0.33  # 数値を調整する
 EXCLUDE_CODES = []
 
 
