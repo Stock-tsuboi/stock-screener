@@ -777,6 +777,9 @@ def ai_predict(model, feature_cols, all_data, reg_model=None, threshold=0.55, to
         df_all["turn_score"]
     ) / df_all["risk"].replace(0, 0.0001)
 
+    # ★追加（暴走防止）
+    df_all["EV"] = df_all["EV"].clip(-1, 1)
+
     # ===== 自動ゴミ銘柄除去（これで手動不要）=====
     df_all = df_all[
         (df_all["ret5"].abs() < 0.5) &     # ±50%
