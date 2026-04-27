@@ -1868,16 +1868,16 @@ def run_screening():
     
     print("\n===== 新AI 上位 =====\n")
 
-    for symbol, prob in ai_list:
-        print(f"{symbol}: {prob:.3f}")
-
+    for symbol, prob, ev in ai_list:
+        print(f"{symbol}: {prob:.3f} EV:{ev:.3f}")
+        
     # 銘柄名マッピング作成
     name_map = {
         f"{row['コード']}.T": row["銘柄名"]
         for _, row in symbols.iterrows()
     }
 
-    df_new = pd.DataFrame(ai_list, columns=["symbol","新AI確率"])
+    df_new = pd.DataFrame(ai_list, columns=["symbol","新AI確率","EV"])
 
     # 銘柄名を付与
     df_new["銘柄名"] = df_new["symbol"].map(name_map)
