@@ -1854,7 +1854,7 @@ def run_screening():
         top_n=50
     )
 
-    ai_dict = dict(ai_list)
+    ai_dict = {sym: prob for sym, prob, ev in ai_list}
 
     # =====================================================
     # Step24-6 新AIロジック (旧Step22-5)
