@@ -808,6 +808,9 @@ def ai_predict(model, feature_cols, all_data, reg_model=None, threshold=0.55, to
         (df_all["VolRatio"] > 1.05)
     ]
 
+    # ★ここ追加（最重要）
+    df_filtered = df_filtered.sort_values("EV", ascending=False)
+
     print(f"✔ 推論対象: {len(df_all)}銘柄")
     print(f"✔ 閾値 {threshold} 以上: {len(df_filtered)}銘柄")
 
