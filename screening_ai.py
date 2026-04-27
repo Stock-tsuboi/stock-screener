@@ -814,7 +814,13 @@ def ai_predict(model, feature_cols, all_data, reg_model=None, threshold=0.55, to
     print(f"✔ 推論対象: {len(df_all)}銘柄")
     print(f"✔ 閾値 {threshold} 以上: {len(df_filtered)}銘柄")
 
-    return list(zip(df_filtered["symbol"], df_filtered["prob"]))[:top_n]
+    return list(
+        zip(
+            df_filtered["symbol"],
+            df_filtered["prob"],
+            df_filtered["EV"]
+        )
+    )[:top_n]
 
 
 # =========================================================
