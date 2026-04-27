@@ -770,7 +770,10 @@ def ai_predict(model, feature_cols, all_data, reg_model=None, threshold=0.55, to
     # =====================================================
     df_all["EV"] = (
         df_all["prob"] *
-        df_all["expected_move"] *
+        (
+            df_all["pred_ret"] * 0.7 +
+            df_all["expected_move"] * 0.3
+        ) *
         df_all["turn_score"]
     ) / df_all["risk"].replace(0, 0.0001)
 
