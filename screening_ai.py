@@ -809,10 +809,13 @@ def ai_predict(model, feature_cols, all_data, reg_model=None, threshold=0.55, to
         (df_all["VolRatio"] > 1.05)
     ]
     
-    # ★① 先にEVフィルタ（ここが本質）
+    # ★先にEVフィルタ（ここが本質）
     df_filtered = df_filtered[df_filtered["EV"] > 0]
+
+    # ★ここ追加（強い銘柄だけ）
+    df_filtered = df_filtered[df_filtered["EV"] > 0.5]
     
-    # ★② 最後にソート
+    # ★最後にソート
     df_filtered = df_filtered.sort_values("EV", ascending=False)
 
     print(f"✔ 推論対象: {len(df_all)}銘柄")
