@@ -1490,7 +1490,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
                 bakugae = True
 
             # ===== 初動条件 =====
-            if not (bakugae or trend):
+            if not (bakugae or trend or prob > 0.35)
                 continue
 
             # ===== 出来高ブースト（除外ではなく加点）=====
