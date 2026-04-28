@@ -804,7 +804,7 @@ def ai_predict(model, feature_cols, all_data, reg_model=None, threshold=0.55, to
     df_filtered = df_all[
         (df_all["prob"] >= threshold) &
         (df_all["Slope10"] > 0) &
-        (df_all["SlopeAccel"] > 0) &
+        (df_all["SlopeAccel"] > -0.001) &
         (df_all["ret3"] > -0.01) &
         (df_all["VolRatio"] > 1.05)
     ]
