@@ -1489,18 +1489,28 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             if prob > 0.45:
                 bakugae = True
 
-            # ===== 入口条件 =====
-            if not (bakugae or trend or prob > 0.35):
-                continue
-            
-            # ★初動フィルタ（最重要）
+            # ===== 初動スコア（ここ新規）=====
+            ret1 = feat.get("ret1", 0)
             ret3 = feat.get("ret3", 0)
-            if ret3 > 0.05:
+            slope = feat.get("Slope10", 0)
+            
+            early_score = (
+                (ret3 < 0.02) +     # まだ動いてない
+                (ret1 > -0.01) +    # 下げ止まり
+                (slope > 0)         # 上昇開始
+            )
+            
+            # ===== AI条件 =====
+            if prob < 0.35:
                 continue
             
-            # ★過熱カット（保険）
+            # ===== タイミング条件（最重要）=====
+            if early_score < 2:
+                continue
+            
+            # ===== 過熱カット（軽めに残す）=====
             ret5 = feat.get("ret5", 0)
-            if ret5 > 0.30:
+            if ret5 > 0.35:
                 continue
 
             # ===== 出来高ブースト（除外ではなく加点）=====
