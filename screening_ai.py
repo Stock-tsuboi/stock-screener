@@ -1976,7 +1976,7 @@ def run_screening():
     df_rank = strongest_ai_ranking(
         model_new,
         feature_cols,
-        filtered_feature_data
+        feature_data
     )
 
     # ★空対策
