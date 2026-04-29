@@ -1492,6 +1492,10 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             # ===== 初動条件 =====
             if not (bakugae or trend or prob > 0.35):
                 continue
+            # ★ここ追加（過熱カット）
+            ret5 = feat.get("ret5", 0)
+            if ret5 > 0.15:
+                continue
 
             # ===== 出来高ブースト（除外ではなく加点）=====
             volume_boost = 1.0
