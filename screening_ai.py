@@ -1483,7 +1483,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             )
 
             # 条件外は即除外（←これが一番重要）
-            print(symbol, prob, ret1, ret3, vol_ratio)
+            # print(symbol, prob, ret1, ret3, vol_ratio)
 
             # ===== AI強制通過（追加）=====
             if prob > 0.45:
@@ -1555,6 +1555,9 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             # ★ここに追加
             if expectancy <= -0.01:
                 continue
+
+            # ★通過した銘柄だけ表示（ここに追加）
+            print(f"{symbol} OK prob:{prob:.3f} ret3:{ret3:.3f} ret5:{recent_ret5:.3f}")
                 
             rows.append({
                 "symbol": symbol,
