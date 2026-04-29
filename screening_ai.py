@@ -1489,12 +1489,18 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             if prob > 0.45:
                 bakugae = True
 
-            # ===== 初動条件 =====
+            # ===== 入口条件 =====
             if not (bakugae or trend or prob > 0.35):
                 continue
-            # ★ここ追加（過熱カット）
+            
+            # ★初動フィルタ（最重要）
+            ret3 = feat.get("ret3", 0)
+            if ret3 > 0.05:
+                continue
+            
+            # ★過熱カット（保険）
             ret5 = feat.get("ret5", 0)
-            if ret5 > 0.15:
+            if ret5 > 0.30:
                 continue
 
             # ===== 出来高ブースト（除外ではなく加点）=====
