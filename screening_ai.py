@@ -1505,7 +1505,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
                 continue
             
             # ===== タイミング条件（最重要）=====
-            if early_score < 2:
+            if early_score < 1:
                 continue
 
             # ★ここ追加
