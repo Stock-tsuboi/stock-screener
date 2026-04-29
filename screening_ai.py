@@ -1507,6 +1507,10 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             # ===== タイミング条件（最重要）=====
             if early_score < 2:
                 continue
+
+            # ★ここ追加
+            if ret3 > 0.15:
+                continue
             
             # ===== 過熱カット（軽めに残す）=====
             ret5 = feat.get("ret5", 0)
