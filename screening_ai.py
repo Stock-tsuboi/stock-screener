@@ -1907,7 +1907,7 @@ def run_screening():
     # 銘柄名マッピング作成
     name_map = {
         f"{row['コード']}.T": row["銘柄名"]
-        for _, row in symbols.iterrows()
+        for _, row in symbols.iterrows)
     }
 
     df_new = pd.DataFrame(ai_list, columns=["symbol","新AI確率","EV"])
