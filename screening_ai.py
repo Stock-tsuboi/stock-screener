@@ -2052,6 +2052,9 @@ def run_screening():
         on="symbol",
         how="left"
     )
+
+    # ★ここに入れる
+    print(df_merge.columns)
     
     # ===== 銘柄名統合（これ追加）=====
     if "銘柄名_x" in df_merge.columns and "銘柄名_y" in df_merge.columns:
