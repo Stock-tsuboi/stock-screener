@@ -2073,20 +2073,12 @@ def run_screening():
     df_merge["新AI順位"] = df_merge["新AI順位"].fillna(999).astype(int)
 
     # ★最強AI（期待値）も補完
-    df_merge["期待値"] = df_merge["期待値"].fillna(-999)
+    df_merge["期待値"] = df_merge["期待値"].fillna(0)
 
     # ★デバッグ（件数確認）
     print(f"[DEBUG] マージ直後件数: {len(df_merge)}")
     
-    # ★期待値フィルタ（安全版）
-    df_tmp = df_merge[df_merge["期待値"] > 0]
-    
-    if len(df_tmp) > 0:
-        df_merge = df_tmp
-        print(f"[DEBUG] 期待値フィルタ適用: {len(df_merge)}件")
-    else:
-        print("⚠ 期待値フィルタで0件 → フィルタ無効化")
-    
+    df_merge = df_merge[df_merge["期待値"] > 0]
     print(f"[DEBUG] 期待値フィルタ後: {len(df_merge)}")
     
     # ★新AIが強い場合は通す（ハイブリッド化）
