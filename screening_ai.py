@@ -2072,16 +2072,22 @@ def run_screening():
     df_merge["新AI確率"] = df_merge["新AI確率"].fillna(0)
     df_merge["新AI順位"] = df_merge["新AI順位"].fillna(999).astype(int)
 
-    # ★最強AI（期待値）も補完
-    df_merge["期待値"] = df_merge["期待値"].fillna(0)
-
-    # ★デバッグ（件数確認）
+    # ★デバッグ
     print(f"[DEBUG] マージ直後件数: {len(df_merge)}")
+    print("期待値min:", df_merge["期待値"].min(), "max:", df_merge["期待値"].max())
     
-    df_merge = df_merge[df_merge["期待値"] > 0]
+    # ★期待値フィルタ（安全版）
+    df_tmp = df_merge[df_merge["期待値"] > 0]
+    
+    if len(df_tmp) > 0:
+        df_merge = df_tmp
+        print(f"[DEBUG] 期待値フィルタ適用: {len(df_merge)}件")
+    else:
+        print("⚠ 期待値フィルタで0件 → フィルタ無効化")
+    
     print(f"[DEBUG] 期待値フィルタ後: {len(df_merge)}")
     
-    # ★新AIが強い場合は通す（ハイブリッド化）
+    # ★AIフィルタ
     df_merge = df_merge[
         (df_merge["旧AI確率"] >= 0.3) |
         (df_merge["新AI確率"] >= 0.4)
