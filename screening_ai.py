@@ -1986,6 +1986,11 @@ def run_screening():
         feature_data
     )
 
+    # ★ここ追加（重要）
+    df_rank = df_rank[df_rank["symbol"].isin(ai_dict.keys())]
+    
+    print(f"[DEBUG] df_rank after filter: {len(df_rank)}")
+
     # ★空対策
     if df_rank.empty:
         print("⚠ 最強AI 該当銘柄なし")
