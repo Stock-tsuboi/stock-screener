@@ -2070,8 +2070,21 @@ def run_screening():
     # ★最強AI（期待値）も補完
     df_merge["期待値"] = df_merge["期待値"].fillna(-999)
 
+    # ★デバッグ（件数確認）
+    print(f"[DEBUG] マージ直後件数: {len(df_merge)}")
+    
     # ★ここ追加（これが本質）
     df_merge = df_merge[df_merge["期待値"] > 0]
+    
+    print(f"[DEBUG] 期待値フィルタ後: {len(df_merge)}")
+    
+    # ★新AIが強い場合は通す（ハイブリッド化）
+    df_merge = df_merge[
+        (df_merge["旧AI確率"] >= 0.3) |
+        (df_merge["新AI確率"] >= 0.4)
+    ]
+    
+    print(f"[DEBUG] AIフィルタ後: {len(df_merge)}")
 
     # =========================
     # Step24-10-1 総合スコア作成
