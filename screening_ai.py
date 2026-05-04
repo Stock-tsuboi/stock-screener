@@ -430,7 +430,8 @@ def train_ai_model(all_data):
 
             df2 = create_features(df)
 
-            print(symbol, "rows:", len(df2) if df2 is not None else 0)
+            if False:
+                print(symbol, "rows:", len(df2) if df2 is not None else 0)
 
             # データ無し防止
             if df2 is None or len(df2) == 0:
@@ -456,7 +457,9 @@ def train_ai_model(all_data):
 
             # TargetがNaNの行削除
             df2 = df2[df2["Target"].notna()]
-            print(symbol, "Target有効件数:", df2["Target"].notna().sum())
+            
+            if False:
+                print(symbol, "Target有効件数:", df2["Target"].notna().sum())
 
             if len(df2) == 0:
                 continue
@@ -1497,9 +1500,10 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             if expectancy <= -0.01:
                 continue
 
-            # ★通過した銘柄だけ表示（ここに追加）
-            print(f"{symbol} OK prob:{prob:.3f} ret3:{ret3:.3f} ret5:{recent_ret5:.3f}")
-                
+            # ★通過した銘柄だけ表示
+            if False:
+                print(f"{symbol} OK prob:{prob:.3f} ret3:{ret3:.3f} ret5:{recent_ret5:.3f}")
+                            
             rows.append({
                 "symbol": symbol,
                 "AI上昇確率": prob,
