@@ -253,6 +253,7 @@ def create_features(df):
     df["Slope10"] = df["Close"].pct_change(10)
     
     # ===== 追加（期待値AI用特徴量） =====
+    df["ret1"] = df["Close"].pct_change(1)
     df["ret3"] = df["Close"].pct_change(3)
     df["ret5"] = df["Close"].pct_change(5)
     df["ret20"] = df["Close"].pct_change(20)
@@ -504,6 +505,7 @@ def train_ai_model(all_data):
         "SlopeAccel",
     
         # ===== リターン =====
+        "ret1",
         "ret3",
         "ret5",
         "ret20",
@@ -595,6 +597,7 @@ def train_reg_model(all_data):
         "VolRatio",
         "Bull","BigBull","BigBear",
         "Slope10",
+        "ret1",
         "ret3",
         "ret5",
         "ret20",
@@ -1788,6 +1791,7 @@ def run_screening():
                         "VolRatio",
                         "Bull","BigBull","BigBear",
                         "Slope10",
+                        "ret1",
                         "ret3","ret5","ret20","atr_ratio"
                     ]
                     
@@ -1833,6 +1837,7 @@ def run_screening():
                 "VolRatio",
                 "Bull","BigBull","BigBear",
                 "Slope10",
+                "ret1", 
                 "ret3","ret5","ret20","atr_ratio"
             ]
 
