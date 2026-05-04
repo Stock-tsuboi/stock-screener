@@ -893,7 +893,8 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
         batch_codes = codes[i:i+batch_size]
         tickers = " ".join([f"{c}.T" for c in batch_codes])
 
-        print(f"取得中: {i} - {i+len(batch_codes)}")
+        if False:
+            print(f"取得中: {i} - {i+len(batch_codes)}")
 
         # -----------------------------
         # Step16-1-1 Yahooから取得
