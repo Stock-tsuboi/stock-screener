@@ -1482,7 +1482,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             # ===== 期待値ロジック修正（未来整合型） =====
 
             # 最低上昇15%、上昇伸び+10%
-            avg_up = 0.015 + (prob * 0.10)
+            avg_up = 0.02 + (prob * 0.12)
 
             # ===== 損切り固定（実戦仕様）=====
             avg_down = -0.03  # -3%
