@@ -1438,7 +1438,7 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             )
             
             # ===== AI条件 =====
-            if prob < 0.35:
+            if prob < 0.30:
                 continue
             
             # ===== タイミング条件（最重要）=====
