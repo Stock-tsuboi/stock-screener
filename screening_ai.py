@@ -334,7 +334,11 @@ def create_features_fast(df):
     bb_std = close.rolling(25).std()
 
     vol_mean = volume.rolling(25).mean().iloc[-1]
-    vol_ratio = volume.iloc[-1] / vol_mean if vol_mean and not np.isnan(vol_mean) else 0
+    
+    if vol_mean is not None and vol_mean != 0 and not np.isnan(vol_mean):
+        vol_ratio = volume.iloc[-1] / vol_mean
+    else:
+        vol_ratio = 0
 
     # ---- Slope10 改良版（正規化）----
     try:
@@ -834,78 +838,8 @@ def ai_predict(model, feature_cols, all_data, reg_model=None, threshold=0.55, to
 
 
 # =========================================================
-# Step14　最強AIランキング（年利最大化）
+# Step14　最強AIランキング（年利最大化）2026.05.04　削除した
 # =========================================================
-def strongest_ai_ranking(model, feature_cols, all_data, feature_data):
-
-    print("最強AIランキング計算中...")
-
-    rows = []
-
-    for symbol, df in all_data.items():
-
-        if df is None or len(df) < 120:
-            continue
-
-        try:     
-            feat = feature_data.get(symbol)
-            if feat is None:
-                continue
-        except:
-            continue
-            
-        # ===== デバッグ（必要なら使用）=====
-        # print("DEBUG keys:", list(feat.keys())[:20])
-        
-        X = pd.DataFrame([feat])[feature_cols].fillna(0)
-        prob = model.predict_proba(X)[0][1]
-
-        high = df["High"]
-        low = df["Low"]
-        close = df["Close"]
-
-        atr = (high - low).rolling(14).mean().iloc[-1]
-        price = close.iloc[-1]
-
-        if price <= 0:
-            continue
-
-        ret20 = close.pct_change(20).iloc[-1]
-        volatility = atr / price
-
-        expected_move = (ret20 + volatility) / 2
-
-        ev = prob * expected_move
-        win = prob
-        moon = prob * (expected_move ** 2)
-
-        rows.append(
-            {
-                "symbol": symbol,
-                "EV": ev,
-                "WIN": win,
-                "MOON": moon
-            }
-        )
-
-    df = pd.DataFrame(rows)
-
-    if df.empty:
-        return df
-
-    df["EV_rank"] = df["EV"].rank(ascending=False)
-    df["WIN_rank"] = df["WIN"].rank(ascending=False)
-    df["MOON_rank"] = df["MOON"].rank(ascending=False)
-
-    df["TOTAL_SCORE"] = (
-        df["EV_rank"]
-        + df["WIN_rank"]
-        + df["MOON_rank"]
-    )
-
-    df = df.sort_values("TOTAL_SCORE")
-
-    return df.head(50)
 
 # =========================================================
 # Step15　パラメータ設定
