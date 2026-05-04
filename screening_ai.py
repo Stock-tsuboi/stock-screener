@@ -2021,7 +2021,7 @@ def run_screening():
     print("期待値min:", df_merge["期待値"].min(), "max:", df_merge["期待値"].max())
     
     # ★期待値フィルタ（安全版）
-    df_tmp = df_merge[df_merge["期待値"] > 0]
+    df_tmp = df_merge[df_merge["期待値"] > -0.002]
     
     if len(df_tmp) > 0:
         df_merge = df_tmp
