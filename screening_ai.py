@@ -1934,6 +1934,13 @@ def run_screening():
     df_rank = df_rank[df_rank["symbol"].isin(ai_dict.keys())]
     
     print(f"[DEBUG] df_rank after filter: {len(df_rank)}")
+    
+    # ===== 仕込み候補だけに絞る（重要） =====
+    df_rank = df_rank[df_rank["ret5"] < 0.02]
+    print(f"[DEBUG] 下げ止まりフィルタ後: {len(df_rank)}")
+    
+    df_rank = df_rank[df_rank["vol_ratio"] < 1.0]
+    print(f"[DEBUG] 出来高静寂フィルタ後: {len(df_rank)}")
 
     # ★空対策
     if df_rank.empty:
