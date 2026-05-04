@@ -848,7 +848,7 @@ def ai_predict(model, feature_cols, all_data, reg_model=None, threshold=0.55, to
 # Step15　パラメータ設定
 # =========================================================
 
-BEST_TH = 0.33  # 数値を調整する
+BEST_TH = 0.30  # 数値を調整する
 EXCLUDE_CODES = []
 
 
