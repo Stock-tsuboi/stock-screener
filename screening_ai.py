@@ -1947,7 +1947,9 @@ def run_screening():
         df_rank = df_tmp
         print(f"[DEBUG] 仕込み条件適用: {len(df_rank)}件")
     else:
-        print("⚠ 仕込み条件で0件 → フィルタ無効化")
+        print("本日仕込み条件該当なし")
+        send_line("仕込み条件該当なし")
+        return
     
     print(f"[DEBUG] 仕込み条件後: {len(df_rank)} / before: {df_rank_before}")
 
