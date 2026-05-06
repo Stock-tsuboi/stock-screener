@@ -264,10 +264,14 @@ def create_features(df):
     # ===== AI学習ラベル（トレンド特化型：初動＋継続）=====
     future_max = df["High"].shift(-1).rolling(5).max()
     future_close_5 = df["Close"].shift(-5)
-
+    
     future_return_max = future_max / df["Close"] - 1
     future_return_5 = future_close_5 / df["Close"] - 1
-
+    
+    # ★ここ追加（重要）
+    future_return_1 = df["Close"].shift(-1) / df["Close"] - 1
+    future_return_3 = df["Close"].shift(-3) / df["Close"] - 1
+    
     df["Target"] = np.where(
         future_return_max.notna(),
         (
