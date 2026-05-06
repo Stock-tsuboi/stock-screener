@@ -1939,8 +1939,9 @@ def run_screening():
     df_rank_before = len(df_rank)
     
     df_tmp = df_rank[
-        (df_rank["ret5"] < 0.02) &
-        (df_rank["vol_ratio"] < 1.0)
+        (df_rank["ret5"] < 0.02) &      # 下げ止まり候補
+        (df_rank["ret3"] > -0.05) &     # ★これ追加（急落は除外）
+        (df_rank["vol_ratio"] < 1.0)    # 出来高静寂
     ]
     
     if len(df_tmp) > 0:
