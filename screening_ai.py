@@ -1936,11 +1936,20 @@ def run_screening():
     print(f"[DEBUG] df_rank after filter: {len(df_rank)}")
     
     # ===== 仕込み候補だけに絞る（重要） =====
-    df_rank = df_rank[df_rank["ret5"] < 0.02]
-    print(f"[DEBUG] 下げ止まりフィルタ後: {len(df_rank)}")
+    df_rank_before = len(df_rank)
     
-    df_rank = df_rank[df_rank["vol_ratio"] < 1.0]
-    print(f"[DEBUG] 出来高静寂フィルタ後: {len(df_rank)}")
+    df_tmp = df_rank[
+        (df_rank["ret5"] < 0.02) &
+        (df_rank["vol_ratio"] < 1.0)
+    ]
+    
+    if len(df_tmp) > 0:
+        df_rank = df_tmp
+        print(f"[DEBUG] 仕込み条件適用: {len(df_rank)}件")
+    else:
+        print("⚠ 仕込み条件で0件 → フィルタ無効化")
+    
+    print(f"[DEBUG] 仕込み条件後: {len(df_rank)} / before: {df_rank_before}")
 
     # ★空対策
     if df_rank.empty:
