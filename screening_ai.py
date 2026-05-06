@@ -2035,14 +2035,6 @@ def run_screening():
     # ★デバッグ
     print(f"[DEBUG] マージ直後件数: {len(df_merge)}")
     
-    # 下げ止まりフィルタ（仕込み条件）
-    df_merge = df_merge[df_merge["ret5"] < 0.02]
-    print(f"[DEBUG] 下げ止まりフィルタ後: {len(df_merge)}")
-    
-    # 出来高が静かな状態（直近で増えていない）
-    df_merge = df_merge[df_merge["vol_ratio"] < 1.0]
-    print(f"[DEBUG] 出来高静寂フィルタ後: {len(df_merge)}")
-    
     print("期待値min:", df_merge["期待値"].min(), "max:", df_merge["期待値"].max())
     
     # ★期待値フィルタ（安全版）
