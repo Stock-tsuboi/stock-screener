@@ -275,9 +275,9 @@ def create_features(df):
     df["Target"] = np.where(
         future_return_max.notna(),
         (
-            (future_return_1 > 0.01) &   # 翌日 +1%
-            (future_return_3 > 0.03) &   # 3日後 +3%
-            (future_return_5 > 0.05)     # 5日後 +5%
+            (future_return_1 > 0.005) &   # 翌日 +0.5%
+            (future_return_3 > 0.02) &    # 3日後 +2%
+            (future_return_5 > 0.04)      # 5日後 +4%
         ).astype(int),
         np.nan
     )
