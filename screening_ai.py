@@ -1940,6 +1940,16 @@ def run_screening():
     df_rank = df_rank[df_rank["symbol"].isin(ai_dict.keys())]
     
     print(f"[DEBUG] df_rank after filter: {len(df_rank)}")
+
+    # ★これ追加（確認用）
+    print(df_rank[[
+        "symbol",
+        "AI上昇確率",
+        "ret1",
+        "ret3",
+        "ret5",
+        "vol_ratio"
+    ]].head(10))
     
     # ===== 仕込み候補だけに絞る（重要） =====
     df_rank_before = len(df_rank)
