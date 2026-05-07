@@ -1524,7 +1524,8 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
                 "vol_ratio": vol_ratio
             })
 
-        except Exception:
+        except Exception as e:
+            print(f"[RANK ERROR] {symbol}: {e}")
             continue
 
     df_rank = pd.DataFrame(rows)
