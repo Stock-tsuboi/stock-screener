@@ -1531,7 +1531,17 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
     df_rank = pd.DataFrame(rows)
     
     if df_rank.empty:
-        return pd.DataFrame(columns=["symbol","AI上昇確率","平均上昇率","平均下落率","期待値"])
+        return pd.DataFrame(columns=[
+            "symbol",
+            "AI上昇確率",
+            "平均上昇率",
+            "平均下落率",
+            "期待値",
+            "ret1",
+            "ret3",
+            "ret5",
+            "vol_ratio"
+        ])
 
     df_rank = df_rank.sort_values("期待値", ascending=False)
 
@@ -1546,9 +1556,12 @@ def strongest_ai_ranking(model, feature_cols, feature_data):
             "AI上昇確率",
             "平均上昇率",
             "平均下落率",
-            "期待値"
+            "期待値",
+            "ret1",
+            "ret3",
+            "ret5",
+            "vol_ratio"
         ])
-
     # ===== パターンB（現実向け）：上位5銘柄 =====
     df_rank_top5 = df_rank.head(5).copy()
 
