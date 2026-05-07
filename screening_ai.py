@@ -261,23 +261,34 @@ def create_features(df):
     atr = (df["High"] - df["Low"]).rolling(14).mean()
     df["atr_ratio"] = atr / df["Close"].replace(0, np.nan)
     
-    # ===== AI学習ラベル（トレンド特化型：初動＋継続）=====
-    future_max = df["High"].shift(-1).rolling(5).max()
-    future_close_5 = df["Close"].shift(-5)
-    
-    future_return_max = future_max / df["Close"] - 1
-    future_return_5 = future_close_5 / df["Close"] - 1
-    
-    # ★ここ追加（重要）
+    # ===== AI学習ラベル（仕込み前 → 上昇検出型）=====
+
+    # ===== 未来リターン =====
     future_return_1 = df["Close"].shift(-1) / df["Close"] - 1
     future_return_3 = df["Close"].shift(-3) / df["Close"] - 1
+    future_return_5 = df["Close"].shift(-5) / df["Close"] - 1
     
+    # ===== 現在の状態 =====
+    current_ret5 = df["Close"] / df["Close"].shift(5) - 1
+    
+    current_vol_ratio = (
+        df["Volume"] /
+        df["Volume"].rolling(20).mean().replace(0, np.nan)
+    )
+    
+    # ===== AIターゲット =====
     df["Target"] = np.where(
-        future_return_max.notna(),
+        future_return_5.notna(),
         (
-            (future_return_1 > 0.005) &   # 翌日 +0.5%
-            (future_return_3 > 0.02) &    # 3日後 +2%
-            (future_return_5 > 0.04)      # 5日後 +4%
+            # ===== 現在：仕込み状態 =====
+            (current_ret5 < -0.05) &      # 直近下落
+            (current_ret5 > -0.20) &      # 暴落除外
+            (current_vol_ratio < 0.9) &   # 出来高静寂
+    
+            # ===== 未来：上昇 =====
+            (future_return_1 > 0.01) &
+            (future_return_3 > 0.03) &
+            (future_return_5 > 0.05)
         ).astype(int),
         np.nan
     )
