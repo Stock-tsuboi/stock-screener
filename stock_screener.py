@@ -103,7 +103,11 @@ class FeatureFactory:
         df["BigBull"] = ((close - df["Open"]) / df["Open"].replace(0, np.nan) > 0.03).astype(int)
         df["BigBear"] = ((df["Open"] - close) / df["Open"].replace(0, np.nan) > 0.03).astype(int)
 
-        return df.replace([np.inf, -np.inf], np.nan).fillna(0)
+        # 無限大をNaNに変換
+        df = df.replace([np.inf, -np.inf], np.nan)
+        
+        # 指標が計算できていない初期の行（SMA75などがNaNの期間）を削除してから、残りを0埋め
+        return df.dropna(subset=["SMA75", "Slope20"]).fillna(0)
 
     @staticmethod
     def add_target_label(df: pd.DataFrame) -> pd.DataFrame:
@@ -161,6 +165,13 @@ class DatabaseManager:
                     low DOUBLE, close DOUBLE, volume DOUBLE, PRIMARY KEY (code, date)
                 )
             """)
+            
+            # データベースに既にデータがあるか確認
+            res = conn.execute("SELECT COUNT(*) FROM prices").fetchone()
+            has_data = res[0] > 0
+            # データがあれば直近5日分のみ、なければ1年分を取得
+            period_setting = "5d" if has_data else "1y"
+            logger.info(f"データ取得モード: {'差分(5d)' if has_data else 'フル(1y)'}")
 
             batch_size = 100
             for i in range(0, len(codes), batch_size):
@@ -168,9 +179,16 @@ class DatabaseManager:
                 tickers = " ".join([f"{c}.T" for c in batch_codes])
                 
                 try:
-                    df = yf.download(tickers, period="1y", group_by="ticker", progress=False)
+                    df = yf.download(tickers, period=period_setting, group_by="ticker", progress=False)
+                    if df.empty: continue
+
+                    # 1銘柄のみの場合、MultiIndexにならないケースがあるための正規化
+                    # これを行わないと、最後のバッチ（端数）がスキップされる可能性があります。
+                    if not isinstance(df.columns, pd.MultiIndex) and len(batch_codes) == 1:
+                        symbol = f"{batch_codes[0]}.T"
+                        df.columns = pd.MultiIndex.from_product([[symbol], df.columns])
+
                     dfs_to_insert = []
-                    
                     for code in batch_codes:
                         symbol = f"{code}.T"
                         if symbol not in df.columns.get_level_values(0): continue
@@ -185,7 +203,10 @@ class DatabaseManager:
                     if dfs_to_insert:
                         merged = pd.concat(dfs_to_insert)
                         conn.register("tmp_df", merged)
-                        conn.execute("INSERT OR IGNORE INTO prices SELECT * FROM tmp_df")
+                        conn.execute("""
+                            INSERT OR IGNORE INTO prices (code, date, open, high, low, close, volume)
+                            SELECT code, date, open, high, low, close, volume FROM tmp_df
+                        """)
                         conn.unregister("tmp_df")
                     time.sleep(1)  # Yahoo APIのレートリミットを回避するための待機
                 except Exception as e:
@@ -193,14 +214,19 @@ class DatabaseManager:
 
     def load_all_data(self, symbols_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """データベースから指定された銘柄の過去400日分程度のデータを一括で読み込みます。"""
-        codes = tuple(symbols_df["コード"].tolist())
-        query = f"""
+        codes = symbols_df["コード"].tolist()
+        if not codes:
+            return {}
+
+        query = """
             SELECT code, date, open as Open, high as High, low as Low, close as Close, volume as Volume
-            FROM prices WHERE code IN {codes} AND date >= CURRENT_DATE - INTERVAL 400 DAY
+            FROM prices 
+            WHERE code IN ? 
+              AND date >= CURRENT_DATE - INTERVAL 400 DAY
             ORDER BY code, date
         """
         with self._get_connection() as conn:
-            df = conn.execute(query).df()
+            df = conn.execute(query, [codes]).df()
         
         return {f"{code}.T": group.set_index("date") for code, group in df.groupby("code")}
 
@@ -252,7 +278,10 @@ class StockScreener:
         processed_data = self._parallel_feature_engineering(all_data)
         
         # モデル準備
-        self._prepare_model(all_data)
+        if not self._prepare_model(all_data):
+            logger.error("モデルの準備に失敗したため、スクリーニングを中断します。")
+            send_line("【システム通知】AIモデルの準備に失敗しました。データ量を確認してください。")
+            return
         
         # 推論とランキング
         results = self._inference(processed_data)
@@ -296,9 +325,10 @@ class StockScreener:
             
             if not training_dfs:
                 logger.error("学習に使用できる有効なデータがありませんでした。")
-                return
+                return False
 
-            full_train = pd.concat(training_dfs)
+            # 欠損値（NaN）が含まれていると学習時にエラーになるため、Targetを基準に除去を徹底
+            full_train = pd.concat(training_dfs).dropna(subset=["Target"])
             X = full_train[self.factory.FEATURE_COLS]
             y = full_train["Target"]
             
@@ -308,13 +338,23 @@ class StockScreener:
             joblib.dump(self.model, Config.MODEL_PATH)
             logger.info("モデルの学習と保存が完了しました。")
         else:
-            self.model = joblib.load(Config.MODEL_PATH)
+            try:
+                self.model = joblib.load(Config.MODEL_PATH)
+            except Exception as e:
+                logger.error(f"モデルの読み込みに失敗しました: {e}")
+                return False
+        return self.model is not None
 
     def _inference(self, feature_dict: Dict) -> pd.DataFrame:
         """
         最新の指標データに基づいてAIが「上昇確率」を予測します。
         確率が高い銘柄に対し、期待値（EV）を計算してランキングを作成します。
         """
+        # モデルが正常に準備できていない場合のガード
+        if self.model is None:
+            logger.error("AIモデルが準備できていないため、推論をスキップします。")
+            return pd.DataFrame()
+
         symbols = list(feature_dict.keys())
         features = pd.DataFrame([feature_dict[s] for s in symbols])
         
