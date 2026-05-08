@@ -30,7 +30,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: |
-          market.db
+          market.db*
           model_v2.pkl
         key: stock-data-${{ runner.os }}-${{ github.run_id }}
         restore-keys: |
