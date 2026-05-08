@@ -330,12 +330,15 @@ class StockScreener:
         
         # フィルタリング
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中...")
-        filtered = res_df[
-            (res_df["prob"] >= 0.35) &               # 閾値を少し緩めて母数を確保
-            (res_df["Slope10"] > 0) &                # 初動：価格が上向き始めている
-            (res_df["ret10"].between(-0.03, 0.05)) & # フィルタ緩和：-1%~2%は厳しすぎるため
-            (res_df["VolRatio"] < 1.1)               # フィルタ緩和：出来高急増前を広く捉える
-        ].sort_values("EV", ascending=False)
+
+        cond_prob = res_df["prob"] >= 0.35
+        cond_slope = res_df["Slope10"] > 0
+        cond_ret = res_df["ret10"].between(-0.03, 0.05)
+        cond_vol = res_df["VolRatio"] < 1.1
+
+        logger.info(f"【条件別ヒット数】 AI確率(>0.35): {cond_prob.sum()}, 傾き(Slope>0): {cond_slope.sum()}, 安定性(ret10): {cond_ret.sum()}, 出来高(静寂): {cond_vol.sum()}")
+
+        filtered = res_df[cond_prob & cond_slope & cond_ret & cond_vol].sort_values("EV", ascending=False)
         
         logger.info(f"フィルタ通過: {len(filtered)} 銘柄")
         return filtered.head(10)
