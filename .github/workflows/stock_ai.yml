@@ -26,6 +26,16 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
+    - name: Cache Stock Data and Model
+      uses: actions/cache@v4
+      with:
+        path: |
+          market.db
+          model_v2.pkl
+        key: stock-data-${{ runner.os }}-${{ github.run_id }}
+        restore-keys: |
+          stock-data-${{ runner.os }}-
+
     - name: Run Stock AI
       env:
         LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
