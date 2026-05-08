@@ -1,0 +1,360 @@
+import os
+import time
+import logging
+import joblib
+import warnings
+import numpy as np
+import pandas as pd
+import requests
+import duckdb
+import yfinance as yf
+from datetime import datetime, timedelta
+from typing import List, Dict, Optional, Tuple
+from joblib import Parallel, delayed
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+
+# =========================================================
+# ロギングと警告の設定
+# =========================================================
+# 実行時のログ（情報の流れやエラー）を表示し、
+# Pandasなどのライブラリが発生させる不要な警告を無視します。
+# =========================================================
+warnings.filterwarnings("ignore")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# =========================================================
+# Configuration
+# =========================================================
+class Config:
+    """
+    システム全体の設定（定数）を管理するクラスです。
+    パス、APIトークン、対象市場、モデルの再学習頻度などをここで一元管理します。
+    """
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DB_PATH = os.path.join(BASE_DIR, "market.db")
+    MODEL_PATH = os.path.join(BASE_DIR, "model_v2.pkl")
+    OLD_MODEL_PATH = os.path.join(BASE_DIR, "model_old.pkl")
+    LINE_ACCESS_TOKEN = os.getenv("LINE_BOT_TOKEN")
+    LINE_USER_ID = os.getenv("LINE_USER_ID")
+    TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
+    RETRAIN_DAYS = 7
+    DEFAULT_THRESHOLD = 0.45
+
+# =========================================================
+# Feature Engineering (Unified)
+# =========================================================
+class FeatureFactory:
+    """
+    株価データからAIが学習・推論するために必要な「テクニカル指標（特徴量）」を生成するクラスです。
+    学習時と推論時で同じ計算ロジックを使用することで、AIの精度低下（計算の乖離）を防ぎます。
+    """
+    
+    FEATURE_COLS = [
+        "SMA5", "SMA25", "SMA75", "Bias5", "Bias25", "Bias75",
+        "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2", "VolRatio",
+        "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10",
+        "ret1", "ret3", "ret5", "ret20", "atr_ratio"
+    ] # AIが判断に使用する項目のリスト
+
+    @staticmethod
+    def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        移動平均、ボリンジャーバンド、出来高比率、スロープ（傾き）などの
+        テクニカル指標を計算します。
+        """
+        df = df.copy()
+        close = df["Close"]
+        
+        # 移動平均と乖離率
+        for n in [5, 25, 75]:
+            df[f"SMA{n}"] = close.rolling(n).mean()
+            df[f"Bias{n}"] = (close - df[f"SMA{n}"]) / df[f"SMA{n}"].replace(0, np.nan)
+
+        # ボリンジャーバンド
+        # screening_ai.py の計算式に合わせる
+        df["BB_MID"] = df["SMA25"]
+        df["BB_STD"] = close.rolling(25).std()
+        std25 = df["BB_STD"]
+
+        df["BB_UP1"] = df["SMA25"] + std25
+        df["BB_LOW1"] = df["SMA25"] - std25
+        df["BB_UP2"] = df["SMA25"] + 2 * std25
+        df["BB_LOW2"] = df["SMA25"] - 2 * std25
+
+        # 出来高とリターン
+        df["VolRatio"] = df["Volume"] / df["Volume"].rolling(25).mean().replace(0, np.nan)
+        for n in [1, 3, 5, 10, 20]:
+            df[f"ret{n}"] = close.pct_change(n)
+
+        # スロープ (ベクトル演算)
+        # 学習時の Slope10 は pct_change(10) なのでそれに合わせる
+        df["Slope10"] = close.pct_change(10)
+        # 学習時の補完ロジックを再現
+        df["Slope20"] = df["Slope10"].rolling(20).mean()
+        df["SlopeAccel"] = df["Slope10"].diff()
+
+        # ATR比率
+        atr = (df["High"] - df["Low"]).rolling(14).mean()
+        df["atr_ratio"] = atr / close.replace(0, np.nan)
+
+        # ローソク足
+        df["Bull"] = (close > df["Open"]).astype(int)
+        df["BigBull"] = ((close - df["Open"]) / df["Open"].replace(0, np.nan) > 0.03).astype(int)
+        df["BigBear"] = ((df["Open"] - close) / df["Open"].replace(0, np.nan) > 0.03).astype(int)
+
+        return df.replace([np.inf, -np.inf], np.nan).fillna(0)
+
+    @staticmethod
+    def add_target_label(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        学習用：AIに「正解」を教えるためのラベルを作成します。
+        価格の上昇（1日後+1%, 3日後+3%, 5日後+5%）に加え、
+        出来高も増加していることを正解と定義します。
+        """
+        future_ret_1 = df["Close"].shift(-1) / df["Close"] - 1
+        future_ret_3 = df["Close"].shift(-3) / df["Close"] - 1
+        future_close_5 = df["Close"].shift(-5)
+        future_ret_5 = future_close_5 / df["Close"] - 1
+
+        # 未来の出来高条件
+        current_vol = df["Volume"]
+        future_vol_1 = df["Volume"].shift(-1)
+        future_vol_3 = df["Volume"].shift(-3)
+        future_vol_5 = df["Volume"].shift(-5)
+
+        df["Target"] = np.where(
+            future_close_5.notna(),
+            ((future_ret_1 >= 0.01) & (future_ret_3 >= 0.03) & (future_ret_5 >= 0.05) &
+             (future_vol_1 > current_vol) & (future_vol_3 > current_vol) & (future_vol_5 > current_vol)).astype(int),
+            np.nan
+        )
+        return df
+
+# =========================================================
+# Data Management
+# =========================================================
+class DatabaseManager:
+    """
+    ローカルデータベース（DuckDB）への接続と、Yahoo Financeからのデータ取得を管理するクラスです。
+    株価データの保存・読み込みを一手に引き受けます。
+    """
+    def __init__(self, db_path: str):
+        self.db_path = db_path
+
+    def _get_connection(self):
+        """データベースへの接続を取得します。"""
+        return duckdb.connect(self.db_path)
+
+    def update_prices(self, symbols_df: pd.DataFrame):
+        """
+        銘柄リストに基づいて、最新の株価をYahoo Financeからダウンロードし、
+        データベースに一括で保存（INSERT OR IGNORE）します。
+        """
+        logger.info("DuckDB価格更新開始...")
+        codes = symbols_df["コード"].tolist()
+        
+        with self._get_connection() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS prices (
+                    code TEXT, date DATE, open DOUBLE, high DOUBLE, 
+                    low DOUBLE, close DOUBLE, volume DOUBLE, PRIMARY KEY (code, date)
+                )
+            """)
+
+            batch_size = 100
+            for i in range(0, len(codes), batch_size):
+                batch_codes = codes[i:i+batch_size]
+                tickers = " ".join([f"{c}.T" for c in batch_codes])
+                
+                try:
+                    df = yf.download(tickers, period="1y", group_by="ticker", progress=False)
+                    dfs_to_insert = []
+                    
+                    for code in batch_codes:
+                        symbol = f"{code}.T"
+                        if symbol not in df.columns.get_level_values(0): continue
+                        
+                        df_s = df[symbol].dropna().reset_index()
+                        if df_s.empty: continue
+                        
+                        df_s.columns = ["date", "open", "high", "low", "close", "volume"]
+                        df_s["code"] = code
+                        dfs_to_insert.append(df_s[["code", "date", "open", "high", "low", "close", "volume"]])
+                    
+                    if dfs_to_insert:
+                        merged = pd.concat(dfs_to_insert)
+                        conn.register("tmp_df", merged)
+                        conn.execute("INSERT OR IGNORE INTO prices SELECT * FROM tmp_df")
+                        conn.unregister("tmp_df")
+                    time.sleep(1)  # Yahoo APIのレートリミットを回避するための待機
+                except Exception as e:
+                    logger.error(f"Batch {i} download error: {e}")
+
+    def load_all_data(self, symbols_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
+        """データベースから指定された銘柄の過去400日分程度のデータを一括で読み込みます。"""
+        codes = tuple(symbols_df["コード"].tolist())
+        query = f"""
+            SELECT code, date, open as Open, high as High, low as Low, close as Close, volume as Volume
+            FROM prices WHERE code IN {codes} AND date >= CURRENT_DATE - INTERVAL 400 DAY
+            ORDER BY code, date
+        """
+        with self._get_connection() as conn:
+            df = conn.execute(query).df()
+        
+        return {f"{code}.T": group.set_index("date") for code, group in df.groupby("code")}
+
+# =========================================================
+# Notification
+# =========================================================
+def send_line(message: str):
+    """
+    分析結果やシステムエラーを、LINE Messaging APIを通じて
+    指定したユーザーのLINEにプッシュ通知します。
+    """
+    if not Config.LINE_ACCESS_TOKEN or not Config.LINE_USER_ID:
+        logger.warning("LINE設定が不足しています。")
+        return
+
+    url = "https://api.line.me/v2/bot/message/push"
+    headers = {"Content-Type": "application/json", "Authorization": f"Bearer {Config.LINE_ACCESS_TOKEN}"}
+    data = {"to": Config.LINE_USER_ID, "messages": [{"type": "text", "text": message}]}
+    
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        if response.status_code != 200: logger.error(f"LINE送信失敗: {response.text}")
+    except Exception as e:
+        logger.error(f"LINE送信エラー: {e}")
+
+# =========================================================
+# Core Screener Logic
+# =========================================================
+class StockScreener:
+    """
+    スクリーニングの全体工程（ワークフロー）を制御するメインクラスです。
+    データの更新、特徴量計算、モデルの準備、AI推論、通知の順に実行します。
+    """
+    def __init__(self):
+        self.db = DatabaseManager(Config.DB_PATH)
+        self.factory = FeatureFactory()
+        self.model = None
+
+    def run(self):
+        """スクリーニングの全工程を順番に実行します。"""
+        logger.info("=== スクリーニング開始 ===")
+        symbols = self._load_symbols()
+        
+        # データ更新
+        self.db.update_prices(symbols)
+        all_data = self.db.load_all_data(symbols)
+        
+        # 特徴量生成（並列）
+        processed_data = self._parallel_feature_engineering(all_data)
+        
+        # モデル準備
+        self._prepare_model(all_data)
+        
+        # 推論とランキング
+        results = self._inference(processed_data)
+        
+        # 結果通知
+        self._notify(results, symbols)
+
+    def _load_symbols(self) -> pd.DataFrame:
+        """JPXの銘柄リストCSVを読み込み、対象とする市場（プライム等）で絞り込みます。"""
+        df = pd.read_csv("japan_stocks_jpx.csv", dtype=str)
+        df.columns = df.columns.str.strip()
+        df["市場"] = df["市場・商品区分"].str.extract(r"(プライム|スタンダード|グロース)")
+        return df[df["市場"].isin(Config.TARGET_MARKETS)][["コード", "銘柄名", "市場"]].dropna()
+
+    def _parallel_feature_engineering(self, all_data: Dict) -> Dict:
+        """全銘柄のテクニカル指標計算を、マルチプロセスで並列化して高速に実行します。"""
+        def worker(symbol, df):
+            if len(df) < 80: return None
+            return symbol, self.factory.calculate_metrics(df).iloc[-1]
+        
+        results = Parallel(n_jobs=-1)(delayed(worker)(s, d) for s, d in all_data.items())
+        return {r[0]: r[1] for r in results if r is not None}
+
+    def _prepare_model(self, all_data: Dict):
+        """
+        AIモデル（RandomForest）を準備します。
+        前回の学習から一定期間が経過している場合は再学習を行い、
+        そうでなければ保存されたモデルファイルを読み込みます。
+        """
+        if not os.path.exists(Config.MODEL_PATH) or (datetime.now() - datetime.fromtimestamp(os.path.getmtime(Config.MODEL_PATH))).days >= Config.RETRAIN_DAYS:
+            logger.info("モデルを新規学習します...")
+            training_dfs = []
+            total = len(all_data)
+            for i, (s, df) in enumerate(all_data.items(), 1):
+                if len(df) < 100: continue
+                feat_df = self.factory.add_target_label(self.factory.calculate_metrics(df))
+                training_dfs.append(feat_df.iloc[:-5])
+                
+                if i % 100 == 0:
+                    logger.info(f"学習データ準備中... ({i}/{total})")
+            
+            if not training_dfs:
+                logger.error("学習に使用できる有効なデータがありませんでした。")
+                return
+
+            full_train = pd.concat(training_dfs)
+            X = full_train[self.factory.FEATURE_COLS]
+            y = full_train["Target"]
+            
+            logger.info(f"AIモデルの学習を開始します (データ件数: {len(X)})...")
+            self.model = RandomForestClassifier(n_estimators=200, max_depth=10, n_jobs=-1, random_state=42)
+            self.model.fit(X, y)
+            joblib.dump(self.model, Config.MODEL_PATH)
+            logger.info("モデルの学習と保存が完了しました。")
+        else:
+            self.model = joblib.load(Config.MODEL_PATH)
+
+    def _inference(self, feature_dict: Dict) -> pd.DataFrame:
+        """
+        最新の指標データに基づいてAIが「上昇確率」を予測します。
+        確率が高い銘柄に対し、期待値（EV）を計算してランキングを作成します。
+        """
+        symbols = list(feature_dict.keys())
+        features = pd.DataFrame([feature_dict[s] for s in symbols])
+        
+        probs = self.model.predict_proba(features[self.factory.FEATURE_COLS])[:, 1]
+        
+        res_df = pd.DataFrame({"symbol": symbols, "prob": probs})
+        res_df = pd.concat([res_df, features.reset_index(drop=True)], axis=1)
+        
+        # 期待値(EV)計算
+        res_df["EV"] = (res_df["prob"] * 0.10) / res_df["atr_ratio"].replace(0, 0.001)
+        
+        # フィルタリング
+        filtered = res_df[
+            (res_df["prob"] >= Config.DEFAULT_THRESHOLD) & 
+            (res_df["Slope10"] > 0) &                # 初動：価格が上向き始めている
+            (res_df["ret10"].between(-0.01, 0.02)) & # 下げ止まり：直近10日は安定している
+            (res_df["VolRatio"] < 0.9)               # 出来高の静寂：まだ注目されていない
+        ].sort_values("EV", ascending=False)
+        
+        return filtered.head(10)
+
+    def _notify(self, results: pd.DataFrame, symbols_df: pd.DataFrame):
+        """最終的なランキング結果を整形し、LINEへ送信します。"""
+        if results.empty:
+            send_line("本日の条件合致銘柄はありませんでした。")
+            return
+
+        name_map = dict(zip(symbols_df["コード"] + ".T", symbols_df["銘柄名"]))
+        
+        msg = ["【AI厳選銘柄ランキング】"]
+        for i, (_, row) in enumerate(results.iterrows(), 1):
+            name = name_map.get(row['symbol'], "不明")
+            msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}")
+        
+        send_line("\n".join(msg))
+        logger.info("通知完了")
+
+if __name__ == "__main__":
+    try:
+        StockScreener().run()
+    except Exception as e:
+        logger.exception("致命的なエラーが発生しました")
+        send_line(f"システム停止エラー: {e}")
