@@ -323,13 +323,15 @@ class StockScreener:
         res_df = pd.DataFrame({"symbol": symbols, "prob": probs})
         res_df = pd.concat([res_df, features.reset_index(drop=True)], axis=1)
         
-        # 期待値(EV)計算
-        res_df["EV"] = (res_df["prob"] * 0.10) / res_df["atr_ratio"].replace(0, 0.001)
+        # 期待値(EV)計算の改良
+        # prob(確率)に、ボラティリティ(atr_ratio)を掛け合わせることで、
+        # 「当たりやすく、かつ当たった時に大きい」銘柄を上位にします。
+        res_df["EV"] = (res_df["prob"] * res_df["atr_ratio"] * 100)
         
         # フィルタリング
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中...")
         filtered = res_df[
-            (res_df["prob"] >= Config.DEFAULT_THRESHOLD) & 
+            (res_df["prob"] >= 0.35) &               # 閾値を少し緩めて母数を確保
             (res_df["Slope10"] > 0) &                # 初動：価格が上向き始めている
             (res_df["ret10"].between(-0.03, 0.05)) & # フィルタ緩和：-1%~2%は厳しすぎるため
             (res_df["VolRatio"] < 1.1)               # フィルタ緩和：出来高急増前を広く捉える
