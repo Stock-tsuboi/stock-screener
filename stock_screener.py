@@ -38,7 +38,7 @@ class Config:
     LINE_ACCESS_TOKEN = os.getenv("LINE_BOT_TOKEN")
     LINE_USER_ID = os.getenv("LINE_USER_ID")
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
-    RETRAIN_DAYS = 30
+    RETRAIN_DAYS = 7
     DEFAULT_THRESHOLD = 0.45
 
 # =========================================================
@@ -265,7 +265,7 @@ class StockScreener:
         df = pd.read_csv("japan_stocks_jpx.csv", dtype=str)
         df.columns = df.columns.str.strip()
         df["市場"] = df["市場・商品区分"].str.extract(r"(プライム|スタンダード|グロース)")
-        return df[df["市場"].isin(Config.TARGET_MARKETS)][["コード", "銘柄名", "市場"]].dropna().head(200)
+        return df[df["市場"].isin(Config.TARGET_MARKETS)][["コード", "銘柄名", "市場"]].dropna()
 
     def _parallel_feature_engineering(self, all_data: Dict) -> Dict:
         """全銘柄のテクニカル指標計算を、マルチプロセスで並列化して高速に実行します。"""
@@ -327,18 +327,21 @@ class StockScreener:
         res_df["EV"] = (res_df["prob"] * 0.10) / res_df["atr_ratio"].replace(0, 0.001)
         
         # フィルタリング
+        logger.info(f"推論完了: {len(res_df)} 銘柄を評価中...")
         filtered = res_df[
             (res_df["prob"] >= Config.DEFAULT_THRESHOLD) & 
             (res_df["Slope10"] > 0) &                # 初動：価格が上向き始めている
-            (res_df["ret10"].between(-0.01, 0.02)) & # 下げ止まり：直近10日は安定している
-            (res_df["VolRatio"] < 0.9)               # 出来高の静寂：まだ注目されていない
+            (res_df["ret10"].between(-0.03, 0.05)) & # フィルタ緩和：-1%~2%は厳しすぎるため
+            (res_df["VolRatio"] < 1.1)               # フィルタ緩和：出来高急増前を広く捉える
         ].sort_values("EV", ascending=False)
         
+        logger.info(f"フィルタ通過: {len(filtered)} 銘柄")
         return filtered.head(10)
 
     def _notify(self, results: pd.DataFrame, symbols_df: pd.DataFrame):
         """最終的なランキング結果を整形し、LINEへ送信します。"""
         if results.empty:
+            logger.info("条件に合致する銘柄が見つかりませんでした。")
             send_line("本日の条件合致銘柄はありませんでした。")
             return
 
