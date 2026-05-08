@@ -157,7 +157,13 @@ class DatabaseManager:
         """
         logger.info("DuckDB価格更新開始...")
         codes = symbols_df["コード"].tolist()
-        
+
+        # デバッグ用：ファイル存在確認
+        if os.path.exists(self.db_path):
+            logger.info(f"既存のDBファイルを検出: {self.db_path} ({os.path.getsize(self.db_path)} bytes)")
+        else:
+            logger.info("既存のDBファイルが見つかりません。新規作成します。")
+
         with self._get_connection() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS prices (
@@ -167,8 +173,13 @@ class DatabaseManager:
             """)
             
             # データベースに既にデータがあるか確認
-            res = conn.execute("SELECT COUNT(*) FROM prices").fetchone()
-            has_data = res[0] > 0
+            try:
+                res = conn.execute("SELECT COUNT(*) FROM prices").fetchone()
+                has_data = res[0] > 0
+                logger.info(f"現在のDB内レコード数: {res[0]}件")
+            except Exception:
+                has_data = False
+
             # データがあれば直近5日分のみ、なければ1年分を取得
             period_setting = "5d" if has_data else "1y"
             logger.info(f"データ取得モード: {'差分(5d)' if has_data else 'フル(1y)'}")
@@ -204,8 +215,9 @@ class DatabaseManager:
                         merged = pd.concat(dfs_to_insert)
                         conn.register("tmp_df", merged)
                         conn.execute("""
-                            INSERT OR IGNORE INTO prices (code, date, open, high, low, close, volume)
+                            INSERT INTO prices (code, date, open, high, low, close, volume)
                             SELECT code, date, open, high, low, close, volume FROM tmp_df
+                            ON CONFLICT DO NOTHING
                         """)
                         conn.unregister("tmp_df")
                     time.sleep(1)  # Yahoo APIのレートリミットを回避するための待機
@@ -247,7 +259,7 @@ def send_line(message: str):
     data = {"to": Config.LINE_USER_ID, "messages": [{"type": "text", "text": message}]}
     
     try:
-        response = requests.post(url, headers=headers, json=data)
+        response = requests.post(url, headers=headers, json=data, timeout=15)
         if response.status_code != 200: logger.error(f"LINE送信失敗: {response.text}")
     except Exception as e:
         logger.error(f"LINE送信エラー: {e}")
@@ -299,8 +311,12 @@ class StockScreener:
     def _parallel_feature_engineering(self, all_data: Dict) -> Dict:
         """全銘柄のテクニカル指標計算を、マルチプロセスで並列化して高速に実行します。"""
         def worker(symbol, df):
-            if len(df) < 80: return None
-            return symbol, self.factory.calculate_metrics(df).iloc[-1]
+            if len(df) < 80:
+                return None
+            feat_df = self.factory.calculate_metrics(df)
+            if feat_df.empty:
+                return None
+            return symbol, feat_df.iloc[-1]
         
         results = Parallel(n_jobs=-1)(delayed(worker)(s, d) for s, d in all_data.items())
         return {r[0]: r[1] for r in results if r is not None}
@@ -333,7 +349,13 @@ class StockScreener:
             y = full_train["Target"]
             
             logger.info(f"AIモデルの学習を開始します (データ件数: {len(X)})...")
-            self.model = RandomForestClassifier(n_estimators=200, max_depth=10, n_jobs=-1, random_state=42)
+            self.model = RandomForestClassifier(
+                n_estimators=200,
+                max_depth=10,
+                n_jobs=-1,
+                random_state=42,
+                class_weight="balanced"
+            )
             self.model.fit(X, y)
             joblib.dump(self.model, Config.MODEL_PATH)
             logger.info("モデルの学習と保存が完了しました。")
@@ -358,7 +380,13 @@ class StockScreener:
         symbols = list(feature_dict.keys())
         features = pd.DataFrame([feature_dict[s] for s in symbols])
         
-        probs = self.model.predict_proba(features[self.factory.FEATURE_COLS])[:, 1]
+        # クラス数のチェック（学習データにTarget=1が不在の場合のIndexErrorを防止）
+        proba = self.model.predict_proba(features[self.factory.FEATURE_COLS])
+        if proba.shape[1] < 2:
+            logger.error("AIモデルの学習データに正解（Target=1）が含まれていなかったため、推論をスキップします。")
+            return pd.DataFrame()
+            
+        probs = proba[:, 1]
         
         res_df = pd.DataFrame({"symbol": symbols, "prob": probs})
         res_df = pd.concat([res_df, features.reset_index(drop=True)], axis=1)
