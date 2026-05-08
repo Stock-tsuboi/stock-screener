@@ -38,7 +38,7 @@ class Config:
     LINE_ACCESS_TOKEN = os.getenv("LINE_BOT_TOKEN")
     LINE_USER_ID = os.getenv("LINE_USER_ID")
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
-    RETRAIN_DAYS = 7
+    RETRAIN_DAYS = 30
     DEFAULT_THRESHOLD = 0.45
 
 # =========================================================
@@ -265,7 +265,7 @@ class StockScreener:
         df = pd.read_csv("japan_stocks_jpx.csv", dtype=str)
         df.columns = df.columns.str.strip()
         df["市場"] = df["市場・商品区分"].str.extract(r"(プライム|スタンダード|グロース)")
-        return df[df["市場"].isin(Config.TARGET_MARKETS)][["コード", "銘柄名", "市場"]].dropna()
+        return df[df["市場"].isin(Config.TARGET_MARKETS)][["コード", "銘柄名", "市場"]].dropna().head(200)
 
     def _parallel_feature_engineering(self, all_data: Dict) -> Dict:
         """全銘柄のテクニカル指標計算を、マルチプロセスで並列化して高速に実行します。"""
