@@ -12,6 +12,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple, Any
 from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.calibration import CalibratedClassifierCV
 
 # =========================================================
 # ロギングと警告の設定
@@ -41,7 +42,7 @@ class Config:
     LINE_USER_ID = os.getenv("LINE_USER_ID") or "dummy"
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
     RETRAIN_DAYS = 7
-    DEFAULT_THRESHOLD = 0.45
+    DEFAULT_THRESHOLD = 0.55
 
 # =========================================================
 # Feature Engineering (Unified)
@@ -120,24 +121,14 @@ class FeatureFactory:
     def add_target_label(df: pd.DataFrame) -> pd.DataFrame:
         """
         学習用：AIに「正解」を教えるためのラベルを作成します。
-        価格の上昇（1日後+1%, 3日後+3%, 5日後+5%）に加え、
-        出来高も増加していることを正解と定義します。
+        シンプルに「5日後のリターンが3%以上」を正解と定義します。
+        条件を絞りすぎないことで、学習データの正解率（ベースレート）を引き上げます。
         """
-        future_ret_1 = df["Close"].shift(-1) / df["Close"] - 1
-        future_ret_3 = df["Close"].shift(-3) / df["Close"] - 1
-        future_close_5 = df["Close"].shift(-5)
-        future_ret_5 = future_close_5 / df["Close"] - 1
-
-        # 未来の出来高条件
-        current_vol = df["Volume"]
-        future_vol_1 = df["Volume"].shift(-1)
-        future_vol_3 = df["Volume"].shift(-3)
-        future_vol_5 = df["Volume"].shift(-5)
+        future_ret_5 = df["Close"].shift(-5) / df["Close"] - 1
 
         df["Target"] = np.where(
-            future_close_5.notna(),
-            ((future_ret_1 >= 0.01) & (future_ret_3 >= 0.03) & (future_ret_5 >= 0.05) &
-             (future_vol_1 > current_vol) & (future_vol_3 > current_vol) & (future_vol_5 > current_vol)).astype(int),
+            future_ret_5.notna(),
+            (future_ret_5 >= 0.03).astype(int),
             np.nan
         )
         return df
@@ -202,7 +193,13 @@ class DatabaseManager:
                 tickers = " ".join([f"{c}.T" for c in batch_codes])
                 
                 try:
-                    df = yf.download(tickers, period=period_setting, group_by="ticker", progress=False)
+                    df = yf.download(
+                        tickers,
+                        period=period_setting,
+                        group_by="ticker",
+                        progress=False,
+                        threads=True
+                    )
                     if df.empty: continue
 
                     # 1銘柄のみの場合、MultiIndexにならないケースがあるための正規化
@@ -384,12 +381,18 @@ class StockScreener:
             logger.info(f"学習データの内訳 - Target=0 (その他): {int((y == 0).sum())}件")
             
             logger.info(f"AIモデルの学習を開始します (データ件数: {len(X)})...")
-            self.model = RandomForestClassifier(
-                n_estimators=200,
-                max_depth=10,
+            base_model = RandomForestClassifier(
+                n_estimators=300,
+                max_depth=12,
+                min_samples_leaf=5,
                 n_jobs=2,
                 random_state=42,
                 class_weight="balanced"
+            )
+            self.model = CalibratedClassifierCV(
+                base_estimator=base_model,
+                method="sigmoid",
+                cv=3
             )
             self.model.fit(X, y)
             joblib.dump(self.model, Config.MODEL_PATH)
@@ -431,25 +434,29 @@ class StockScreener:
         res_df = pd.concat([res_df, features.reset_index(drop=True)], axis=1)
         
         # 期待値(EV)計算の更新
-        # 1. Slope10を価格で割って「1日あたりの上昇率」に正規化
-        # 2. 出来高比率(VolRatio)を10%の重みで加算（1.0倍が基準）
-        # これにより、AI予測が高く、かつトレンドと出来高が伴っている銘柄が上位に来ます。
         res_df["norm_slope"] = res_df["Slope10"] / res_df["Close"].replace(0, np.nan)
+
+        slope_abs_median = res_df["norm_slope"].abs().median()
+        res_df["SlopeScore"] = res_df["norm_slope"] / (slope_abs_median if slope_abs_median > 0 else 1e-7)
+
+        # 改良案：AIの確信度を最優先し、勢いによる「逆転」が起きすぎないように調整
+        # AIの予測(85%)を主軸にし、トレンド(10%)と出来高(5%)は補助的な加点要素とします。
+        # これにより、「AIが自信を持っていて、かつ勢いも出始めている」銘柄が正しく1位になります。
         res_df["EV"] = (
-            res_df["prob"]
-            * (1 + res_df["norm_slope"])
-            * (1 + res_df["VolRatio"] * 0.1)
+            res_df["prob"] * 0.85 +
+            res_df["SlopeScore"].clip(-2, 2) * 0.10 +
+            res_df["VolRatio"].clip(0, 3) * 0.05
         )
         
         # フィルタリング
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中...")
 
-        cond_prob = res_df["prob"] >= 0.35
+        cond_prob = res_df["prob"] >= Config.DEFAULT_THRESHOLD
         cond_slope = res_df["Slope10"] > 0
         cond_ret = res_df["ret10"].between(-0.03, 0.05)
         cond_vol = res_df["VolRatio"] < 1.1
 
-        logger.info(f"【条件別ヒット数】 AI確率(>0.35): {cond_prob.sum()}, 傾き(Slope>0): {cond_slope.sum()}, 安定性(ret10): {cond_ret.sum()}, 出来高(静寂): {cond_vol.sum()}")
+        logger.info(f"【条件別ヒット数】 AI確率(>{Config.DEFAULT_THRESHOLD}): {cond_prob.sum()}, 傾き(Slope>0): {cond_slope.sum()}, 安定性(ret10): {cond_ret.sum()}, 出来高(静寂): {cond_vol.sum()}")
 
         filtered = res_df[cond_prob & cond_slope & cond_ret & cond_vol].sort_values("EV", ascending=False)
         
