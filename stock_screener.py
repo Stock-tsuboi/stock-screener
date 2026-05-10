@@ -23,6 +23,9 @@ warnings.filterwarnings("ignore")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# yfinanceのキャッシュ警告対策（GitHub Actions環境などでの権限エラー回避）
+yf.set_tz_cache_location(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache"))
+
 # =========================================================
 # Configuration
 # =========================================================
@@ -111,7 +114,7 @@ class FeatureFactory:
         df = df.replace([np.inf, -np.inf], np.nan)
         
         # 指標が計算できていない初期の行（SMA75などがNaNの期間）を削除してから、残りを0埋め
-        return df.dropna(subset=["SMA75", "Slope20"]).fillna(0)
+        return df.dropna(subset=["SMA75", "Slope20"]).fillna(0).replace([np.inf, -np.inf], 0)
 
     @staticmethod
     def add_target_label(df: pd.DataFrame) -> pd.DataFrame:
@@ -168,6 +171,10 @@ class DatabaseManager:
             logger.info(f"既存のDBファイルを検出: {self.db_path} ({os.path.getsize(self.db_path)} bytes)")
         else:
             logger.info("既存のDBファイルが見つかりません。新規作成します。")
+
+        # yfinance自体のログ出力を抑制して、エラーログの煩雑さを抑える
+        yf_logger = logging.getLogger('yfinance')
+        yf_logger.setLevel(logging.CRITICAL)
 
         with self._get_connection() as conn:
             conn.execute("""
@@ -461,9 +468,13 @@ class StockScreener:
         msg = ["【AI厳選銘柄ランキング】"]
         for i, (_, row) in enumerate(results.iterrows(), 1):
             name = name_map.get(row['symbol'], "不明")
-            msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}")
+            msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['norm_slope']:.4f} Vol:{row['VolRatio']:.2f}")
+            # ログに詳細な分析根拠を出力
+            logger.info(f"分析詳細 {i}位: {row['symbol']} ({name}) - 確率: {row['prob']:.3f}, EV: {row['EV']:.3f}, 傾き: {row['norm_slope']:.4f}, 出来高比: {row['VolRatio']:.2f}")
         
-        send_line("\n".join(msg))
+        full_msg = "\n".join(msg)
+        logger.info(f"LINE通知内容:\n{full_msg}")
+        send_line(full_msg)
         logger.info("通知完了")
 
 if __name__ == "__main__":
