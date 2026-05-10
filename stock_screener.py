@@ -9,9 +9,9 @@ import requests
 import duckdb
 import yfinance as yf
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 from joblib import Parallel, delayed
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
+from sklearn.ensemble import RandomForestClassifier
 
 # =========================================================
 # ロギングと警告の設定
@@ -34,9 +34,8 @@ class Config:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DB_PATH = os.path.join(BASE_DIR, "market.db")
     MODEL_PATH = os.path.join(BASE_DIR, "model_v2.pkl")
-    OLD_MODEL_PATH = os.path.join(BASE_DIR, "model_old.pkl")
     LINE_ACCESS_TOKEN = os.getenv("LINE_BOT_TOKEN")
-    LINE_USER_ID = os.getenv("LINE_USER_ID")
+    LINE_USER_ID = os.getenv("LINE_USER_ID") or "dummy"
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
     RETRAIN_DAYS = 7
     DEFAULT_THRESHOLD = 0.45
@@ -87,10 +86,15 @@ class FeatureFactory:
         for n in [1, 3, 5, 10, 20]:
             df[f"ret{n}"] = close.pct_change(n)
 
-        # スロープ (ベクトル演算)
-        # 学習時の Slope10 は pct_change(10) なのでそれに合わせる
-        df["Slope10"] = close.pct_change(10)
-        # 学習時の補完ロジックを再現
+        # スロープ (線形回帰によるトレンド検知)
+        def calc_slope(series):
+            if len(series) < 10: return 0
+            y = series.values
+            x = np.arange(len(y))
+            slope = np.polyfit(x, y, 1)[0]
+            return slope
+
+        df["Slope10"] = close.rolling(10).apply(calc_slope, raw=False)
         df["Slope20"] = df["Slope10"].rolling(20).mean()
         df["SlopeAccel"] = df["Slope10"].diff()
 
@@ -157,6 +161,7 @@ class DatabaseManager:
         """
         logger.info("DuckDB価格更新開始...")
         codes = symbols_df["コード"].tolist()
+        failed_codes = []
 
         # デバッグ用：ファイル存在確認
         if os.path.exists(self.db_path):
@@ -183,7 +188,7 @@ class DatabaseManager:
             # データがあれば直近5日分のみ、なければ1年分を取得
             period_setting = "5d" if has_data else "1y"
             logger.info(f"データ取得モード: {'差分(5d)' if has_data else 'フル(1y)'}")
-
+            
             batch_size = 100
             for i in range(0, len(codes), batch_size):
                 batch_codes = codes[i:i+batch_size]
@@ -202,7 +207,9 @@ class DatabaseManager:
                     dfs_to_insert = []
                     for code in batch_codes:
                         symbol = f"{code}.T"
-                        if symbol not in df.columns.get_level_values(0): continue
+                        if symbol not in df.columns.get_level_values(0):
+                            failed_codes.append(symbol)
+                            continue
                         
                         df_s = df[symbol].dropna().reset_index()
                         if df_s.empty: continue
@@ -223,11 +230,21 @@ class DatabaseManager:
                     time.sleep(1)  # Yahoo APIのレートリミットを回避するための待機
                 except Exception as e:
                     logger.error(f"Batch {i} download error: {e}")
+            
+            # 古いデータのクリーンアップ（2年以上前のデータを削除）
+            logger.info("古いデータのクリーンアップを実行中...")
+            conn.execute("DELETE FROM prices WHERE date < CURRENT_DATE - INTERVAL 2 YEAR")
+
+        if failed_codes:
+            logger.warning(f"取得失敗銘柄数: {len(failed_codes)} (例: {failed_codes[:5]}...)")
 
     def load_all_data(self, symbols_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         """データベースから指定された銘柄の過去400日分程度のデータを一括で読み込みます。"""
         codes = symbols_df["コード"].tolist()
         if not codes:
+            return {}
+
+        if not os.path.exists(self.db_path):
             return {}
 
         query = """
@@ -240,7 +257,7 @@ class DatabaseManager:
         with self._get_connection() as conn:
             df = conn.execute(query, [codes]).df()
         
-        return {f"{code}.T": group.set_index("date") for code, group in df.groupby("code")}
+        return {f"{str(code).zfill(4)}.T": group.set_index("date") for code, group in df.groupby("code")}
 
 # =========================================================
 # Notification
@@ -303,6 +320,9 @@ class StockScreener:
 
     def _load_symbols(self) -> pd.DataFrame:
         """JPXの銘柄リストCSVを読み込み、対象とする市場（プライム等）で絞り込みます。"""
+        if not os.path.exists("japan_stocks_jpx.csv"):
+            logger.error("japan_stocks_jpx.csv が見つかりません。")
+            raise FileNotFoundError("japan_stocks_jpx.csv")
         df = pd.read_csv("japan_stocks_jpx.csv", dtype=str)
         df.columns = df.columns.str.strip()
         df["市場"] = df["市場・商品区分"].str.extract(r"(プライム|スタンダード|グロース)")
@@ -314,11 +334,11 @@ class StockScreener:
             if len(df) < 80:
                 return None
             feat_df = self.factory.calculate_metrics(df)
-            if feat_df.empty:
+            if len(feat_df) < 10: # 推論時は直近10日分程度の有効データがあれば許容
                 return None
             return symbol, feat_df.iloc[-1]
         
-        results = Parallel(n_jobs=-1)(delayed(worker)(s, d) for s, d in all_data.items())
+        results = Parallel(n_jobs=2)(delayed(worker)(s, d) for s, d in all_data.items())
         return {r[0]: r[1] for r in results if r is not None}
 
     def _prepare_model(self, all_data: Dict):
@@ -327,32 +347,40 @@ class StockScreener:
         前回の学習から一定期間が経過している場合は再学習を行い、
         そうでなければ保存されたモデルファイルを読み込みます。
         """
+        def train_worker(symbol, df):
+            if len(df) < 120: return None
+            feat_df = self.factory.calculate_metrics(df)
+            feat_df = self.factory.add_target_label(feat_df)
+            # 特徴量計算後の有効データが少ない銘柄は、学習の質を下げるため除外
+            if len(feat_df) < 30:
+                return None
+            # 学習に必要なカラムのみを抽出してメモリを節約
+            cols = self.factory.FEATURE_COLS + ["Target"]
+            return feat_df.iloc[:-5][cols]
+
         if not os.path.exists(Config.MODEL_PATH) or (datetime.now() - datetime.fromtimestamp(os.path.getmtime(Config.MODEL_PATH))).days >= Config.RETRAIN_DAYS:
             logger.info("モデルを新規学習します...")
-            training_dfs = []
-            total = len(all_data)
-            for i, (s, df) in enumerate(all_data.items(), 1):
-                if len(df) < 100: continue
-                feat_df = self.factory.add_target_label(self.factory.calculate_metrics(df))
-                training_dfs.append(feat_df.iloc[:-5])
-                
-                if i % 100 == 0:
-                    logger.info(f"学習データ準備中... ({i}/{total})")
+            
+            # 学習データの準備を並列化
+            results = Parallel(n_jobs=2)(delayed(train_worker)(s, d) for s, d in all_data.items())
+            training_dfs = [r for r in results if r is not None]
             
             if not training_dfs:
                 logger.error("学習に使用できる有効なデータがありませんでした。")
                 return False
 
-            # 欠損値（NaN）が含まれていると学習時にエラーになるため、Targetを基準に除去を徹底
             full_train = pd.concat(training_dfs).dropna(subset=["Target"])
             X = full_train[self.factory.FEATURE_COLS]
             y = full_train["Target"]
+
+            logger.info(f"学習データの内訳 - Target=1 (上昇): {int(y.sum())}件")
+            logger.info(f"学習データの内訳 - Target=0 (その他): {int((y == 0).sum())}件")
             
             logger.info(f"AIモデルの学習を開始します (データ件数: {len(X)})...")
             self.model = RandomForestClassifier(
                 n_estimators=200,
                 max_depth=10,
-                n_jobs=-1,
+                n_jobs=2,
                 random_state=42,
                 class_weight="balanced"
             )
@@ -372,6 +400,10 @@ class StockScreener:
         最新の指標データに基づいてAIが「上昇確率」を予測します。
         確率が高い銘柄に対し、期待値（EV）を計算してランキングを作成します。
         """
+        if not feature_dict:
+            logger.error("特徴量データが空です。有効な株価データが不足している可能性があります。")
+            return pd.DataFrame()
+
         # モデルが正常に準備できていない場合のガード
         if self.model is None:
             logger.error("AIモデルが準備できていないため、推論をスキップします。")
@@ -391,10 +423,16 @@ class StockScreener:
         res_df = pd.DataFrame({"symbol": symbols, "prob": probs})
         res_df = pd.concat([res_df, features.reset_index(drop=True)], axis=1)
         
-        # 期待値(EV)計算の改良
-        # prob(確率)に、ボラティリティ(atr_ratio)を掛け合わせることで、
-        # 「当たりやすく、かつ当たった時に大きい」銘柄を上位にします。
-        res_df["EV"] = (res_df["prob"] * res_df["atr_ratio"] * 100)
+        # 期待値(EV)計算の更新
+        # 1. Slope10を価格で割って「1日あたりの上昇率」に正規化
+        # 2. 出来高比率(VolRatio)を10%の重みで加算（1.0倍が基準）
+        # これにより、AI予測が高く、かつトレンドと出来高が伴っている銘柄が上位に来ます。
+        res_df["norm_slope"] = res_df["Slope10"] / res_df["Close"].replace(0, np.nan)
+        res_df["EV"] = (
+            res_df["prob"]
+            * (1 + res_df["norm_slope"])
+            * (1 + res_df["VolRatio"] * 0.1)
+        )
         
         # フィルタリング
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中...")
