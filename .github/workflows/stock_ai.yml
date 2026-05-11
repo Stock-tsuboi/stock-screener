@@ -4,6 +4,7 @@ name: Stock AI
 on:
   workflow_dispatch:
 
+  # 0:00 UTC is 9:00 JST, 6:00 UTC is 15:00 JST
   schedule:
     - cron: '0 0,6 * * 1-5'
 
@@ -11,6 +12,10 @@ jobs:
   run:
 
     runs-on: ubuntu-latest
+
+    env:
+      LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
+      LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
 
     steps:
     - name: Checkout
@@ -37,8 +42,5 @@ jobs:
           stock-data-${{ runner.os }}-
 
     - name: Run Stock AI
-      env:
-        LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
-        LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
       run: |
         python stock_screener.py
