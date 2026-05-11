@@ -4,9 +4,11 @@ name: Stock AI
 on:
   workflow_dispatch:
 
-  # 0:00 UTC is 9:00 JST, 6:00 UTC is 15:00 JST
   schedule:
-    - cron: '0 0,6 * * 1-5'
+    # 月〜金 8:55 JST (23:55 UTC 日〜木) - 混雑回避のため5分前起動
+    - cron: '55 23 * * 0-4'
+    # 月〜金 15:00 JST (06:00 UTC 月〜金)
+    - cron: '0 6 * * 1-5'
 
 jobs:
   run:
