@@ -47,7 +47,7 @@ def send_line(message):
     }
 
     try:
-        response = requests.post(url, headers=headers, json=data)
+        response = requests.post(url, headers=headers, json=data, timeout=15)
 
         if response.status_code != 200:
             print("LINE送信失敗:", response.text)
