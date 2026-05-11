@@ -8,7 +8,7 @@ import pandas as pd
 import requests
 import duckdb
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Tuple, Any
 from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier
@@ -337,6 +337,13 @@ class StockScreener:
         def worker(symbol, df):
             if len(df) < 80:
                 return None
+            
+            # 9時台の実行であれば、最新日のCloseをOpen（9:00の価格）に強制置換して計算
+            now_jst = datetime.now(timezone.utc) + timedelta(hours=9)
+            if now_jst.hour == 9 and df.index[-1].date() == now_jst.date():
+                # 最新の行をOpen価格で上書きすることで、全指標を9:00時点の状態として算出
+                df.iloc[-1, df.columns.get_loc("Close")] = df.iloc[-1, df.columns.get_loc("Open")]
+
             feat_df = self.factory.calculate_metrics(df)
             if len(feat_df) < 10: # 推論時は直近10日分程度の有効データがあれば許容
                 return None
