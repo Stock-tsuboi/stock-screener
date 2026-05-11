@@ -468,7 +468,7 @@ class StockScreener:
         filtered = res_df[cond_prob & cond_slope & cond_ret & cond_vol].sort_values("EV", ascending=False)
         
         logger.info(f"フィルタ通過: {len(filtered)} 銘柄")
-        return filtered.head(10)
+        return filtered.head(5)
 
     def _notify(self, results: pd.DataFrame, symbols_df: pd.DataFrame):
         """最終的なランキング結果を整形し、LINEへ送信します。"""
