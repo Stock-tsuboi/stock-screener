@@ -42,7 +42,7 @@ class Config:
     LINE_USER_ID = os.getenv("LINE_USER_ID") or "dummy"
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
     RETRAIN_DAYS = 7
-    DEFAULT_THRESHOLD = 0.55
+    DEFAULT_THRESHOLD = 0.60
 
 # =========================================================
 # Feature Engineering (Unified)
