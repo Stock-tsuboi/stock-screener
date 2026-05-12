@@ -1,0 +1,55 @@
+name: Stock Screener Bot
+
+on:
+  schedule:
+    # 月〜金 8:55 JST (23:55 UTC) - 寄付き前チェック
+    - cron: '55 23 * * 0-4'
+    # 月〜金 15:30 JST (06:30 UTC) - 大引け後チェック
+    - cron: '30 6 * * 1-5'
+  workflow_dispatch: # 手動実行も可能にする
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # 履歴ファイルをリポジトリに書き込むために必要
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install numpy pandas requests duckdb yfinance joblib scikit-learn
+
+      - name: Cache Stock Data and Model
+        uses: actions/cache@v4
+        with:
+          path: |
+            market.db*
+            model_v2.pkl
+            cache/
+          key: stock-data-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            stock-data-${{ runner.os }}-
+
+      - name: Run stock screener
+        env:
+          LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: python stock_screener.py
+
+      - name: Commit and push history
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          if [ -f recommendation_history.csv ]; then
+            git add recommendation_history.csv
+            git commit -m "Update recommendation history [skip ci]" || echo "No changes to commit"
+            git push
+          fi
