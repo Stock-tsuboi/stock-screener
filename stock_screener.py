@@ -43,7 +43,7 @@ class Config:
     LINE_USER_ID = os.getenv("LINE_USER_ID") or "dummy"
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
     RETRAIN_DAYS = 7
-    DEFAULT_THRESHOLD = 0.60
+    DEFAULT_THRESHOLD = 0.50
 
 # =========================================================
 # Feature Engineering (Unified)
@@ -469,12 +469,12 @@ class StockScreener:
         )
         
         # フィルタリング
-        logger.info(f"推論完了: {len(res_df)} 銘柄を評価中...")
+        logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {res_df['prob'].max():.3f})")
 
         cond_prob = res_df["prob"] >= Config.DEFAULT_THRESHOLD
         cond_slope = res_df["Slope10"] > 0
         cond_ret = res_df["ret10"].between(-0.03, 0.05)
-        cond_vol = res_df["VolRatio"] < 1.1
+        cond_vol = res_df["VolRatio"] < 1.2
 
         logger.info(f"【条件別ヒット数】 AI確率(>{Config.DEFAULT_THRESHOLD}): {cond_prob.sum()}, 傾き(Slope>0): {cond_slope.sum()}, 安定性(ret10): {cond_ret.sum()}, 出来高(静寂): {cond_vol.sum()}")
 
@@ -508,6 +508,9 @@ class StockScreener:
         name_map = dict(zip(symbols_df["コード"] + ".T", symbols_df["銘柄名"]))
         
         msg = ["【AI厳選銘柄ランキング】"]
+        if buy_results.get("is_potential", pd.Series([False])).any():
+            msg = ["【AI準候補（監視推奨）】"]
+
         for i, (_, row) in enumerate(buy_results.iterrows(), 1):
             name = name_map.get(row['symbol'], "不明")
             msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['norm_slope']:.4f} Vol:{row['VolRatio']:.2f}")
