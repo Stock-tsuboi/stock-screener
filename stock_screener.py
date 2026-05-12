@@ -38,6 +38,7 @@ class Config:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
     DB_PATH = os.path.join(BASE_DIR, "market.db")
     MODEL_PATH = os.path.join(BASE_DIR, "model_v2.pkl")
+    HISTORY_PATH = os.path.join(BASE_DIR, "recommendation_history.csv")
     LINE_ACCESS_TOKEN = os.getenv("LINE_BOT_TOKEN")
     LINE_USER_ID = os.getenv("LINE_USER_ID") or "dummy"
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
@@ -56,7 +57,7 @@ class FeatureFactory:
     FEATURE_COLS = [
         "SMA5", "SMA25", "SMA75", "Bias5", "Bias25", "Bias75",
         "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2", "VolRatio",
-        "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10",
+        "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10", "RSI", "MACD_Hist",
         "ret1", "ret3", "ret5", "ret20", "atr_ratio"
     ] # AIが判断に使用する項目のリスト
 
@@ -89,6 +90,18 @@ class FeatureFactory:
         df["VolRatio"] = df["Volume"] / df["Volume"].rolling(25).mean().replace(0, np.nan)
         for n in [1, 3, 5, 10, 20]:
             df[f"ret{n}"] = close.pct_change(n)
+
+        # RSI (14日間)
+        delta = close.diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss.replace(0, np.nan)
+        df["RSI"] = 100 - (100 / (1 + rs))
+
+        # MACD (12, 26, 9)
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        df["MACD_Hist"] = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()
 
         # スロープ (線形回帰によるトレンド検知)
         def calc_slope(series):
@@ -317,10 +330,10 @@ class StockScreener:
             return
         
         # 推論とランキング
-        results = self._inference(processed_data)
+        buy_results, sell_results = self._inference(processed_data)
         
         # 結果通知
-        self._notify(results, symbols)
+        self._notify((buy_results, sell_results), symbols)
 
     def _load_symbols(self) -> pd.DataFrame:
         """JPXの銘柄リストCSVを読み込み、対象とする市場（プライム等）で絞り込みます。"""
@@ -466,13 +479,28 @@ class StockScreener:
         logger.info(f"【条件別ヒット数】 AI確率(>{Config.DEFAULT_THRESHOLD}): {cond_prob.sum()}, 傾き(Slope>0): {cond_slope.sum()}, 安定性(ret10): {cond_ret.sum()}, 出来高(静寂): {cond_vol.sum()}")
 
         filtered = res_df[cond_prob & cond_slope & cond_ret & cond_vol].sort_values("EV", ascending=False)
-        
         logger.info(f"フィルタ通過: {len(filtered)} 銘柄")
-        return filtered.head(5)
 
-    def _notify(self, results: pd.DataFrame, symbols_df: pd.DataFrame):
+        # 【プロ視点】売り・警戒銘柄の検知ロジック
+        # 1. RSIが75以上で反落開始 (買われすぎからの調整)
+        # 2. MACDヒストグラムが負 (勢いの低下)
+        # 3. 重要な節目(SMA25)を割り込んだ (トレンド崩れ)
+        # 4. 急激な陰線 (ボラティリティ・ストップ)
+        cond_sell = (
+            ((res_df["RSI"] > 70) & (res_df["ret1"] < -0.01)) | 
+            (res_df["MACD_Hist"] < 0) |
+            (res_df["Close"] < res_df["SMA25"]) |
+            (res_df["ret1"] < -0.03)
+        )
+        exit_candidates = res_df[cond_sell & (res_df["Slope10"] < 0.05)].sort_values("ret1", ascending=True)
+
+        return filtered.head(5), exit_candidates
+
+    def _notify(self, results: Tuple[pd.DataFrame, pd.DataFrame], symbols_df: pd.DataFrame):
         """最終的なランキング結果を整形し、LINEへ送信します。"""
-        if results.empty:
+        buy_results, sell_results = results
+
+        if buy_results.empty and sell_results.empty:
             logger.info("条件に合致する銘柄が見つかりませんでした。")
             send_line("本日の条件合致銘柄はありませんでした。")
             return
@@ -480,12 +508,60 @@ class StockScreener:
         name_map = dict(zip(symbols_df["コード"] + ".T", symbols_df["銘柄名"]))
         
         msg = ["【AI厳選銘柄ランキング】"]
-        for i, (_, row) in enumerate(results.iterrows(), 1):
+        for i, (_, row) in enumerate(buy_results.iterrows(), 1):
             name = name_map.get(row['symbol'], "不明")
             msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['norm_slope']:.4f} Vol:{row['VolRatio']:.2f}")
             # ログに詳細な分析根拠を出力
             logger.info(f"分析詳細 {i}位: {row['symbol']} ({name}) - 確率: {row['prob']:.3f}, EV: {row['EV']:.3f}, 傾き: {row['norm_slope']:.4f}, 出来高比: {row['VolRatio']:.2f}")
+
+        # --- 過去の推奨銘柄の管理ロジック ---
+        # 実行環境のタイムゾーンに依らず日本時間(JST)で日付を管理します。
+        jst = timezone(timedelta(hours=9))
+        today_jst = datetime.now(jst).date()
+
+        history_df = pd.DataFrame(columns=["date", "symbol"])
+        if os.path.exists(Config.HISTORY_PATH):
+            try:
+                history_df = pd.read_csv(Config.HISTORY_PATH)
+                history_df["date"] = pd.to_datetime(history_df["date"]).dt.date
+            except Exception as e:
+                logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
         
+        # 本日の新規推奨銘柄を履歴に追加
+        if not buy_results.empty:
+            new_history = pd.DataFrame({"date": [today_jst] * len(buy_results), "symbol": buy_results["symbol"].tolist()})
+            history_df = pd.concat([history_df, new_history]).drop_duplicates(subset=["date", "symbol"])
+        
+        # 監視対象（履歴にある全ての銘柄）の中から、売りシグナルが出ているものを抽出
+        sell_results_for_notified_buys = pd.DataFrame()
+        if not history_df.empty:
+            monitored_symbols = set(history_df['symbol'].tolist())
+            sell_results_for_notified_buys = sell_results[sell_results['symbol'].isin(monitored_symbols)]
+
+        if not sell_results_for_notified_buys.empty:
+            msg.append("\n【⚠️ 売り・手仕舞い警戒】")
+            # 買い銘柄として通知されたものの中から、売りシグナルが出ているものを表示
+            # ここでは、該当する銘柄全てを表示するように変更（head(3)は削除）
+            for _, row in sell_results_for_notified_buys.iterrows():
+                name = name_map.get(row['symbol'], "不明")
+                
+                # 理由の特定
+                reason = "トレンド転換"
+                if row["ret1"] < -0.03: reason = "急落(損切目安)"
+                elif row["RSI"] > 70: reason = "買われすぎ反落"
+                elif row["Close"] < row["SMA25"]: reason = "中期トレンド崩れ"
+                elif row["MACD_Hist"] < 0: reason = "勢い低下"
+                
+                msg.append(f"・{row['symbol']} {name[:8]}\n  {reason} (RSI:{row['RSI']:.0f})")
+            msg.append("※保有銘柄が含まれる場合は要注意")
+
+            # 売りのシグナルが出た銘柄を監視リストから除外
+            sold_symbols = sell_results_for_notified_buys['symbol'].tolist()
+            history_df = history_df[~history_df['symbol'].isin(sold_symbols)]
+
+        # 最終的な履歴を保存（新規買いの追加と売り銘柄の削除を反映）
+        history_df.to_csv(Config.HISTORY_PATH, index=False)
+
         full_msg = "\n".join(msg)
         logger.info(f"LINE通知内容:\n{full_msg}")
         send_line(full_msg)
