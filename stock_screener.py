@@ -410,7 +410,7 @@ class StockScreener:
                 class_weight="balanced"
             )
             self.model = CalibratedClassifierCV(
-                base_estimator=base_model,
+                estimator=base_model,
                 method="sigmoid",
                 cv=3
             )
