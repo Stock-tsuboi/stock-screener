@@ -24,6 +24,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
+        # キャッシュがあればインストールをスキップまたは高速化
         run: |
           pip install numpy pandas requests duckdb yfinance joblib scikit-learn
 
