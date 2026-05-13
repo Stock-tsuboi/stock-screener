@@ -17,11 +17,22 @@ from sklearn.calibration import CalibratedClassifierCV
 # =========================================================
 # ロギングと警告の設定
 # =========================================================
-# 実行時のログ（情報の流れやエラー）を表示し、
-# Pandasなどのライブラリが発生させる不要な警告を無視します。
-# =========================================================
+class JSTFormatter(logging.Formatter):
+    """ログのタイムスタンプをJSTで出力するためのカスタムフォーマッター"""
+    converter = lambda *args: datetime.now(timezone(timedelta(hours=9))).timetuple()
+
+    def formatTime(self, record, datefmt=None):
+        dt = datetime.fromtimestamp(record.created, tz=timezone.utc) + timedelta(hours=9)
+        if datefmt:
+            return dt.strftime(datefmt)
+        else:
+            return dt.isoformat(sep=" ", timespec="milliseconds")
+
 warnings.filterwarnings("ignore")
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+handler = logging.StreamHandler()
+handler.setFormatter(JSTFormatter('%Y-%m-%d %H:%M:%S,%f - %(levelname)s - %(message)s'))
+logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger(__name__)
 
 # yfinanceのキャッシュ警告対策（GitHub Actions環境などでの権限エラー回避）
