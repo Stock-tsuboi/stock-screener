@@ -31,7 +31,7 @@ class JSTFormatter(logging.Formatter):
 warnings.filterwarnings("ignore")
 
 handler = logging.StreamHandler()
-handler.setFormatter(JSTFormatter('%Y-%m-%d %H:%M:%S,%f - %(levelname)s - %(message)s'))
+handler.setFormatter(JSTFormatter('%(asctime)s - %(levelname)s - %(message)s', datefmt='%Y-%m-%d %H:%M:%S,%f'))
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger(__name__)
 
@@ -522,11 +522,14 @@ class StockScreener:
         if buy_results.get("is_potential", pd.Series([False])).any():
             msg = ["【AI準候補（監視推奨）】"]
 
-        for i, (_, row) in enumerate(buy_results.iterrows(), 1):
-            name = name_map.get(row['symbol'], "不明")
-            msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['norm_slope']:.4f} Vol:{row['VolRatio']:.2f}")
-            # ログに詳細な分析根拠を出力
-            logger.info(f"分析詳細 {i}位: {row['symbol']} ({name}) - 確率: {row['prob']:.3f}, EV: {row['EV']:.3f}, 傾き: {row['norm_slope']:.4f}, 出来高比: {row['VolRatio']:.2f}")
+        if buy_results.empty:
+            msg.append("該当なし")
+        else:
+            for i, (_, row) in enumerate(buy_results.iterrows(), 1):
+                name = name_map.get(row['symbol'], "不明")
+                msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['norm_slope']:.4f} Vol:{row['VolRatio']:.2f}")
+                # ログに詳細な分析根拠を出力
+                logger.info(f"分析詳細 {i}位: {row['symbol']} ({name}) - 確率: {row['prob']:.3f}, EV: {row['EV']:.3f}, 傾き: {row['norm_slope']:.4f}, 出来高比: {row['VolRatio']:.2f}")
 
         # --- 過去の推奨銘柄の管理ロジック ---
         # 実行環境のタイムゾーンに依らず日本時間(JST)で日付を管理します。
