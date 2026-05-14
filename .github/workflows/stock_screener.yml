@@ -4,8 +4,8 @@ on:
   schedule:
     # 月〜金 8:30 JST (23:30 UTC) - 寄付き前チェック
     - cron: '30 23 * * 1-5'
-    # 月〜金 12:30 JST (03:30 UTC) - 大引け後チェック
-    - cron: '30 3 * * 1-5'
+    # 月〜金 15:30 JST (06:30 UTC) - 大引け後チェック
+    - cron: '30 6 * * 1-5'
   workflow_dispatch: # 手動実行も可能にする
 
 jobs:
@@ -35,7 +35,7 @@ jobs:
             market.db*
             model_v2.pkl
             cache/
-          key: stock-data-${{ runner.os }}-${{ github.run_id }}
+          key: stock-data-${{ runner.os }}-v1 # より安定したキーに変更
           restore-keys: |
             stock-data-${{ runner.os }}-
 
