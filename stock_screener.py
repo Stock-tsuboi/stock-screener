@@ -172,6 +172,27 @@ class DatabaseManager:
         """データベースへの接続を取得します。"""
         return duckdb.connect(self.db_path)
 
+    def get_market_regime(self) -> bool:
+        """
+        日経平均(^N225)のデータを取得し、市場全体が上昇トレンド(SMA75以上)か判定します。
+        """
+        try:
+            n225 = yf.download("^N225", period="150d", progress=False)
+            if n225.empty:
+                return True # 取得失敗時は安全のためTrue
+            
+            close = n225["Close"]
+            # 1銘柄のみの場合のSeries変換
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+                
+            sma75 = close.rolling(75).mean().iloc[-1]
+            current = close.iloc[-1]
+            return current > sma75
+        except Exception as e:
+            logger.error(f"地合い判定エラー: {e}")
+            return True
+
     def update_prices(self, symbols_df: pd.DataFrame):
         """
         銘柄リストに基づいて、最新の株価をYahoo Financeからダウンロードし、
@@ -328,6 +349,13 @@ class StockScreener:
         """スクリーニングの全工程を順番に実行します。"""
         logger.info("=== スクリーニング開始 ===")
         symbols = self._load_symbols()
+
+        # 地合いチェック
+        is_market_good = self.db.get_market_regime()
+        if not is_market_good:
+            logger.warning("【注意】地合いが悪化しています（日経平均が75日線以下）。厳選モードで動作します。")
+            # 地合いが悪い時は閾値を上げる
+            Config.DEFAULT_THRESHOLD += 0.05
         
         # データ更新
         self.db.update_prices(symbols)
@@ -346,7 +374,7 @@ class StockScreener:
         buy_results, sell_results = self._inference(processed_data)
         
         # 結果通知
-        self._notify((buy_results, sell_results), symbols)
+        self._notify((buy_results, sell_results), symbols, is_market_good)
 
     def _load_symbols(self) -> pd.DataFrame:
         """JPXの銘柄リストCSVを読み込み、対象とする市場（プライム等）で絞り込みます。"""
@@ -519,10 +547,10 @@ class StockScreener:
 
         return filtered.head(5), exit_candidates
 
-    def _notify(self, results: Tuple[pd.DataFrame, pd.DataFrame], symbols_df: pd.DataFrame):
+    def _notify(self, results: Tuple[pd.DataFrame, pd.DataFrame], symbols_df: pd.DataFrame, is_market_good: bool):
         """最終的なランキング結果を整形し、LINEへ送信します。"""
         buy_results, sell_results = results
-
+        
         if buy_results.empty and sell_results.empty:
             logger.info("条件に合致する銘柄が見つかりませんでした。")
             send_line("本日の条件合致銘柄はありませんでした。")
@@ -531,15 +559,23 @@ class StockScreener:
         name_map = dict(zip(symbols_df["コード"] + ".T", symbols_df["銘柄名"]))
         
         msg = ["【AI厳選銘柄ランキング】"]
+        if not is_market_good:
+            msg = ["【⚠️地合い弱気・厳選モード】"]
+
         if buy_results.get("is_potential", pd.Series([False])).any():
-            msg = ["【AI準候補（監視推奨）】"]
+            msg.append("（AI準候補・監視推奨）")
 
         if buy_results.empty:
             msg.append("該当なし")
         else:
             for i, (_, row) in enumerate(buy_results.iterrows(), 1):
                 name = name_map.get(row['symbol'], "不明")
-                msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['norm_slope']:.4f} Vol:{row['VolRatio']:.2f}")
+                
+                # ATRに基づく損切り目安 (2 * ATR)
+                # atr_ratio は ATR / Close なので、Close * (1 - atr_ratio * 2) が損切り価格
+                stop_loss_price = row['Close'] * (1 - row['atr_ratio'] * 2)
+                
+                msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} (目安損切:{stop_loss_price:.1f})\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['norm_slope']:.4f} Vol:{row['VolRatio']:.2f}")
                 # ログに詳細な分析根拠を出力
                 logger.info(f"分析詳細 {i}位: {row['symbol']} ({name}) - 確率: {row['prob']:.3f}, EV: {row['EV']:.3f}, 傾き: {row['norm_slope']:.4f}, 出来高比: {row['VolRatio']:.2f}")
 
