@@ -35,7 +35,7 @@ jobs:
             market.db*
             model_v2.pkl
             cache/
-          key: stock-data-${{ runner.os }}-v1 # より安定したキーに変更
+          key: stock-data-${{ runner.os }}-v2 # バージョンを上げて再学習を強制
           restore-keys: |
             stock-data-${{ runner.os }}-
 
