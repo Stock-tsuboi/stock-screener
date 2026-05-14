@@ -615,16 +615,17 @@ class StockScreener:
             except Exception as e:
                 logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
         
+        # 監視対象：本日より前に推奨された銘柄のみを抽出
+        sell_results_for_notified_buys = pd.DataFrame()
+        if not history_df.empty:
+            # 本日分を追加する前のリストで売り判定を行う
+            monitored_symbols = set(history_df[history_df["date"] < today_jst]['symbol'].tolist())
+            sell_results_for_notified_buys = sell_results[sell_results['symbol'].isin(monitored_symbols)]
+
         # 本日の新規推奨銘柄を履歴に追加
         if not buy_results.empty:
             new_history = pd.DataFrame({"date": [today_jst] * len(buy_results), "symbol": buy_results["symbol"].tolist()})
             history_df = pd.concat([history_df, new_history]).drop_duplicates(subset=["date", "symbol"])
-        
-        # 監視対象（履歴にある全ての銘柄）の中から、売りシグナルが出ているものを抽出
-        sell_results_for_notified_buys = pd.DataFrame()
-        if not history_df.empty:
-            monitored_symbols = set(history_df['symbol'].tolist())
-            sell_results_for_notified_buys = sell_results[sell_results['symbol'].isin(monitored_symbols)]
 
         if not sell_results_for_notified_buys.empty:
             msg.append("\n【⚠️ 売り・手仕舞い警戒】")
