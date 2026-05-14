@@ -198,6 +198,7 @@ class DatabaseManager:
                     low DOUBLE, close DOUBLE, volume DOUBLE, PRIMARY KEY (code, date)
                 )
             """)
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_prices_date ON prices (date)")
             
             # データベースに既にデータがあるか確認
             try:
@@ -260,8 +261,9 @@ class DatabaseManager:
                     logger.error(f"Batch {i} download error: {e}")
             
             # 古いデータのクリーンアップ（2年以上前のデータを削除）
-            logger.info("古いデータのクリーンアップを実行中...")
-            conn.execute("DELETE FROM prices WHERE date < CURRENT_DATE - INTERVAL 2 YEAR")
+            if datetime.now().weekday() == 6:  # 日曜日のみ実行して負荷軽減
+                logger.info("古いデータのクリーンアップを実行中...")
+                conn.execute("DELETE FROM prices WHERE date < CURRENT_DATE - INTERVAL 2 YEAR")
 
         if failed_codes:
             logger.warning(f"取得失敗銘柄数: {len(failed_codes)} (例: {failed_codes[:5]}...)")
@@ -490,7 +492,17 @@ class StockScreener:
         logger.info(f"【条件別ヒット数】 AI確率(>{Config.DEFAULT_THRESHOLD}): {cond_prob.sum()}, 傾き(Slope>0): {cond_slope.sum()}, 安定性(ret10): {cond_ret.sum()}, 出来高(静寂): {cond_vol.sum()}")
 
         filtered = res_df[cond_prob & cond_slope & cond_ret & cond_vol].sort_values("EV", ascending=False)
-        logger.info(f"フィルタ通過: {len(filtered)} 銘柄")
+
+        # 厳選フィルタで0件の場合、AI確率が非常に高い銘柄を「準候補」として救い出す
+        if filtered.empty and cond_prob.any():
+            high_prob_threshold = Config.DEFAULT_THRESHOLD + 0.03 # 0.48以上
+            potential = res_df[res_df["prob"] >= high_prob_threshold].sort_values("prob", ascending=False).head(3).copy()
+            if not potential.empty:
+                logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential)}件)を準候補として保持します。")
+                potential["is_potential"] = True
+                filtered = potential
+
+        logger.info(f"フィルタ最終通過: {len(filtered)} 銘柄")
 
         # 【プロ視点】売り・警戒銘柄の検知ロジック
         # 1. RSIが75以上で反落開始 (買われすぎからの調整)
