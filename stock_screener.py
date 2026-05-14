@@ -145,16 +145,20 @@ class FeatureFactory:
     def add_target_label(df: pd.DataFrame) -> pd.DataFrame:
         """
         学習用：AIに「正解」を教えるためのラベルを作成します。
-        シンプルに「5日後のリターンが3%以上」を正解と定義します。
-        条件を絞りすぎないことで、学習データの正解率（ベースレート）を引き上げます。
+        「出来高が静かな状態（仕込み時）から5日以内に急騰したケース」のみを正解と定義します。
+        これにより、爆上げした後の銘柄ではなく、爆上げ前の予兆を学習させます。
         """
-        future_ret_5 = df["Close"].shift(-5) / df["Close"] - 1
+        # 未来のリターン
+        f_ret5 = df["Close"].shift(-5) / df["Close"] - 1
+        
+        # 仕込み時の条件（現在が静かであること）
+        is_quiet = (df["VolRatio"] < 1.0) # 出来高が平均以下
+        is_stable = (df["ret5"].between(-0.05, 0.02)) # 5日間で暴騰も暴落もしていない
+        
+        # 5日以内に5%以上上昇
+        will_breakout = (f_ret5 >= 0.05)
 
-        df["Target"] = np.where(
-            future_ret_5.notna(),
-            (future_ret_5 >= 0.03).astype(int),
-            np.nan
-        )
+        df["Target"] = np.where(f_ret5.notna(), (is_quiet & is_stable & will_breakout).astype(int), np.nan)
         return df
 
 # =========================================================
@@ -244,7 +248,8 @@ class DatabaseManager:
                         period=period_setting,
                         group_by="ticker",
                         progress=False,
-                        threads=True
+                        threads=True,
+                        timeout=20 # Add timeout to prevent indefinite hangs
                     )
                     if df.empty: continue
 
@@ -277,6 +282,7 @@ class DatabaseManager:
                             ON CONFLICT DO NOTHING
                         """)
                         conn.unregister("tmp_df")
+                    logger.info(f"Batch {i}-{i+len(batch_codes)-1} processed. Inserted/updated {len(dfs_to_insert)} symbols.")
                     time.sleep(1)  # Yahoo APIのレートリミットを回避するための待機
                 except Exception as e:
                     logger.error(f"Batch {i} download error: {e}")
@@ -387,24 +393,25 @@ class StockScreener:
         return df[df["市場"].isin(Config.TARGET_MARKETS)][["コード", "銘柄名", "市場"]].dropna()
 
     def _parallel_feature_engineering(self, all_data: Dict) -> Dict:
-        """全銘柄のテクニカル指標計算を、マルチプロセスで並列化して高速に実行します。"""
-        def worker(symbol, df):
-            if len(df) < 80:
-                return None
-            
-            # 9時台の実行であれば、最新日のCloseをOpen（9:00の価格）に強制置換して計算
-            now_jst = datetime.now(timezone.utc) + timedelta(hours=9)
-            if now_jst.hour == 9 and df.index[-1].date() == now_jst.date():
-                # 最新の行をOpen価格で上書きすることで、全指標を9:00時点の状態として算出
-                df.iloc[-1, df.columns.get_loc("Close")] = df.iloc[-1, df.columns.get_loc("Open")]
+        logger.info("特徴量生成（並列処理）を開始します...")
+        results = Parallel(n_jobs=-1)(delayed(self._feature_worker)(s, d) for s, d in all_data.items())
+        processed_data = {r[0]: r[1] for r in results if r is not None}
+        logger.info(f"特徴量生成（並列処理）が完了しました。処理済み銘柄数: {len(processed_data)}")
+        return processed_data
 
-            feat_df = self.factory.calculate_metrics(df)
-            if len(feat_df) < 10: # 推論時は直近10日分程度の有効データがあれば許容
-                return None
-            return symbol, feat_df.iloc[-1]
+    def _feature_worker(self, symbol, df):
+        """個別の銘柄の特徴量計算ワーカー関数"""
+        if len(df) < 80:
+            return None
         
-        results = Parallel(n_jobs=2)(delayed(worker)(s, d) for s, d in all_data.items())
-        return {r[0]: r[1] for r in results if r is not None}
+        now_jst = datetime.now(timezone.utc) + timedelta(hours=9)
+        if now_jst.hour == 9 and df.index[-1].date() == now_jst.date():
+            df.iloc[-1, df.columns.get_loc("Close")] = df.iloc[-1, df.columns.get_loc("Open")]
+
+        feat_df = self.factory.calculate_metrics(df)
+        if len(feat_df) < 10:
+            return None
+        return symbol, feat_df.iloc[-1]
 
     def _prepare_model(self, all_data: Dict):
         """
@@ -414,7 +421,9 @@ class StockScreener:
         """
         def train_worker(symbol, df):
             if len(df) < 120: return None
+            logger.debug(f"Preparing training features for {symbol}")
             feat_df = self.factory.calculate_metrics(df)
+            logger.debug(f"Finished preparing training features for {symbol}")
             feat_df = self.factory.add_target_label(feat_df)
             # 特徴量計算後の有効データが少ない銘柄は、学習の質を下げるため除外
             if len(feat_df) < 30:
@@ -496,25 +505,24 @@ class StockScreener:
         
         # 期待値(EV)計算の更新
         res_df["norm_slope"] = res_df["Slope10"] / res_df["Close"].replace(0, np.nan)
+        res_df["SlopeScore"] = res_df["norm_slope"].clip(-0.01, 0.01) * 100
 
-        slope_abs_median = res_df["norm_slope"].abs().median()
-        res_df["SlopeScore"] = res_df["norm_slope"] / (slope_abs_median if slope_abs_median > 0 else 1e-7)
+        # 【重要】出来高が「平均以下（静か）」であるほど加点する仕組みに変更
+        res_df["SilenceScore"] = (1.2 - res_df["VolRatio"]).clip(0, 1)
 
-        # 改良案：AIの確信度を最優先し、勢いによる「逆転」が起きすぎないように調整
-        # AIの予測(85%)を主軸にし、トレンド(10%)と出来高(5%)は補助的な加点要素とします。
-        # これにより、「AIが自信を持っていて、かつ勢いも出始めている」銘柄が正しく1位になります。
         res_df["EV"] = (
-            res_df["prob"] * 0.85 +
-            res_df["SlopeScore"].clip(-2, 2) * 0.10 +
-            res_df["VolRatio"].clip(0, 3) * 0.05
+            res_df["prob"] * 0.80 +
+            res_df["SlopeScore"].clip(0, 2) * 0.10 +
+            res_df["SilenceScore"] * 0.10
         )
         
         # フィルタリング
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {res_df['prob'].max():.3f})")
 
         cond_prob = res_df["prob"] >= Config.DEFAULT_THRESHOLD
-        cond_slope = res_df["Slope10"] > 0
-        cond_ret = res_df["ret10"].between(-0.03, 0.05)
+        # 傾きの条件を少し緩め、反発の初期微動（Slope20）も考慮
+        cond_slope = (res_df["Slope10"] > 0) | (res_df["Slope20"] > 0)
+        cond_ret = res_df["ret10"].between(-0.05, 0.07)
         cond_vol = res_df["VolRatio"] < 1.2
 
         logger.info(f"【条件別ヒット数】 AI確率(>{Config.DEFAULT_THRESHOLD}): {cond_prob.sum()}, 傾き(Slope>0): {cond_slope.sum()}, 安定性(ret10): {cond_ret.sum()}, 出来高(静寂): {cond_vol.sum()}")
@@ -524,11 +532,24 @@ class StockScreener:
         # 厳選フィルタで0件の場合、AI確率が非常に高い銘柄を「準候補」として救い出す
         if filtered.empty and cond_prob.any():
             high_prob_threshold = Config.DEFAULT_THRESHOLD + 0.03 # 0.48以上
-            potential = res_df[res_df["prob"] >= high_prob_threshold].sort_values("prob", ascending=False).head(3).copy()
-            if not potential.empty:
-                logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential)}件)を準候補として保持します。")
-                potential["is_potential"] = True
-                filtered = potential
+            potential_candidates = res_df[res_df["prob"] >= high_prob_threshold].sort_values("prob", ascending=False).head(3).copy()
+            if not potential_candidates.empty:
+                logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential_candidates)}件)を準候補として保持します。")
+                potential_candidates["is_potential"] = True
+
+                # 準候補になった理由を特定
+                reasons = []
+                for idx, row in potential_candidates.iterrows():
+                    reason_str = []
+                    if not (row["Slope10"] > 0):
+                        reason_str.append("傾き不足")
+                    if not (row["ret10"].between(-0.03, 0.05)):
+                        reason_str.append("安定性不足")
+                    if not (row["VolRatio"] < 1.2):
+                        reason_str.append(f"出来高急増({row['VolRatio']:.2f})")
+                    potential_candidates.loc[idx, "potential_reason"] = "、".join(reason_str) if reason_str else "その他"
+                
+                filtered = potential_candidates
 
         logger.info(f"フィルタ最終通過: {len(filtered)} 銘柄")
 
@@ -563,7 +584,9 @@ class StockScreener:
             msg = ["【⚠️地合い弱気・厳選モード】"]
 
         if buy_results.get("is_potential", pd.Series([False])).any():
-            msg.append("（AI準候補・監視推奨）")
+            msg.append("【AI準候補・監視推奨】")
+            if "potential_reason" in buy_results.columns and not buy_results["potential_reason"].empty:
+                msg.append(f"（高確率だが{buy_results['potential_reason'].iloc[0]}のため厳選フィルタ除外）")
 
         if buy_results.empty:
             msg.append("該当なし")
