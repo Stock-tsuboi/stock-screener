@@ -6,8 +6,8 @@ on:
 
   # 自動実行
   schedule:
-    # 昼12:00（JST）
-    - cron: '0 3 * * 1-5'
+    # 昼11:42（JST）
+    - cron: '42 02 * * 1-5'
 
 jobs:
   run:
