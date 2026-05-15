@@ -205,6 +205,7 @@ class DatabaseManager:
         logger.info("DuckDB価格更新開始...")
         codes = symbols_df["コード"].tolist()
         failed_codes = []
+        total_processed_symbols = 0
 
         # デバッグ用：ファイル存在確認
         if os.path.exists(self.db_path):
@@ -282,11 +283,14 @@ class DatabaseManager:
                             ON CONFLICT DO NOTHING
                         """)
                         conn.unregister("tmp_df")
-                    logger.info(f"Batch {i}-{i+len(batch_codes)-1} processed. Inserted/updated {len(dfs_to_insert)} symbols.")
+                        total_processed_symbols += len(dfs_to_insert)
+                    logger.debug(f"Batch {i}-{i+len(batch_codes)-1} processed. Inserted/updated {len(dfs_to_insert)} symbols.")
                     time.sleep(1)  # Yahoo APIのレートリミットを回避するための待機
                 except Exception as e:
                     logger.error(f"Batch {i} download error: {e}")
             
+            logger.info(f"株価データの更新完了: 合計 {total_processed_symbols} 銘柄を処理しました。")
+
             # 古いデータのクリーンアップ（2年以上前のデータを削除）
             if datetime.now().weekday() == 6:  # 日曜日のみ実行して負荷軽減
                 logger.info("古いデータのクリーンアップを実行中...")
@@ -506,13 +510,16 @@ class StockScreener:
         # 期待値(EV)計算の更新
         res_df["norm_slope"] = res_df["Slope10"] / res_df["Close"].replace(0, np.nan)
         res_df["SlopeScore"] = res_df["norm_slope"].clip(-0.01, 0.01) * 100
+        # トレンドが加速している（2次曲線的な立ち上がり）を評価
+        res_df["AccelScore"] = (res_df["SlopeAccel"] / res_df["Close"].replace(0, np.nan)).clip(0, 0.005) * 200
 
         # 【重要】出来高が「平均以下（静か）」であるほど加点する仕組みに変更
         res_df["SilenceScore"] = (1.2 - res_df["VolRatio"]).clip(0, 1)
 
         res_df["EV"] = (
-            res_df["prob"] * 0.80 +
-            res_df["SlopeScore"].clip(0, 2) * 0.10 +
+            res_df["prob"] * 0.75 +
+            res_df["AccelScore"] * 0.10 + 
+            res_df["SlopeScore"].clip(0, 1) * 0.05 +
             res_df["SilenceScore"] * 0.10
         )
         
