@@ -643,12 +643,12 @@ class StockScreener:
                 
                 # 理由の特定
                 reason = "トレンド転換"
-                if row["ret1"] < -0.03: reason = "急落(損切目安)"
-                elif row["RSI"] > 70: reason = "買われすぎ反落"
-                elif row["Close"] < row["SMA25"]: reason = "中期トレンド崩れ"
+                if row["ret1"] < -0.03: reason = f"急落(前日比{row['ret1']:.1%})"
+                elif row["RSI"] > 75: reason = f"買われすぎ(RSI:{row['RSI']:.0f})"
+                elif row["Close"] < row["SMA25"]: reason = f"25日線割れ({row['SMA25']:.1f})"
                 elif row["MACD_Hist"] < 0: reason = "勢い低下"
                 
-                msg.append(f"・{row['symbol']} {name[:8]}\n  {reason} (RSI:{row['RSI']:.0f})")
+                msg.append(f"・{row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} {reason} (RSI:{row['RSI']:.0f})")
             msg.append("※保有銘柄が含まれる場合は要注意")
 
             # 売りのシグナルが出た銘柄を監視リストから除外
