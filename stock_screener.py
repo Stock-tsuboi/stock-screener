@@ -106,7 +106,7 @@ class FeatureFactory:
         delta = close.diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss.replace(0, np.nan)
+        rs = gain / (loss + 1e-9)
         df["RSI"] = 100 - (100 / (1 + rs))
 
         # MACD (12, 26, 9)
@@ -148,17 +148,18 @@ class FeatureFactory:
         「出来高が静かな状態（仕込み時）から5日以内に急騰したケース」のみを正解と定義します。
         これにより、爆上げした後の銘柄ではなく、爆上げ前の予兆を学習させます。
         """
-        # 未来のリターン
-        f_ret5 = df["Close"].shift(-5) / df["Close"] - 1
+        # 未来の最大上昇ポテンシャル（明日から5日間の高値）
+        future_max = df["High"].shift(-5).rolling(5).max()
+        future_gain = future_max / df["Close"] - 1
         
         # 仕込み時の条件（現在が静かであること）
         is_quiet = (df["VolRatio"] < 1.0) # 出来高が平均以下
         is_stable = (df["ret5"].between(-0.05, 0.02)) # 5日間で暴騰も暴落もしていない
         
-        # 5日以内に5%以上上昇
-        will_breakout = (f_ret5 >= 0.05)
+        # 5日以内に5%以上の利確チャンスがあるか
+        will_breakout = (future_gain >= 0.05)
 
-        df["Target"] = np.where(f_ret5.notna(), (is_quiet & is_stable & will_breakout).astype(int), np.nan)
+        df["Target"] = np.where(future_gain.notna(), (is_quiet & is_stable & will_breakout).astype(int), np.nan)
         return df
 
 # =========================================================
@@ -409,7 +410,13 @@ class StockScreener:
             return None
         
         now_jst = datetime.now(timezone.utc) + timedelta(hours=9)
-        if now_jst.hour == 9 and df.index[-1].date() == now_jst.date():
+        
+        # 9:00〜9:05の間は価格が極めて不安定なため、当日データが含まれている場合はそれを除外して前日ベースで判定する
+        if now_jst.hour == 9 and now_jst.minute < 5:
+            if df.index[-1].date() == now_jst.date():
+                df = df.iloc[:-1]
+        # 9:05以降の9時台は、始値を暫定的な終値として扱うことで、寄り付きの勢いを反映させる（既存ロジックの改善）
+        elif now_jst.hour == 9 and df.index[-1].date() == now_jst.date():
             df.iloc[-1, df.columns.get_loc("Close")] = df.iloc[-1, df.columns.get_loc("Open")]
 
         feat_df = self.factory.calculate_metrics(df)
@@ -507,28 +514,28 @@ class StockScreener:
         res_df = pd.DataFrame({"symbol": symbols, "prob": probs})
         res_df = pd.concat([res_df, features.reset_index(drop=True)], axis=1)
         
-        # 期待値(EV)計算の更新
+        # 期待値(EV)計算の刷新
         res_df["norm_slope"] = res_df["Slope10"] / res_df["Close"].replace(0, np.nan)
         res_df["SlopeScore"] = res_df["norm_slope"].clip(-0.01, 0.01) * 100
-        # トレンドが加速している（2次曲線的な立ち上がり）を評価
-        res_df["AccelScore"] = (res_df["SlopeAccel"] / res_df["Close"].replace(0, np.nan)).clip(0, 0.005) * 200
-
-        # 【重要】出来高が「平均以下（静か）」であるほど加点する仕組みに変更
-        res_df["SilenceScore"] = (1.2 - res_df["VolRatio"]).clip(0, 1)
-
-        res_df["EV"] = (
-            res_df["prob"] * 0.75 +
-            res_df["AccelScore"] * 0.10 + 
-            res_df["SlopeScore"].clip(0, 1) * 0.05 +
-            res_df["SilenceScore"] * 0.10
+        
+        # 期待リターンの推計 (過去のトレンド + 現在の勢い)
+        # SlopeScore * 0.1 により、強い上昇トレンドを+10%のリターン期待値として加算
+        res_df["ExpectedReturn"] = (
+            res_df["ret20"].clip(-0.03, 0.15) 
+            + (res_df["SlopeScore"] * 0.1)
         )
+
+        # EV = AI確率 × 期待リターン × 出来高の静寂性
+        # SilenceScoreを乗算することで、出来高が急増している「飛びつき」を抑制し、仕込み銘柄を優先
+        res_df["SilenceScore"] = (1.2 - res_df["VolRatio"]).clip(0.7, 1.3)
+        res_df["EV"] = res_df["prob"] * res_df["ExpectedReturn"] * res_df["SilenceScore"]
         
         # フィルタリング
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {res_df['prob'].max():.3f})")
 
         cond_prob = res_df["prob"] >= Config.DEFAULT_THRESHOLD
-        # 傾きの条件を少し緩め、反発の初期微動（Slope20）も考慮
-        cond_slope = (res_df["Slope10"] > 0) | (res_df["Slope20"] > 0)
+        # 傾きの条件を緩和し、仕込み段階の銘柄も拾えるようにする（わずかな下降も許容）
+        cond_slope = res_df["Slope20"] > -0.003
         cond_ret = res_df["ret10"].between(-0.05, 0.07)
         cond_vol = res_df["VolRatio"] < 1.2
 
@@ -567,7 +574,7 @@ class StockScreener:
         # 4. 急激な陰線 (ボラティリティ・ストップ)
         cond_sell = (
             ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)) |  # 超買われすぎからの反落
-            (res_df["MACD_Hist"] < -1.0) |                      # 明確な勢いの低下（遊びを持たせる）
+            (res_df["MACD_Hist"] / res_df["Close"] < -0.003) |  # 価格比での勢い低下（正規化）
             (res_df["Close"] < res_df["SMA25"] * 0.97) |        # 25日線を3%以上明確に割り込み
             (res_df["ret1"] < -0.05)                            # 5%以上の急落（ストップロス）
         )
@@ -646,7 +653,7 @@ class StockScreener:
                 if row["ret1"] < -0.05: reason = f"急落(前日比{row['ret1']:.1%})"
                 elif row["RSI"] > 80: reason = f"買われすぎ(RSI:{row['RSI']:.0f})"
                 elif row["Close"] < row["SMA25"] * 0.97: reason = f"25日線割れ({row['SMA25']:.1f})"
-                elif row["MACD_Hist"] < -1.0: reason = "勢い低下"
+                elif row["MACD_Hist"] / row["Close"] < -0.003: reason = "勢い低下"
                 
                 msg.append(f"・{row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} {reason} (RSI:{row['RSI']:.0f})")
             msg.append("※保有銘柄が含まれる場合は要注意")
