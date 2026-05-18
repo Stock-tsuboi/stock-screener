@@ -278,7 +278,7 @@ def create_features(df):
     
     # ===== AIターゲット =====
     df["Target"] = np.where(
-        future_return_5.notna(),
+        future_gain.notna(),
         (
             # ===== 現在：仕込み状態 =====
             (current_ret5 < -0.05) &      # 直近下落
@@ -1758,6 +1758,8 @@ def run_screening():
                         "VolRatio",
                         "Bull","BigBull","BigBear",
                         "Slope10",
+                        "Slope20",
+                        "SlopeAccel",
                         "ret1",
                         "ret3","ret5","ret20","atr_ratio"
                     ]
@@ -1804,6 +1806,8 @@ def run_screening():
                 "VolRatio",
                 "Bull","BigBull","BigBear",
                 "Slope10",
+                "Slope20",
+                "SlopeAccel",
                 "ret1", 
                 "ret3","ret5","ret20","atr_ratio"
             ]
