@@ -100,7 +100,7 @@ def calc_rsi(close, period=14):
     ma_up = up.rolling(period).mean()
     ma_down = down.rolling(period).mean()
 
-    rs = ma_up / ma_down.replace(0, np.nan)
+    rs = ma_up / (ma_down + 1e-9)
 
     rsi = 100 - (100 / (1 + rs))
     return rsi
@@ -264,9 +264,9 @@ def create_features(df):
     # ===== AI学習ラベル（仕込み前 → 上昇検出型）=====
 
     # ===== 未来リターン =====
-    future_return_1 = df["Close"].shift(-1) / df["Close"] - 1
-    future_return_3 = df["Close"].shift(-3) / df["Close"] - 1
-    future_return_5 = df["Close"].shift(-5) / df["Close"] - 1
+    # 明日から5日間の中での最高値ポテンシャルを評価
+    future_max = df["High"].shift(-5).rolling(5).max()
+    future_gain = future_max / df["Close"] - 1
     
     # ===== 現在の状態 =====
     current_ret5 = df["Close"] / df["Close"].shift(5) - 1
@@ -286,9 +286,7 @@ def create_features(df):
             (current_vol_ratio < 0.9) &   # 出来高静寂
     
             # ===== 未来：上昇 =====
-            (future_return_1 > 0.01) &
-            (future_return_3 > 0.03) &
-            (future_return_5 > 0.05)
+            (future_gain >= 0.05)         # 5日以内に5%以上の利確チャンスあり
         ).astype(int),
         np.nan
     )
