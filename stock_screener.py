@@ -566,10 +566,10 @@ class StockScreener:
         # 3. 重要な節目(SMA25)を割り込んだ (トレンド崩れ)
         # 4. 急激な陰線 (ボラティリティ・ストップ)
         cond_sell = (
-            ((res_df["RSI"] > 70) & (res_df["ret1"] < -0.01)) | 
-            (res_df["MACD_Hist"] < 0) |
-            (res_df["Close"] < res_df["SMA25"]) |
-            (res_df["ret1"] < -0.03)
+            ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)) |  # 超買われすぎからの反落
+            (res_df["MACD_Hist"] < -1.0) |                      # 明確な勢いの低下（遊びを持たせる）
+            (res_df["Close"] < res_df["SMA25"] * 0.97) |        # 25日線を3%以上明確に割り込み
+            (res_df["ret1"] < -0.05)                            # 5%以上の急落（ストップロス）
         )
         exit_candidates = res_df[cond_sell & (res_df["Slope10"] < 0.05)].sort_values("ret1", ascending=True)
 
@@ -643,10 +643,10 @@ class StockScreener:
                 
                 # 理由の特定
                 reason = "トレンド転換"
-                if row["ret1"] < -0.03: reason = f"急落(前日比{row['ret1']:.1%})"
-                elif row["RSI"] > 75: reason = f"買われすぎ(RSI:{row['RSI']:.0f})"
-                elif row["Close"] < row["SMA25"]: reason = f"25日線割れ({row['SMA25']:.1f})"
-                elif row["MACD_Hist"] < 0: reason = "勢い低下"
+                if row["ret1"] < -0.05: reason = f"急落(前日比{row['ret1']:.1%})"
+                elif row["RSI"] > 80: reason = f"買われすぎ(RSI:{row['RSI']:.0f})"
+                elif row["Close"] < row["SMA25"] * 0.97: reason = f"25日線割れ({row['SMA25']:.1f})"
+                elif row["MACD_Hist"] < -1.0: reason = "勢い低下"
                 
                 msg.append(f"・{row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} {reason} (RSI:{row['RSI']:.0f})")
             msg.append("※保有銘柄が含まれる場合は要注意")
