@@ -580,10 +580,11 @@ class StockScreener:
 
         filtered = res_df[cond_prob & cond_slope & cond_ret & cond_vol].sort_values("EV", ascending=False)
 
-        # 厳選フィルタで0件の場合、AI確率が非常に高い銘柄を「準候補」として救い出す
-        if filtered.empty and cond_prob.any():
-            high_prob_threshold = threshold + 0.03 # 0.48以上
-            potential_candidates = res_df[res_df["prob"] >= high_prob_threshold].sort_values("prob", ascending=False).head(3).copy()
+        # 厳選フィルタで0件の場合、AI確率上位を「準候補」として救い出す（閾値を少し柔軟に）
+        if filtered.empty and not res_df.empty:
+            # AI確率の閾値を超えているが、テクニカルフィルタで落ちた銘柄を探す
+            potential_candidates = res_df[cond_prob].sort_values("prob", ascending=False).head(3).copy()
+            
             if not potential_candidates.empty:
                 logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential_candidates)}件)を準候補として保持します。")
                 potential_candidates["is_potential"] = True
