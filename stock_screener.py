@@ -54,7 +54,8 @@ class Config:
     LINE_USER_ID = os.getenv("LINE_USER_ID") or "dummy"
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
     RETRAIN_DAYS = 7
-    DEFAULT_THRESHOLD = 0.45
+    THRESHOLD_STRICT = 0.50  # 高い確信度
+    THRESHOLD_NORMAL = 0.45  # 標準
 
 # =========================================================
 # Feature Engineering (Unified)
@@ -69,7 +70,8 @@ class FeatureFactory:
         "SMA5", "SMA25", "SMA75", "Bias5", "Bias25", "Bias75",
         "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2", "VolRatio",
         "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10", "RSI", "MACD_Hist",
-        "ret1", "ret3", "ret5", "ret20", "atr_ratio"
+        "ret1", "ret3", "ret5", "ret20", "atr_ratio",
+        "VolVCP"
     ] # AIが判断に使用する項目のリスト
 
     @staticmethod
@@ -101,6 +103,12 @@ class FeatureFactory:
         df["VolRatio"] = df["Volume"] / df["Volume"].rolling(25).mean().replace(0, np.nan)
         for n in [1, 3, 5, 10, 20]:
             df[f"ret{n}"] = close.pct_change(n)
+
+        # ボラティリティの収束 (VCP: Volatility Contraction Pattern)
+        # 短期のボラティリティが長期に対して低下しているか（＝エネルギーが溜まっているか）
+        vol_short = close.pct_change().rolling(10).std()
+        vol_long = close.pct_change().rolling(60).std()
+        df["VolVCP"] = vol_short / vol_long.replace(0, np.nan)
 
         # RSI (14日間)
         delta = close.diff()
@@ -366,7 +374,9 @@ class StockScreener:
         if not is_market_good:
             logger.warning("【注意】地合いが悪化しています（日経平均が75日線以下）。厳選モードで動作します。")
             # 地合いが悪い時は閾値を上げる
-            Config.DEFAULT_THRESHOLD += 0.05
+            current_threshold = Config.THRESHOLD_STRICT
+        else:
+            current_threshold = Config.THRESHOLD_NORMAL
         
         # データ更新
         self.db.update_prices(symbols)
@@ -382,7 +392,7 @@ class StockScreener:
             return
         
         # 推論とランキング
-        buy_results, sell_results = self._inference(processed_data)
+        buy_results, sell_results = self._inference(processed_data, current_threshold)
         
         # 結果通知
         self._notify((buy_results, sell_results), symbols, is_market_good)
@@ -424,7 +434,7 @@ class StockScreener:
             return None
         return symbol, feat_df.iloc[-1]
 
-    def _prepare_model(self, all_data: Dict):
+    def _prepare_model(self, all_data: Dict) -> bool:
         """
         AIモデル（RandomForest）を準備します。
         前回の学習から一定期間が経過している場合は再学習を行い、
@@ -486,7 +496,7 @@ class StockScreener:
                 return False
         return self.model is not None
 
-    def _inference(self, feature_dict: Dict) -> pd.DataFrame:
+    def _inference(self, feature_dict: Dict, threshold: float) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """
         最新の指標データに基づいてAIが「上昇確率」を予測します。
         確率が高い銘柄に対し、期待値（EV）を計算してランキングを作成します。
@@ -533,19 +543,23 @@ class StockScreener:
         # フィルタリング
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {res_df['prob'].max():.3f})")
 
-        cond_prob = res_df["prob"] >= Config.DEFAULT_THRESHOLD
+        # 【勝率向上のためのフィルタ強化】
+        # 1. 確率閾値
+        # 2. ボラティリティ収束 (VolVCP < 1.0 は短期の値動きが落ち着いている証拠)
+        # 3. 過熱感の抑制 (Bias25 > 0.08 などの高値掴みを防止)
+        cond_prob = (res_df["prob"] >= threshold) & (res_df["VolVCP"] < 1.1) & (res_df["Bias25"] < 0.06)
         # 傾きの条件を緩和し、仕込み段階の銘柄も拾えるようにする（わずかな下降も許容）
         cond_slope = res_df["Slope20"] > -0.003
         cond_ret = res_df["ret10"].between(-0.05, 0.07)
         cond_vol = res_df["VolRatio"] < 1.2
 
-        logger.info(f"【条件別ヒット数】 AI確率(>{Config.DEFAULT_THRESHOLD}): {cond_prob.sum()}, 傾き(Slope>0): {cond_slope.sum()}, 安定性(ret10): {cond_ret.sum()}, 出来高(静寂): {cond_vol.sum()}")
+        logger.info(f"【条件別ヒット数】 AI確率＆収束フィルタ: {cond_prob.sum()}, 傾き(Slope>-0.003): {cond_slope.sum()}, 安定性(ret10): {cond_ret.sum()}, 出来高(静寂): {cond_vol.sum()}")
 
         filtered = res_df[cond_prob & cond_slope & cond_ret & cond_vol].sort_values("EV", ascending=False)
 
         # 厳選フィルタで0件の場合、AI確率が非常に高い銘柄を「準候補」として救い出す
         if filtered.empty and cond_prob.any():
-            high_prob_threshold = Config.DEFAULT_THRESHOLD + 0.03 # 0.48以上
+            high_prob_threshold = threshold + 0.03 # 0.48以上
             potential_candidates = res_df[res_df["prob"] >= high_prob_threshold].sort_values("prob", ascending=False).head(3).copy()
             if not potential_candidates.empty:
                 logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential_candidates)}件)を準候補として保持します。")
