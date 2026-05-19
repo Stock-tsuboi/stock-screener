@@ -453,7 +453,30 @@ class StockScreener:
             cols = self.factory.FEATURE_COLS + ["Target"]
             return feat_df.iloc[:-5][cols]
 
-        if not os.path.exists(Config.MODEL_PATH) or (datetime.now() - datetime.fromtimestamp(os.path.getmtime(Config.MODEL_PATH))).days >= Config.RETRAIN_DAYS:
+        # モデルの読み込みと整合性チェック
+        need_training = False
+        if not os.path.exists(Config.MODEL_PATH):
+            need_training = True
+        elif (datetime.now() - datetime.fromtimestamp(os.path.getmtime(Config.MODEL_PATH))).days >= Config.RETRAIN_DAYS:
+            need_training = True
+        else:
+            try:
+                self.model = joblib.load(Config.MODEL_PATH)
+                # 学習時の特徴量リストを取得して比較
+                trained_features = []
+                if hasattr(self.model, "feature_names_in_"):
+                    trained_features = list(self.model.feature_names_in_)
+                elif hasattr(self.model, "calibrated_classifiers_"):
+                    trained_features = list(self.model.calibrated_classifiers_[0].estimator.feature_names_in_)
+                
+                if trained_features and trained_features != self.factory.FEATURE_COLS:
+                    logger.warning(f"特徴量構成の変更を検知しました（旧:{len(trained_features)}種 -> 新:{len(self.factory.FEATURE_COLS)}種）。再学習を強制します。")
+                    need_training = True
+            except Exception as e:
+                logger.warning(f"モデルチェック中にエラーが発生しました: {e}。再学習を実行します。")
+                need_training = True
+
+        if need_training:
             logger.info("モデルを新規学習します...")
             
             # 学習データの準備を並列化
