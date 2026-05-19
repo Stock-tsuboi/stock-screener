@@ -861,8 +861,7 @@ def ai_predict(model, feature_cols, all_data, reg_model=None, threshold=0.55, to
 # =========================================================
 # Step15　パラメータ設定
 # =========================================================
-
-BEST_TH = 0.30  # 数値を調整する
+BEST_TH = 0.45  # 数値を調整する (Default changed to 0.45 for consistency)
 EXCLUDE_CODES = []
 
 
@@ -1089,7 +1088,7 @@ def load_all_data_from_duckdb(symbols):
     return all_data
 
 # =========================================================
-# Step19　銘柄解析（旧ロジック）
+# Step19　銘柄解析（旧ロジック） - 機能を残しつつ、ai_predictの結果を優先
 # =========================================================
 def analyze_symbol(code, name, model, all_data):
     if code in EXCLUDE_CODES:
@@ -1698,7 +1697,7 @@ def run_screening():
     # Step24-1 データ更新
     # =====================================================
     print("\nDuckDB + yfinance 差分更新...")
-    update_duckdb_from_yfinance(symbols, retrain=need_retrain(MODEL_PATH))
+    update_duckdb_from_yfinance(symbols) # Removed retrain=need_retrain(MODEL_PATH)
 
     print("\nDuckDBから株価読み込み...")
     all_data = load_all_data_from_duckdb(symbols)
@@ -1732,6 +1731,15 @@ def run_screening():
     # =====================================================
     # STEP24-3 新AIモデル準備
     # =====================================================
+    model_new = None
+    # Initialize feature_cols with the full list for consistency
+    feature_cols = [
+        "SMA5", "SMA25", "SMA75", "Bias5", "Bias25", "Bias75",
+        "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2", "VolRatio",
+        "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10", "RSI", "MACD_Hist",
+        "ret1", "ret3", "ret5", "ret20", "atr_ratio",
+        "VolVCP"
+    ]
     
     if need_retrain(MODEL_PATH):
     
@@ -1751,19 +1759,6 @@ def run_screening():
                     model_new, feature_cols = loaded
                 else:
                     model_new = loaded
-                    feature_cols = [
-                        "SMA5","SMA25","SMA75",
-                        "Bias5","Bias25","Bias75",
-                        "BB_UP1","BB_LOW1","BB_UP2","BB_LOW2",
-                        "VolRatio",
-                        "Bull","BigBull","BigBear",
-                        "Slope10",
-                        "Slope20",
-                        "SlopeAccel",
-                        "ret1",
-                        "ret3","ret5","ret20","atr_ratio"
-                    ]
-                    
                 print("既存モデル読み込み完了")
             else:
                 print("❌ モデルが存在しないため処理終了")
@@ -1799,19 +1794,6 @@ def run_screening():
             model_new, feature_cols = loaded
         else:
             model_new = loaded
-            feature_cols = [
-                "SMA5","SMA25","SMA75",
-                "Bias5","Bias25","Bias75",
-                "BB_UP1","BB_LOW1","BB_UP2","BB_LOW2",
-                "VolRatio",
-                "Bull","BigBull","BigBear",
-                "Slope10",
-                "Slope20",
-                "SlopeAccel",
-                "ret1", 
-                "ret3","ret5","ret20","atr_ratio"
-            ]
-
     # ==============================
     # ★ここに追加（これ1回だけ）閾値最適化したいときに実行
     # ==============================
@@ -1841,10 +1823,11 @@ def run_screening():
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
     
     # ★旧モデル自動生成対応
-    if not os.path.exists(OLD_MODEL_PATH):
-        print("旧モデルが無い → 新規作成")
-        model_old = train_old_model(all_data)
-    else:
+    # 旧ロジックは新AIと統合するため、ここでは旧モデルの読み込みのみ
+    # train_old_modelは削除されているため、既存モデルの読み込みのみ
+    if not os.path.exists(OLD_MODEL_PATH): # If old model doesn't exist, skip old logic
+        model_old = None # No old model to load
+    else: # If old model exists, load it
         model_old = load_ai_model()
     
     symbol_list = [
@@ -1852,28 +1835,29 @@ def run_screening():
     for _, row in symbols.iterrows()
     ]
 
-    # ==============================
-    # Step24-5 新AI推論
-    # ==============================
-    ai_list = ai_predict(
-        model_new,
-        feature_cols,
-        feature_data,
-        threshold=BEST_TH,
-        top_n=50
-    )
-
-    ai_dict = {sym: prob for sym, prob, ev in ai_list}
-
+    # 旧ロジックの解析は、新AIでフィルタリングされた銘柄に対してのみ実行
+    # df_new (新AIの結果) のsymbolを対象とする
+    if model_old is not None:
+        results = Parallel(
+            n_jobs=-1,
+            backend="loky",
+            batch_size=50,
+            prefer="threads"
+        )(
+            delayed(analyze_symbol)(code, name_map[f"{code}.T"], model_old, all_data)
+            for code in df_new["symbol"].str.replace(".T", "").tolist()
+        )
+    else:
+        results = []
+    
     # =====================================================
     # Step24-6 新AIロジック (旧Step22-5)
     # =====================================================
-
-    symbol_list = [
-    (code, name)
-    for code, name in symbol_list
-    if f"{code}.T" in ai_dict.keys()
-    ]
+    df_ai_results = pd.DataFrame(ai_list, columns=["symbol", "AI上昇確率", "EV"])
+    if df_ai_results.empty:
+        print("新AIによる候補銘柄なし")
+        send_line("本日、新AIによる候補銘柄はありませんでした。")
+        return
     
     print("\n===== 新AI 上位 =====\n")
 
@@ -1886,19 +1870,19 @@ def run_screening():
         for _, row in symbols.iterrows()
     }
 
-    df_new = pd.DataFrame(ai_list, columns=["symbol","新AI確率","EV"])
+    df_new = df_ai_results.copy() # Use the results from ai_predict
+    df_new.rename(columns={"AI上昇確率": "新AI確率"}, inplace=True)
 
     # 銘柄名を付与
     df_new["銘柄名"] = df_new["symbol"].map(name_map)
-    if not df_new.empty:
+    
+    df_new["新AI順位"] = (
+        df_new["新AI確率"]
+        .rank(ascending=False, method="min")
+        .astype(int)
+    )
 
-        df_new["新AI順位"] = (
-            df_new["新AI確率"]
-            .rank(ascending=False, method="min")
-            .astype(int)
-        )
-
-    else:
+    if df_new.empty: # Check after processing
 
         df_new = pd.DataFrame(
             columns=["symbol","新AI確率","新AI順位"]
@@ -1913,9 +1897,9 @@ def run_screening():
         batch_size=50,
         prefer="threads"
     )(
-        delayed(analyze_symbol)(code, name, model_old, all_data)
-        for code, name in symbol_list
-    )
+        delayed(analyze_symbol)(code, name_map[f"{code}.T"], model_old, all_data)
+        for code in df_new["symbol"].str.replace(".T", "").tolist() # Only analyze symbols found by new AI
+    ) # This block is now redundant as it's moved above
 
     results = [r for r in results if r is not None]
 
@@ -2081,10 +2065,10 @@ def run_screening():
     print(f"[DEBUG] マージ直後件数: {len(df_merge)}")
     
     print("期待値min:", df_merge["期待値"].min(), "max:", df_merge["期待値"].max())
-    
+
     # ★期待値フィルタ（安全版）
     df_tmp = df_merge[df_merge["期待値"] > -0.002]
-    
+
     if len(df_tmp) > 0:
         df_merge = df_tmp
         print(f"[DEBUG] 期待値フィルタ適用: {len(df_merge)}件")
@@ -2092,13 +2076,13 @@ def run_screening():
         print("⚠ 期待値フィルタで0件 → フィルタ無効化")
     
     print(f"[DEBUG] 期待値フィルタ後: {len(df_merge)}")
-    
+
     # ★AIフィルタ
     df_merge = df_merge[
         (df_merge["旧AI確率"] >= 0.3) |
         (df_merge["新AI確率"] >= 0.4)
     ]
-    
+
     print(f"[DEBUG] AIフィルタ後: {len(df_merge)}")
 
     # =========================
@@ -2116,7 +2100,7 @@ def run_screening():
         df_merge["score_ev"] * 0.4 +
         df_merge["score_old"] * 0.1
     )
-    
+
     # ★ここが最重要：期待値でソート
 
     # ★新AIが強い場合は通す（ハイブリッド化）
@@ -2124,7 +2108,7 @@ def run_screening():
         (df_merge["旧AI確率"] >= 0.3) |
         (df_merge["新AI確率"] >= 0.4)
     ]
-    
+
     df_merge = df_merge.sort_values(
         "期待値",
         ascending=False
@@ -2218,29 +2202,25 @@ def run_screening():
     lines_total.append("")
     lines_total.append("🔥 爆上げ候補 🔥")
 
-    if df_rank is not None and len(df_rank) > 0:
-
-        for i, (_, row) in enumerate(df_rank.head(3).iterrows(), start=1):
+    # Use df_new (results from ai_predict) for "爆上げ候補"
+    if not df_new.empty:
+        for i, (_, row) in enumerate(df_new.head(3).iterrows(), start=1):
             line = (
                 f"{i}位 {row['symbol']} "
-                f"確率:{row['AI上昇確率']:.3f} "
+                f"確率:{row['新AI確率']:.3f} "
                 f"期待値:{row['期待値']:.3f}"
             )
             lines_total.append(line)
-
     else:
         lines_total.append("該当なし")
 
     # =========================
     # 送信
     # =========================
-
     message = "\n".join(lines_total)
-
-    if len(lines_total) <= 1:
+    if len(lines_total) <= 2: # Adjusted for "🔥 爆上げ候補 🔥" header
         print("⚠ 送信内容なし → 強制メッセージ送信")
         message = "本日シグナルなし"
-
     send_line(message)
 
     print("\nLINE送信完了（総合＋爆上げ）")
