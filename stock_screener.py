@@ -623,21 +623,16 @@ class StockScreener:
     def _notify(self, results: Tuple[pd.DataFrame, pd.DataFrame], symbols_df: pd.DataFrame, is_market_good: bool):
         """最終的なランキング結果を整形し、LINEへ送信します。"""
         buy_results, sell_results = results
-        
-        if buy_results.empty and sell_results.empty:
-            logger.info("条件に合致する銘柄が見つかりませんでした。")
-            send_line("本日の条件合致銘柄はありませんでした。")
-            return
-
         name_map = dict(zip(symbols_df["コード"] + ".T", symbols_df["銘柄名"]))
         
         msg = ["【AI厳選銘柄ランキング】"]
         if not is_market_good:
-            msg = ["【⚠️地合い弱気・厳選モード】"]
+            msg.append("（⚠️地合い弱気・厳選モード）")
 
-        if buy_results.get("is_potential", pd.Series([False])).any():
+        # 準候補（フィルタ落ちだが高確率）がある場合のヘッダー追加
+        if not buy_results.empty and "is_potential" in buy_results.columns and buy_results["is_potential"].any():
             msg.append("【AI準候補・監視推奨】")
-            if "potential_reason" in buy_results.columns and not buy_results["potential_reason"].empty:
+            if "potential_reason" in buy_results.columns and not buy_results["potential_reason"].isna().all():
                 msg.append(f"（高確率だが{buy_results['potential_reason'].iloc[0]}のため厳選フィルタ除外）")
 
         if buy_results.empty:
