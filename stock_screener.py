@@ -557,7 +557,7 @@ class StockScreener:
                     reason_str = []
                     if not (row["Slope10"] > 0):
                         reason_str.append("傾き不足")
-                    if not (row["ret10"].between(-0.03, 0.05)):
+                    if not (-0.03 <= row["ret10"] <= 0.05):
                         reason_str.append("安定性不足")
                     if not (row["VolRatio"] < 1.2):
                         reason_str.append(f"出来高急増({row['VolRatio']:.2f})")
