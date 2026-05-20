@@ -1732,19 +1732,14 @@ def run_screening():
     # STEP24-3 新AIモデル準備
     # =====================================================
     model_new = None
+    model_reg = None
     # Initialize feature_cols with the full list for consistency
-    feature_cols = [
-        "SMA5", "SMA25", "SMA75", "Bias5", "Bias25", "Bias75",
-        "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2", "VolRatio",
-        "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10", "RSI", "MACD_Hist",
-        "ret1", "ret3", "ret5", "ret20", "atr_ratio",
-        "VolVCP"
-    ]
-    
+    feature_cols = [] # Initialize as empty, will be populated from model training/loading
+
     if need_retrain(MODEL_PATH):
     
         print("\n===== 新AI 学習 =====")
-    
+
         model_new, feature_cols = train_ai_model(all_data)
 
         model_reg = train_reg_model(all_data)
@@ -1795,33 +1790,23 @@ def run_screening():
         else:
             model_new = loaded
     # ==============================
+    # Step24-5 新AI推論実行 (ai_listを生成)
+    # =====================================================
+    print("\n===== 新AI 推論実行 =====")
+    ai_list = ai_predict(model_new, feature_cols, feature_data, model_reg, BEST_TH)
+
+    # =====================================================
     # ★ここに追加（これ1回だけ）閾値最適化したいときに実行
     # ==============================
     
-    #print("\n===== 閾値最適化バックテスト =====")
-
-    #thresholds = np.arange(0.20, 0.60, 0.05)
-
-    #df_th = backtest_threshold(
-        #model_new,
-        #feature_cols,
-        #all_data,
-        #thresholds
-    #)
-
-    #best_row = df_th.sort_values("avg_return", ascending=False).iloc[0]
-    #BEST_TH = best_row["threshold"]
-
-    #print("\n===== 閾値ランキング =====")
-    #print(df_th.sort_values("avg_return", ascending=False))
-
-    #print(f"\n🔥 最適閾値: {BEST_TH:.2f}")
- 
     # =====================================================
     # Step24-4 旧ロジック
     # =====================================================
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
     
+    # Define name_map early for use in old logic analysis
+    name_map = {f"{row['コード']}.T": row["銘柄名"] for _, row in symbols.iterrows()}
+
     # ★旧モデル自動生成対応
     # 旧ロジックは新AIと統合するため、ここでは旧モデルの読み込みのみ
     # train_old_modelは削除されているため、既存モデルの読み込みのみ
@@ -1871,32 +1856,36 @@ def run_screening():
         df_new["新AI順位"] = df_new["新AI確率"].rank(ascending=False, method="min").astype(int)
 
     # =====================================================
-    # Step24-7 新AIモデル　#旧Step22-4
+    # Step24-4 旧ロジック
     # =====================================================
+    print("\n===== 旧ロジック（初動→継続）解析中 =====")
+    
+    if not os.path.exists(OLD_MODEL_PATH):
+        model_old = None
+    else:
+        model_old = load_ai_model()
 
-    results = Parallel(
-        n_jobs=-1,
-        backend="loky",
-        batch_size=50,
-        prefer="threads"
-    )(
-        delayed(analyze_symbol)(code, name_map[f"{code}.T"], model_old, all_data)
-        for code in df_new["symbol"].str.replace(".T", "").tolist() # Only analyze symbols found by new AI
-    ) # This block is now redundant as it's moved above
+    if model_old is not None and not df_new.empty:
+        results = Parallel(
+            n_jobs=-1,
+            backend="loky",
+            batch_size=50,
+            prefer="threads"
+        )(
+            delayed(analyze_symbol)(code, name_map[f"{code}.T"], model_old, all_data)
+            for code in df_new["symbol"].str.replace(".T", "").tolist()
+        )
+    else:
+        results = []
 
     results = [r for r in results if r is not None]
-
     df_old = pd.DataFrame(results)
 
     if not df_old.empty:
         df_old["旧ロジック判定"] = df_old["route"]
         df_old["旧AI確率"] = df_old["AI上昇確率"]
         df_old["symbol"] = df_old["コード"] + ".T"
-
-        df_old = df_old[
-            ["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]
-        ]
-
+        df_old = df_old[["symbol", "銘柄名", "旧ロジック判定", "旧AI確率"]]
     else:
         df_old = pd.DataFrame(
             columns=["symbol","銘柄名","旧ロジック判定","旧AI確率"]
@@ -1930,7 +1919,7 @@ def run_screening():
     )
 
     # ★ここ追加（重要）
-    df_rank = df_rank[df_rank["symbol"].isin(ai_dict.keys())]
+    df_rank = df_rank[df_rank["symbol"].isin(candidate_symbols)]
     
     print(f"[DEBUG] df_rank after filter: {len(df_rank)}")
 
