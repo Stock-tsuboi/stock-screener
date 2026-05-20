@@ -585,6 +585,11 @@ def train_reg_model(all_data):
         try:
             df2 = create_features(df)
     
+            # 特徴量の計算を分類モデルと統一
+            if df2 is not None:
+                df2["Slope20"] = df2["Slope10"].rolling(20).mean().fillna(0)
+                df2["SlopeAccel"] = df2["Slope10"].diff().fillna(0)
+
             if df2 is None or len(df2) == 0:
                 continue
     
@@ -618,6 +623,8 @@ def train_reg_model(all_data):
         "VolRatio",
         "Bull","BigBull","BigBear",
         "Slope10",
+        "Slope20",
+        "SlopeAccel",
         "ret1",
         "ret3",
         "ret5",
@@ -1681,14 +1688,15 @@ def run_screening():
 
     print(f"\n===== 実行モード: {RUN_MODE} =====")
     
-    global BEST_TH   # ← これ追加（絶対）
+    global BEST_TH
     print("日本株銘柄リストを読み込み中...")
     symbols = load_symbol_list()
 
     # ★ 市場フィルタ
     symbols = symbols[symbols["市場"].isin(TARGET_MARKETS)]
-    # テスト用
-    # symbols = symbols.head(200)
+    
+    # 銘柄名マップを先に作成
+    name_map = {f"{row['コード']}.T": row["銘柄名"] for _, row in symbols.iterrows()}
 
     print(f"対象市場: {TARGET_MARKETS}")
     print(f"対象銘柄数: {len(symbols)}")
@@ -1733,62 +1741,41 @@ def run_screening():
     # =====================================================
     model_new = None
     model_reg = None
-    # Initialize feature_cols with the full list for consistency
-    feature_cols = [] # Initialize as empty, will be populated from model training/loading
+    feature_cols = []
 
     if need_retrain(MODEL_PATH):
-    
         print("\n===== 新AI 学習 =====")
-
         model_new, feature_cols = train_ai_model(all_data)
-
         model_reg = train_reg_model(all_data)
         
         if model_new is None:
             print("AI学習スキップ → 既存モデルを使用")
-    
             if os.path.exists(MODEL_PATH):
                 loaded = joblib.load(MODEL_PATH)
-
                 if isinstance(loaded, tuple):
                     model_new, feature_cols = loaded
                 else:
                     model_new = loaded
-                print("既存モデル読み込み完了")
             else:
                 print("❌ モデルが存在しないため処理終了")
                 return
-        
         joblib.dump((model_new, feature_cols), MODEL_PATH)
-    
     else:
-
         print("\n===== 新AI 読み込み =====")
-
-        # =========================
-        # ★ローカルに無ければDL
-        # =========================
         if not os.path.exists(MODEL_PATH):
-
             print("model.pkl が無い → GitHubからDL")
-
-            import requests
-
             url = "https://github.com/Stock-tsuboi/stock-screener/releases/download/v1.0/model.pkl"
-
             r = requests.get(url)
-
             with open(MODEL_PATH, "wb") as f:
                 f.write(r.content)
-
             print("✔ ダウンロード完了")
 
         loaded = joblib.load(MODEL_PATH)
-
         if isinstance(loaded, tuple):
             model_new, feature_cols = loaded
         else:
             model_new = loaded
+
     # ==============================
     # Step24-5 新AI推論実行 (ai_listを生成)
     # =====================================================
@@ -1796,70 +1783,26 @@ def run_screening():
     ai_list = ai_predict(model_new, feature_cols, feature_data, model_reg, BEST_TH)
 
     # =====================================================
-    # ★ここに追加（これ1回だけ）閾値最適化したいときに実行
-    # ==============================
-    
-    # =====================================================
-    # Step24-4 旧ロジック
-    # =====================================================
-    print("\n===== 旧ロジック（初動→継続）解析中 =====")
-    
-    # Define name_map early for use in old logic analysis
-    name_map = {f"{row['コード']}.T": row["銘柄名"] for _, row in symbols.iterrows()}
-
-    # ★旧モデル自動生成対応
-    # 旧ロジックは新AIと統合するため、ここでは旧モデルの読み込みのみ
-    # train_old_modelは削除されているため、既存モデルの読み込みのみ
-    if not os.path.exists(OLD_MODEL_PATH): # If old model doesn't exist, skip old logic
-        model_old = None # No old model to load
-    else: # If old model exists, load it
-        model_old = load_ai_model()
-    
-    symbol_list = [
-    (row["コード"], row["銘柄名"])
-    for _, row in symbols.iterrows()
-    ]
-
-    # 旧ロジックの解析は、新AIでフィルタリングされた銘柄に対してのみ実行
-    # df_new (新AIの結果) のsymbolを対象とする
-    if model_old is not None:
-        results = Parallel(
-            n_jobs=-1,
-            backend="loky",
-            batch_size=50,
-            prefer="threads"
-        )(
-            delayed(analyze_symbol)(code, name_map[f"{code}.T"], model_old, all_data)
-            for code in df_new["symbol"].str.replace(".T", "").tolist()
-        )
-    else:
-        results = []
-    
-    # =====================================================
     # Step24-6 新AIロジック (旧Step22-5)
     # =====================================================
     df_ai_results = pd.DataFrame(ai_list, columns=["symbol", "AI上昇確率", "EV"])
     if df_ai_results.empty:
         print("新AIによる候補銘柄なし")
-        # returnせずに空のDataFrameとして続行し、最終的な通知まで持っていく
         df_new = pd.DataFrame(columns=["symbol", "新AI確率", "EV", "銘柄名", "新AI順位"])
-    
     else:
         print("\n===== 新AI 上位 =====\n")
         for symbol, prob, ev in ai_list:
             print(f"{symbol}: {prob:.3f} EV:{ev:.3f}")
             
-        name_map = {f"{row['コード']}.T": row["銘柄名"] for _, row in symbols.iterrows()}
         df_new = df_ai_results.copy()
         df_new.rename(columns={"AI上昇確率": "新AI確率"}, inplace=True)
         df_new["銘柄名"] = df_new["symbol"].map(name_map)
         df_new["新AI順位"] = df_new["新AI確率"].rank(ascending=False, method="min").astype(int)
 
     # =====================================================
-    # Step24-4 旧ロジック
+    # Step24-4 旧ロジック解析
     # =====================================================
     print("\n===== 旧ロジック（初動→継続）解析中 =====")
-    
     if not os.path.exists(OLD_MODEL_PATH):
         model_old = None
     else:
@@ -1881,6 +1824,9 @@ def run_screening():
     results = [r for r in results if r is not None]
     df_old = pd.DataFrame(results)
 
+    # =====================================================
+    # Step24-4 旧ロジック
+    # =====================================================
     if not df_old.empty:
         df_old["旧ロジック判定"] = df_old["route"]
         df_old["旧AI確率"] = df_old["AI上昇確率"]
@@ -1893,7 +1839,10 @@ def run_screening():
     # =====================================================
     # Step24-8 AI候補銘柄だけに絞る
     # =====================================================
-    candidate_symbols = set(ai_dict.keys())
+    if not df_new.empty:
+        candidate_symbols = set(df_new["symbol"].tolist())
+    else:
+        candidate_symbols = set()
 
     filtered_all_data = {
         s: all_data[s]
