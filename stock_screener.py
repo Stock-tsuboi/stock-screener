@@ -629,15 +629,18 @@ class StockScreener:
         if not is_market_good:
             msg.append("（⚠️地合い弱気・厳選モード）")
 
+        # 厳選（メイン）の該当がない場合（空、または準候補による救済のみの場合）は、準候補の有無に関わらず「該当なし」を表示
+        is_potential_rescue = not buy_results.empty and "is_potential" in buy_results.columns and buy_results["is_potential"].any()
+        if buy_results.empty or is_potential_rescue:
+            msg.append("該当なし")
+
         # 準候補（フィルタ落ちだが高確率）がある場合のヘッダー追加
-        if not buy_results.empty and "is_potential" in buy_results.columns and buy_results["is_potential"].any():
-            msg.append("【AI準候補・監視推奨】")
+        if is_potential_rescue:
+            msg.append("\n【AI準候補・監視推奨】")
             if "potential_reason" in buy_results.columns and not buy_results["potential_reason"].isna().all():
                 msg.append(f"（高確率だが{buy_results['potential_reason'].iloc[0]}のため厳選フィルタ除外）")
 
-        if buy_results.empty:
-            msg.append("該当なし")
-        else:
+        if not buy_results.empty:
             for i, (_, row) in enumerate(buy_results.iterrows(), 1):
                 name = name_map.get(row['symbol'], "不明")
                 
