@@ -583,11 +583,12 @@ class StockScreener:
 
         # 厳選フィルタで0件の場合の救済ロジック修正
         if filtered.empty and not res_df.empty:
-            # テクニカル基礎条件（収束と乖離）を満たしつつ、確率が高い銘柄を救済
-            potential_candidates = res_df[cond_tech].sort_values("prob", ascending=False).head(3).copy()
+            # 確率が高い上位3銘柄を抽出（テクニカル条件 cond_tech は維持して、形が崩れすぎているものは除外）
+            potential_candidates = res_df[cond_tech].sort_values("prob", ascending=False).head(5).copy()
             
             if not potential_candidates.empty:
-                potential_candidates = potential_candidates[potential_candidates["EV"] > -0.02]
+                # 期待値の閾値を緩和 (-0.02 -> -0.05) し、地合いが悪くても上位を救済する
+                potential_candidates = potential_candidates[potential_candidates["EV"] > -0.05].head(3)
                 
                 potential_reasons = []
                 for idx, row in potential_candidates.iterrows():
