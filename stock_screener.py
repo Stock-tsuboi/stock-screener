@@ -128,7 +128,7 @@ class FeatureFactory:
             y = series.values
             x = np.arange(len(y))
             slope = np.polyfit(x, y, 1)[0]
-            return slope
+            return slope / (y[-1] + 1e-9) # 価格で割って正規化（％表記）
 
         df["Slope10"] = close.rolling(10).apply(calc_slope, raw=False)
         df["Slope20"] = df["Slope10"].rolling(20).mean()
@@ -547,20 +547,19 @@ class StockScreener:
         res_df = pd.DataFrame({"symbol": symbols, "prob": probs})
         res_df = pd.concat([res_df, features.reset_index(drop=True)], axis=1)
         
-        # 期待値(EV)計算の刷新
-        res_df["norm_slope"] = res_df["Slope10"] / res_df["Close"].replace(0, np.nan)
-        res_df["SlopeScore"] = res_df["norm_slope"].clip(-0.01, 0.01) * 100
+        # 期待値(EV)計算の刷新：乖離（Bias）を反発エネルギーとして加算
+        # SlopeScoreは正規化済みSlope10を使用
+        res_df["SlopeScore"] = res_df["Slope10"].clip(-0.01, 0.01) * 100
         
-        # 期待リターンの推計 (過去のトレンド + 現在の勢い)
-        # SlopeScore * 0.1 により、強い上昇トレンドを+10%のリターン期待値として加算
         res_df["ExpectedReturn"] = (
-            res_df["ret20"].clip(-0.03, 0.15) 
+            res_df["ret20"].clip(-0.05, 0.15) 
             + (res_df["SlopeScore"] * 0.1)
+            - (res_df["Bias25"].clip(-0.2, 0.2) * 0.5) # 売られすぎているほどプラス評価
         )
 
         # EV = AI確率 × 期待リターン × 出来高の静寂性
         # SilenceScoreを乗算することで、出来高が急増している「飛びつき」を抑制し、仕込み銘柄を優先
-        res_df["SilenceScore"] = (1.2 - res_df["VolRatio"]).clip(0.7, 1.3)
+        res_df["SilenceScore"] = (2.0 - res_df["VolRatio"]).clip(0.5, 1.5) # 出来高が低いほどEVをブースト
         res_df["EV"] = res_df["prob"] * res_df["ExpectedReturn"] * res_df["SilenceScore"]
         
         max_prob = res_df['prob'].max()
@@ -568,8 +567,8 @@ class StockScreener:
 
         # 基本条件の定義（確率以外）
         cond_tech = (res_df["VolVCP"] < 1.15) & (res_df["Bias25"] < 0.07)
-        cond_slope = res_df["Slope20"] > -0.005
-        cond_ret = res_df["ret10"].between(-0.05, 0.07)
+        cond_slope = res_df["Slope20"] > -0.008 # わずかに緩和
+        cond_ret = res_df["ret10"].between(-0.07, 0.08) # 安定性の幅を少し広げる
         cond_vol = res_df["VolRatio"] < 1.2
 
         # 確率閾値の適用
@@ -594,8 +593,8 @@ class StockScreener:
                 for idx, row in potential_candidates.iterrows():
                     reasons = []
                     if row["prob"] < threshold: reasons.append("確率不足")
-                    if row["Slope20"] <= -0.005: reasons.append("傾き不足")
-                    if not (-0.05 <= row["ret10"] <= 0.07): reasons.append("安定性不足")
+                    if row["Slope20"] <= -0.008: reasons.append("傾き不足")
+                    if not (-0.07 <= row["ret10"] <= 0.08): reasons.append("安定性不足")
                     if row["VolRatio"] >= 1.2: reasons.append("出来高過多")
                     
                     reason_text = "、".join(reasons) if reasons else "基準未達"
@@ -655,9 +654,9 @@ class StockScreener:
                 # atr_ratio は ATR / Close なので、Close * (1 - atr_ratio * 2) が損切り価格
                 stop_loss_price = row['Close'] * (1 - row['atr_ratio'] * 2)
                 
-                msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} (目安損切:{stop_loss_price:.1f})\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['norm_slope']:.4f} Vol:{row['VolRatio']:.2f}")
-                # ログに詳細な分析根拠を出力
-                logger.info(f"分析詳細 {i}位: {row['symbol']} ({name}) - 確率: {row['prob']:.3f}, EV: {row['EV']:.3f}, 傾き: {row['norm_slope']:.4f}, 出来高比: {row['VolRatio']:.2f}")
+                msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} (目安損切:{stop_loss_price:.1f})\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['Slope20']:.4f} Vol:{row['VolRatio']:.2f}")
+                # ログに詳細な分析根拠を出力（Slope20に統一）
+                logger.info(f"分析詳細 {i}位: {row['symbol']} ({name}) - 確率: {row['prob']:.3f}, EV: {row['EV']:.3f}, 傾き(Slope20): {row['Slope20']:.4f}, 出来高比: {row['VolRatio']:.2f}")
 
         # --- 過去の推奨銘柄の管理ロジック ---
         # 実行環境のタイムゾーンに依らず日本時間(JST)で日付を管理します。
