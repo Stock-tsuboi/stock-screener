@@ -131,7 +131,7 @@ class FeatureFactory:
             return slope / (y[-1] + 1e-9) # 価格で割って正規化（％表記）
 
         df["Slope10"] = close.rolling(10).apply(calc_slope, raw=False)
-        df["Slope20"] = df["Slope10"].rolling(20).mean()
+        df["Slope20"] = close.rolling(20).apply(calc_slope, raw=False)
         df["SlopeAccel"] = df["Slope10"].diff()
 
         # ATR比率
@@ -157,7 +157,8 @@ class FeatureFactory:
         これにより、爆上げした後の銘柄ではなく、爆上げ前の予兆を学習させます。
         """
         # 未来の最大上昇ポテンシャル（明日から5日間の高値）
-        future_max = df["High"].shift(-5).rolling(5).max()
+        indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=5)
+        future_max = df["High"].shift(-1).rolling(window=indexer, min_periods=5).max()
         future_gain = future_max / df["Close"] - 1
         
         # 仕込み時の条件（現在が静かであること）
@@ -327,7 +328,13 @@ class DatabaseManager:
         with self._get_connection() as conn:
             df = conn.execute(query, [codes]).df()
         
-        return {f"{str(code).zfill(4)}.T": group.set_index("date") for code, group in df.groupby("code")}
+        if df.empty:
+            return {}
+
+        # code列を確実に文字列型にキャストし、数値推論による先頭ゼロの欠落 (e.g. "0001" -> 1) を防止
+        df["code"] = df["code"].astype(str)
+
+        return {f"{code.zfill(4)}.T": group.set_index("date") for code, group in df.groupby("code")}
 
 # =========================================================
 # Notification
@@ -467,7 +474,9 @@ class StockScreener:
                 if hasattr(self.model, "feature_names_in_"):
                     trained_features = list(self.model.feature_names_in_)
                 elif hasattr(self.model, "calibrated_classifiers_"):
-                    trained_features = list(self.model.calibrated_classifiers_[0].estimator.feature_names_in_)
+                    est = self.model.calibrated_classifiers_[0].estimator
+                    if hasattr(est, "feature_names_in_"):
+                        trained_features = list(est.feature_names_in_)
                 
                 if trained_features and trained_features != self.factory.FEATURE_COLS:
                     logger.warning(f"特徴量構成の変更を検知しました（旧:{len(trained_features)}種 -> 新:{len(self.factory.FEATURE_COLS)}種）。再学習を強制します。")
@@ -526,12 +535,12 @@ class StockScreener:
         """
         if not feature_dict:
             logger.error("特徴量データが空です。有効な株価データが不足している可能性があります。")
-            return pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame()
 
         # モデルが正常に準備できていない場合のガード
         if self.model is None:
             logger.error("AIモデルが準備できていないため、推論をスキップします。")
-            return pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame()
 
         symbols = list(feature_dict.keys())
         features = pd.DataFrame([feature_dict[s] for s in symbols])
@@ -540,7 +549,7 @@ class StockScreener:
         proba = self.model.predict_proba(features[self.factory.FEATURE_COLS])
         if proba.shape[1] < 2:
             logger.error("AIモデルの学習データに正解（Target=1）が含まれていなかったため、推論をスキップします。")
-            return pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame()
             
         probs = proba[:, 1]
         
@@ -618,7 +627,7 @@ class StockScreener:
         # 4. 急激な陰線 (ボラティリティ・ストップ)
         cond_sell = (
             ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)) |  # 超買われすぎからの反落
-            (res_df["MACD_Hist"] / res_df["Close"] < -0.003) |  # 価格比での勢い低下（正規化）
+            (res_df["MACD_Hist"] < 0) |                         # デッドクロス（勢いの低下）
             (res_df["Close"] < res_df["SMA25"] * 0.97) |        # 25日線を3%以上明確に割り込み
             (res_df["ret1"] < -0.05)                            # 5%以上の急落（ストップロス）
         )
@@ -695,7 +704,7 @@ class StockScreener:
                 if row["ret1"] < -0.05: reason = f"急落(前日比{row['ret1']:.1%})"
                 elif row["RSI"] > 80: reason = f"買われすぎ(RSI:{row['RSI']:.0f})"
                 elif row["Close"] < row["SMA25"] * 0.97: reason = f"25日線割れ({row['SMA25']:.1f})"
-                elif row["MACD_Hist"] / row["Close"] < -0.003: reason = "勢い低下"
+                elif row["MACD_Hist"] < 0: reason = "勢い低下"
                 
                 msg.append(f"・{row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} {reason} (RSI:{row['RSI']:.0f})")
             msg.append("※保有銘柄が含まれる場合は要注意")
