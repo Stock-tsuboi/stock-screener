@@ -265,7 +265,8 @@ def create_features(df):
 
     # ===== 未来リターン =====
     # 明日から5日間の中での最高値ポテンシャルを評価
-    future_max = df["High"].shift(-5).rolling(5).max()
+    indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=5)
+    future_max = df["High"].shift(-1).rolling(window=indexer, min_periods=5).max()
     future_gain = future_max / df["Close"] - 1
     
     # ===== 現在の状態 =====
