@@ -578,28 +578,35 @@ class StockScreener:
         logger.info(f"【条件別ヒット数】 AI確率({threshold:.2f}以上): {cond_prob.sum()}, 傾き: {cond_slope.sum()}, 安定性: {cond_ret.sum()}, 出来高: {cond_vol.sum()}")
 
         filtered = res_df[cond_prob & cond_tech & cond_slope & cond_ret & cond_vol].sort_values("EV", ascending=False)
+        if not filtered.empty:
+            filtered["is_potential"] = False
 
         # 厳選フィルタで0件の場合の救済ロジック修正
         if filtered.empty and not res_df.empty:
-            # 閾値に関わらず、テクニカル条件を満たしている確率上位3銘柄を「準候補」とする
-            potential_candidates = res_df[cond_tech & cond_slope].sort_values("prob", ascending=False).head(3).copy()
+            # テクニカル基礎条件（収束と乖離）を満たしつつ、確率が高い銘柄を救済
+            potential_candidates = res_df[cond_tech].sort_values("prob", ascending=False).head(3).copy()
             
             if not potential_candidates.empty:
-                logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential_candidates)}件)を準候補として保持します。")
-                potential_candidates["is_potential"] = True
-
-                # 準候補になった理由を特定
-                reasons = []
-                for idx, row in potential_candidates.iterrows():
-                    reason_str = []
-                    if not (row["Slope10"] > 0):
-                        reason_str.append("傾き不足")
-                    if not (-0.03 <= row["ret10"] <= 0.05):
-                        reason_str.append("安定性不足")
-                    if not (row["VolRatio"] < 1.2):
-                        reason_str.append(f"出来高急増({row['VolRatio']:.2f})")
-                    potential_candidates.loc[idx, "potential_reason"] = "、".join(reason_str) if reason_str else "その他"
+                potential_candidates = potential_candidates[potential_candidates["EV"] > -0.02]
                 
+                potential_reasons = []
+                for idx, row in potential_candidates.iterrows():
+                    reasons = []
+                    if row["prob"] < threshold: reasons.append("確率不足")
+                    if row["Slope20"] <= -0.005: reasons.append("傾き不足")
+                    if not (-0.05 <= row["ret10"] <= 0.07): reasons.append("安定性不足")
+                    if row["VolRatio"] >= 1.2: reasons.append("出来高過多")
+                    
+                    reason_text = "、".join(reasons) if reasons else "基準未達"
+                    potential_candidates.loc[idx, "potential_reason"] = reason_text
+                    potential_reasons.append(reason_text)
+
+                # 重複を排除して代表的な理由を作成
+                summary_reason = " / ".join(list(set(potential_reasons)))
+                potential_candidates["summary_reason"] = summary_reason
+                potential_candidates["is_potential"] = True
+                
+                logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential_candidates)}件)を準候補として保持します。理由: {summary_reason}")
                 filtered = potential_candidates
 
         logger.info(f"フィルタ最終通過: {len(filtered)} 銘柄")
@@ -636,8 +643,8 @@ class StockScreener:
         # 準候補（フィルタ落ちだが高確率）がある場合のヘッダー追加
         if is_potential_rescue:
             msg.append("\n【AI準候補・監視推奨】")
-            if "potential_reason" in buy_results.columns and not buy_results["potential_reason"].isna().all():
-                msg.append(f"（高確率だが{buy_results['potential_reason'].iloc[0]}のため厳選フィルタ除外）")
+            if "summary_reason" in buy_results.columns:
+                msg.append(f"（{buy_results['summary_reason'].iloc[0]}のため厳選除外）")
 
         if not buy_results.empty:
             for i, (_, row) in enumerate(buy_results.iterrows(), 1):
