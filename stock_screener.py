@@ -54,8 +54,8 @@ class Config:
     LINE_USER_ID = os.getenv("LINE_USER_ID") or "dummy"
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
     RETRAIN_DAYS = 7
-    THRESHOLD_STRICT = 0.50  # 高い確信度
-    THRESHOLD_NORMAL = 0.45  # 標準
+    THRESHOLD_STRICT = 0.48  # 地合いが悪い時
+    THRESHOLD_NORMAL = 0.42  # 標準（ログの0.44に合わせて少し緩和）
 
 # =========================================================
 # Feature Engineering (Unified)
@@ -499,14 +499,14 @@ class StockScreener:
                 n_estimators=300,
                 max_depth=12,
                 min_samples_leaf=5,
-                n_jobs=2,
+                n_jobs=-1,
                 random_state=42,
                 class_weight="balanced"
             )
             self.model = CalibratedClassifierCV(
                 estimator=base_model,
                 method="sigmoid",
-                cv=3
+                cv=2  # 学習時間の短縮のため
             )
             self.model.fit(X, y)
             joblib.dump(self.model, Config.MODEL_PATH)
@@ -563,27 +563,26 @@ class StockScreener:
         res_df["SilenceScore"] = (1.2 - res_df["VolRatio"]).clip(0.7, 1.3)
         res_df["EV"] = res_df["prob"] * res_df["ExpectedReturn"] * res_df["SilenceScore"]
         
-        # フィルタリング
-        logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {res_df['prob'].max():.3f})")
+        max_prob = res_df['prob'].max()
+        logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {max_prob:.3f})")
 
-        # 【勝率向上のためのフィルタ強化】
-        # 1. 確率閾値
-        # 2. ボラティリティ収束 (VolVCP < 1.0 は短期の値動きが落ち着いている証拠)
-        # 3. 過熱感の抑制 (Bias25 > 0.08 などの高値掴みを防止)
-        cond_prob = (res_df["prob"] >= threshold) & (res_df["VolVCP"] < 1.1) & (res_df["Bias25"] < 0.06)
-        # 傾きの条件を緩和し、仕込み段階の銘柄も拾えるようにする（わずかな下降も許容）
-        cond_slope = res_df["Slope20"] > -0.003
+        # 基本条件の定義（確率以外）
+        cond_tech = (res_df["VolVCP"] < 1.15) & (res_df["Bias25"] < 0.07)
+        cond_slope = res_df["Slope20"] > -0.005
         cond_ret = res_df["ret10"].between(-0.05, 0.07)
         cond_vol = res_df["VolRatio"] < 1.2
 
-        logger.info(f"【条件別ヒット数】 AI確率＆収束フィルタ: {cond_prob.sum()}, 傾き(Slope>-0.003): {cond_slope.sum()}, 安定性(ret10): {cond_ret.sum()}, 出来高(静寂): {cond_vol.sum()}")
+        # 確率閾値の適用
+        cond_prob = (res_df["prob"] >= threshold)
+        
+        logger.info(f"【条件別ヒット数】 AI確率({threshold:.2f}以上): {cond_prob.sum()}, 傾き: {cond_slope.sum()}, 安定性: {cond_ret.sum()}, 出来高: {cond_vol.sum()}")
 
-        filtered = res_df[cond_prob & cond_slope & cond_ret & cond_vol].sort_values("EV", ascending=False)
+        filtered = res_df[cond_prob & cond_tech & cond_slope & cond_ret & cond_vol].sort_values("EV", ascending=False)
 
-        # 厳選フィルタで0件の場合、AI確率上位を「準候補」として救い出す（閾値を少し柔軟に）
+        # 厳選フィルタで0件の場合の救済ロジック修正
         if filtered.empty and not res_df.empty:
-            # AI確率の閾値を超えているが、テクニカルフィルタで落ちた銘柄を探す
-            potential_candidates = res_df[cond_prob].sort_values("prob", ascending=False).head(3).copy()
+            # 閾値に関わらず、テクニカル条件を満たしている確率上位3銘柄を「準候補」とする
+            potential_candidates = res_df[cond_tech & cond_slope].sort_values("prob", ascending=False).head(3).copy()
             
             if not potential_candidates.empty:
                 logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential_candidates)}件)を準候補として保持します。")
