@@ -167,8 +167,10 @@ class FeatureFactory:
         
         # 5日以内に5%以上の利確チャンスがあるか
         will_breakout = (future_gain >= 0.05)
+        # 5日以内に、現在の25日線（抵抗線）を上抜ける予測
+        will_cross_sma25 = (future_max > df["SMA25"])
 
-        df["Target"] = np.where(future_gain.notna(), (is_quiet & is_stable & will_breakout).astype(int), np.nan)
+        df["Target"] = np.where(future_gain.notna(), (is_quiet & is_stable & will_breakout & will_cross_sma25).astype(int), np.nan)
         return df
 
 # =========================================================
@@ -563,7 +565,7 @@ class StockScreener:
         res_df["ExpectedReturn"] = (
             res_df["ret20"].clip(-0.05, 0.15) 
             + (res_df["SlopeScore"] * 0.1)
-            - (res_df["Bias25"].clip(-0.2, 0.2) * 0.5) # 売られすぎているほどプラス評価
+            + (res_df["Bias25"].clip(0, 0.1) * 0.2) # 25日線の上で安定しているものを評価
         )
 
         # EV = AI確率 × 期待リターン × 出来高の静寂性
@@ -575,7 +577,8 @@ class StockScreener:
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {max_prob:.3f})")
 
         # 基本条件の定義（確率以外）
-        cond_tech = (res_df["VolVCP"] < 1.15) & (res_df["Bias25"] < 0.07)
+        # Bias25を -0.12 (12%下) まで許可し、低値からの上抜け候補を拾えるようにする
+        cond_tech = (res_df["VolVCP"] < 1.15) & (res_df["Bias25"].between(-0.12, 0.05))
         cond_slope = res_df["Slope20"] > -0.008 # わずかに緩和
         cond_ret = res_df["ret10"].between(-0.07, 0.08) # 安定性の幅を少し広げる
         cond_vol = res_df["VolRatio"] < 1.2
@@ -623,13 +626,13 @@ class StockScreener:
         # 【プロ視点】売り・警戒銘柄の検知ロジック
         # 1. RSIが75以上で反落開始 (買われすぎからの調整)
         # 2. MACDヒストグラムが負 (勢いの低下)
-        # 3. 重要な節目(SMA25)を割り込んだ (トレンド崩れ)
+        # 3. すでに25日線より上にいたものが、そこを3%以上割り込んだ場合（低値で買ったものは除外）
         # 4. 急激な陰線 (ボラティリティ・ストップ)
         cond_sell = (
             ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)) |  # 超買われすぎからの反落
             (res_df["MACD_Hist"] < 0) |                         # デッドクロス（勢いの低下）
-            (res_df["Close"] < res_df["SMA25"] * 0.97) |        # 25日線を3%以上明確に割り込み
-            (res_df["ret1"] < -0.05)                            # 5%以上の急落（ストップロス）
+            ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)) | # 明確な下抜け
+            (res_df["ret1"] < -0.05)                             # 5%以上の急落（ストップロス）
         )
         exit_candidates = res_df[cond_sell & (res_df["Slope10"] < 0.05)].sort_values("ret1", ascending=True)
 
