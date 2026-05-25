@@ -401,10 +401,10 @@ class StockScreener:
             return
         
         # 推論とランキング
-        buy_results, sell_results = self._inference(processed_data, current_threshold)
+        buy_results, sell_results, max_prob = self._inference(processed_data, current_threshold)
         
         # 結果通知
-        self._notify((buy_results, sell_results), symbols, is_market_good)
+        self._notify((buy_results, sell_results), symbols, is_market_good, max_prob)
 
     def _load_symbols(self) -> pd.DataFrame:
         """JPXの銘柄リストCSVを読み込み、対象とする市場（プライム等）で絞り込みます。"""
@@ -635,14 +635,14 @@ class StockScreener:
 
         logger.info(f"フィルタ最終通過: {len(filtered)} 銘柄")
 
-        return filtered.head(5), res_df[cond_sell & (res_df["Slope10"] < 0.05)].sort_values("ret1", ascending=True)
+        return filtered.head(5), res_df[cond_sell & (res_df["Slope10"] < 0.05)].sort_values("ret1", ascending=True), max_prob
 
-    def _notify(self, results: Tuple[pd.DataFrame, pd.DataFrame], symbols_df: pd.DataFrame, is_market_good: bool):
+    def _notify(self, results: Tuple[pd.DataFrame, pd.DataFrame], symbols_df: pd.DataFrame, is_market_good: bool, max_prob: float):
         """最終的なランキング結果を整形し、LINEへ送信します。"""
         buy_results, sell_results = results
         name_map = dict(zip(symbols_df["コード"] + ".T", symbols_df["銘柄名"]))
         
-        msg = ["【AI厳選銘柄ランキング】"]
+        msg = [f"【AI厳選銘柄ランキング】(最大確率: {max_prob:.1%})"]
         if not is_market_good:
             msg.append("（⚠️地合い弱気・厳選モード）")
 
