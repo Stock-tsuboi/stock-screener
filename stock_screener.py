@@ -576,26 +576,38 @@ class StockScreener:
         max_prob = res_df['prob'].max()
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {max_prob:.3f})")
 
+        # 【プロ視点】売り・警戒銘柄の検知ロジック (除外判定に使うため先に定義)
+        # 1. RSIが75以上で反落開始 (買われすぎからの調整)
+        # 2. MACDヒストグラムが負 (勢いの低下)
+        # 3. すでに25日線より上にいたものが、そこを3%以上割り込んだ場合
+        # 4. 急激な陰線
+        cond_sell = (
+            ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)) |  # 超買われすぎからの反落
+            (res_df["MACD_Hist"] < 0) |                         # デッドクロス（勢いの低下）
+            ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)) | # 明確な下抜け
+            (res_df["ret1"] < -0.05)                             # 5%以上の急落
+        )
+
         # 基本条件の定義（確率以外）
         # Bias25を -0.12 (12%下) まで許可し、低値からの上抜け候補を拾えるようにする
         cond_tech = (res_df["VolVCP"] < 1.15) & (res_df["Bias25"].between(-0.12, 0.05))
         cond_slope = res_df["Slope20"] > -0.008 # わずかに緩和
         cond_ret = res_df["ret10"].between(-0.07, 0.08) # 安定性の幅を少し広げる
         cond_vol = res_df["VolRatio"] < 1.2
-
         # 確率閾値の適用
         cond_prob = (res_df["prob"] >= threshold)
         
         logger.info(f"【条件別ヒット数】 AI確率({threshold:.2f}以上): {cond_prob.sum()}, 傾き: {cond_slope.sum()}, 安定性: {cond_ret.sum()}, 出来高: {cond_vol.sum()}")
 
-        filtered = res_df[cond_prob & cond_tech & cond_slope & cond_ret & cond_vol].sort_values("EV", ascending=False)
+        # 厳選候補からは、売りシグナルが出ているものを完全に除外する
+        filtered = res_df[cond_prob & cond_tech & cond_slope & cond_ret & cond_vol & ~cond_sell].sort_values("EV", ascending=False)
         if not filtered.empty:
             filtered["is_potential"] = False
 
         # 厳選フィルタで0件の場合の救済ロジック修正
         if filtered.empty and not res_df.empty:
-            # 確率が高い上位3銘柄を抽出（テクニカル条件 cond_tech は維持して、形が崩れすぎているものは除外）
-            potential_candidates = res_df[cond_tech].sort_values("prob", ascending=False).head(5).copy()
+            # 確率が高い上位3銘柄を抽出（ここでも売りシグナルが出ているものは除外）
+            potential_candidates = res_df[cond_tech & ~cond_sell].sort_values("prob", ascending=False).head(5).copy()
             
             if not potential_candidates.empty:
                 # 期待値の閾値を緩和 (-0.02 -> -0.05) し、地合いが悪くても上位を救済する
@@ -623,20 +635,7 @@ class StockScreener:
 
         logger.info(f"フィルタ最終通過: {len(filtered)} 銘柄")
 
-        # 【プロ視点】売り・警戒銘柄の検知ロジック
-        # 1. RSIが75以上で反落開始 (買われすぎからの調整)
-        # 2. MACDヒストグラムが負 (勢いの低下)
-        # 3. すでに25日線より上にいたものが、そこを3%以上割り込んだ場合（低値で買ったものは除外）
-        # 4. 急激な陰線 (ボラティリティ・ストップ)
-        cond_sell = (
-            ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)) |  # 超買われすぎからの反落
-            (res_df["MACD_Hist"] < 0) |                         # デッドクロス（勢いの低下）
-            ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)) | # 明確な下抜け
-            (res_df["ret1"] < -0.05)                             # 5%以上の急落（ストップロス）
-        )
-        exit_candidates = res_df[cond_sell & (res_df["Slope10"] < 0.05)].sort_values("ret1", ascending=True)
-
-        return filtered.head(5), exit_candidates
+        return filtered.head(5), res_df[cond_sell & (res_df["Slope10"] < 0.05)].sort_values("ret1", ascending=True)
 
     def _notify(self, results: Tuple[pd.DataFrame, pd.DataFrame], symbols_df: pd.DataFrame, is_market_good: bool):
         """最終的なランキング結果を整形し、LINEへ送信します。"""
