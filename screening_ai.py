@@ -464,12 +464,6 @@ def train_ai_model(all_data):
             df2["SlopeAccel"] = df2["Slope10"].diff().fillna(0)
             # ==============================
 
-            # =========================
-            # Step12-1：未来データ分を先に削除
-            # =========================
-            if len(df2) > 5:
-                df2 = df2.iloc[:-5]
-
             # TargetがNaNの行削除
             df2 = df2[df2["Target"].notna()]
             
@@ -596,10 +590,6 @@ def train_reg_model(all_data):
     
             # 未来リターン（教師データ）
             df2["future_ret5"] = df2["Close"].shift(-5) / df2["Close"] - 1
-    
-            # 未来データ削除
-            if len(df2) > 5:
-                df2 = df2.iloc[:-5]
     
             df2 = df2.replace([np.inf, -np.inf], np.nan)
     
@@ -956,12 +946,17 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
                 continue
 
             df_symbol.columns = [c.lower() for c in df_symbol.columns]
+            # 'date' カラムが存在しない場合、'index' を 'date' に変換を試みる
+            if "date" not in df_symbol.columns and "index" in df_symbol.columns:
+                df_symbol = df_symbol.rename(columns={"index": "date"})
 
             df_symbol["code"] = code
 
-            df_symbol = df_symbol[
-                ["code","date","open","high","low","close","volume"]
-            ]
+            required_cols = ["code","date","open","high","low","close","volume"]
+            if not set(required_cols).issubset(df_symbol.columns):
+                continue
+
+            df_symbol = df_symbol[required_cols]
 
             dfs.append(df_symbol)
 
