@@ -553,12 +553,12 @@ class StockScreener:
         """
         if not feature_dict:
             logger.error("特徴量データが空です。有効な株価データが不足している可能性があります。")
-            return pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), 0.0
 
         # モデルが正常に準備できていない場合のガード
         if self.model is None:
             logger.error("AIモデルが準備できていないため、推論をスキップします。")
-            return pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), 0.0
 
         symbols = list(feature_dict.keys())
         features = pd.DataFrame([feature_dict[s] for s in symbols])
