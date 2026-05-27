@@ -260,8 +260,19 @@ def create_features(df):
     df["ret5"] = df["Close"].pct_change(5)
     df["ret20"] = df["Close"].pct_change(20)
 
-    atr = (df["High"] - df["Low"]).rolling(14).mean()
+    # 標準的なTrue Rangeの計算
+    tr = pd.concat([
+        df["High"] - df["Low"],
+        (df["High"] - df["Close"].shift()).abs(),
+        (df["Low"] - df["Close"].shift()).abs()
+    ], axis=1).max(axis=1)
+    atr = tr.rolling(14).mean()
     df["atr_ratio"] = atr / df["Close"].replace(0, np.nan)
+    
+    # ボラティリティの収束 (VCP)
+    vol_short = df["Close"].pct_change().rolling(10).std()
+    vol_long = df["Close"].pct_change().rolling(60).std()
+    df["VolVCP"] = vol_short / (vol_long + 1e-9)
     
     # ===== AI学習ラベル（仕込み前 → 上昇検出型）=====
 
@@ -304,7 +315,8 @@ def create_features(df):
         "ret3",
         "ret5",
         "ret20",
-        "atr_ratio"
+        "atr_ratio",
+        "VolVCP"
     ]
 
     df = df.dropna(subset=["SMA75", "BB_STD"])
@@ -421,9 +433,18 @@ def create_features_fast(df):
         "ret5": close.pct_change(5).iloc[-1] if len(close) >= 5 else 0,
         "ret20": close.pct_change(20).iloc[-1] if len(close) >= 20 else 0,
         "atr_ratio": (
-            ((df["High"] - df["Low"]).rolling(14).mean().iloc[-1]) 
+            (pd.concat([
+                df["High"] - df["Low"],
+                (df["High"] - close.shift()).abs(),
+                (df["Low"] - close.shift()).abs()
+            ], axis=1).max(axis=1).rolling(14).mean().iloc[-1])
             / close.iloc[-1]
         ) if close.iloc[-1] != 0 else 0,
+        "VolVCP": (
+            (close.pct_change().rolling(10).std().iloc[-1] / 
+             (close.pct_change().rolling(60).std().iloc[-1] + 1e-9))
+            if len(close) >= 60 else 0
+        ),
     }
 
     return latest
@@ -627,7 +648,8 @@ def train_reg_model(all_data):
         "ret3",
         "ret5",
         "ret20",
-        "atr_ratio"
+        "atr_ratio",
+        "VolVCP"
     ]
     
     X = data[feature_cols].fillna(0)
