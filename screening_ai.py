@@ -556,12 +556,9 @@ def train_ai_model(all_data):
     # Step12-2：欠損はdropnaで除外
     # =========================
     X = data[feature_cols].fillna(0)
-    y = data["Target"]
-
     if "Target" not in data.columns:
         raise RuntimeError("Target列がありません")
-
-    y = data.loc[X.index, "Target"]
+    y = data["Target"]
 
     print(f"✔ 学習データ件数: {len(X)}")
 
