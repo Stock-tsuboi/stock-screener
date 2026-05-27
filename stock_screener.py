@@ -137,7 +137,6 @@ class FeatureFactory:
 
         # ATR比率
         tr = pd.concat([
-        tr = pd.concat([
             df["High"] - df["Low"],
             (df["High"] - close.shift()).abs(),
             (df["Low"] - close.shift()).abs()
