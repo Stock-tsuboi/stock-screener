@@ -11,6 +11,7 @@ import yfinance as yf
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional, Tuple, Any
 from joblib import Parallel, delayed
+from sklearn.model_selection import TimeSeriesSplit
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.calibration import CalibratedClassifierCV
 
@@ -162,15 +163,24 @@ class FeatureFactory:
         future_gain = future_max / df["Close"] - 1
         
         # 仕込み時の条件（現在が静かであること）
-        is_quiet = (df["VolRatio"] < 1.0) # 出来高が平均以下
-        is_stable = (df["ret5"].between(-0.05, 0.02)) # 5日間で暴騰も暴落もしていない
+        # 1. 急騰予兆パターン: 出来高が平均的で価格が安定
+        is_precursor = (df["VolRatio"] < 1.2) & (df["ret5"].between(-0.05, 0.02))
         
-        # 5日以内に5%以上の利確チャンスがあるか
+        # 2. トレンド継続パターン: すでに動き出しているが、過熱しすぎていない
+        is_trend = (df["VolRatio"].between(1.2, 2.0)) & (df["ret5"].between(0.02, 0.08)) & (df["Bias25"] < 0.10)
+        
+        # 未来のパフォーマンス条件
+        # A. 期間内最高値が5%以上上昇（利確チャンス）
         will_breakout = (future_gain >= 0.05)
-        # 5日以内に、現在の25日線（抵抗線）を上抜ける予測
-        will_cross_sma25 = (future_max > df["SMA25"])
+        # B. 5日後の終値が3%以上上昇（上昇の持続性）
+        future_close_gain = df["Close"].shift(-5) / df["Close"] - 1
+        will_hold = (future_close_gain >= 0.03)
 
-        df["Target"] = np.where(future_gain.notna(), (is_quiet & is_stable & will_breakout & will_cross_sma25).astype(int), np.nan)
+        # いずれかのセットアップ条件を満たし、かつ未来で上昇したものを正解とする
+        is_setup = is_precursor | is_trend
+
+        # 両方の条件を満たすものを「質の高い上昇」として学習させる
+        df["Target"] = np.where(future_gain.notna(), (is_setup & will_breakout & will_hold).astype(int), np.nan)
         return df
 
 # =========================================================
@@ -498,7 +508,8 @@ class StockScreener:
                 logger.error("学習に使用できる有効なデータがありませんでした。")
                 return False
 
-            full_train = pd.concat(training_dfs).dropna(subset=["Target"])
+            # 全銘柄を日付順にソートすることで、TimeSeriesSplitが「過去から未来」を正しく分割できるようにする
+            full_train = pd.concat(training_dfs).sort_index().dropna(subset=["Target"])
             X = full_train[self.factory.FEATURE_COLS]
             y = full_train["Target"]
 
@@ -517,7 +528,7 @@ class StockScreener:
             self.model = CalibratedClassifierCV(
                 estimator=base_model,
                 method="sigmoid",
-                cv=2  # 学習時間の短縮のため
+                cv=TimeSeriesSplit(n_splits=3) # 時系列を考慮し、検証回数を増やして精度向上
             )
             self.model.fit(X, y)
             joblib.dump(self.model, Config.MODEL_PATH)
@@ -562,16 +573,19 @@ class StockScreener:
         # SlopeScoreは正規化済みSlope10を使用
         res_df["SlopeScore"] = res_df["Slope10"].clip(-0.01, 0.01) * 100
         
-        res_df["ExpectedReturn"] = (
-            res_df["ret20"].clip(-0.05, 0.15) 
-            + (res_df["SlopeScore"] * 0.1)
-            + (res_df["Bias25"].clip(0, 0.1) * 0.2) # 25日線の上で安定しているものを評価
-        )
+        # --- リスクリワード中心の期待値(EV)計算 ---
+        # Risk (想定損失): ATR(14)の2倍を標準的な損切り幅として定義
+        res_df["RiskWidth"] = (res_df["atr_ratio"] * 2.0).clip(lower=0.03) # 最低3%は確保
+        
+        # Reward (想定利益): AIの勝率に基づき、最低5%〜最大15%程度の利幅を期待
+        res_df["RewardTarget"] = (0.05 + (res_df["prob"] * 0.10) + (res_df["SlopeScore"] * 0.05)).clip(lower=0.05)
 
-        # EV = AI確率 × 期待リターン × 出来高の静寂性
-        # SilenceScoreを乗算することで、出来高が急増している「飛びつき」を抑制し、仕込み銘柄を優先
+        # 本来の期待値公式: (P_win * Reward) - (P_loss * Risk)
+        res_df["EV_Raw"] = (res_df["prob"] * res_df["RewardTarget"]) - ((1.0 - res_df["prob"]) * res_df["RiskWidth"])
+
+        # 戦略的重み：出来高が静かなほど「仕込み」としての価値を高める（SilenceScore）
         res_df["SilenceScore"] = (2.0 - res_df["VolRatio"]).clip(0.5, 1.5) # 出来高が低いほどEVをブースト
-        res_df["EV"] = res_df["prob"] * res_df["ExpectedReturn"] * res_df["SilenceScore"]
+        res_df["EV"] = res_df["EV_Raw"] * res_df["SilenceScore"]
         
         max_prob = res_df['prob'].max()
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {max_prob:.3f})")
@@ -591,9 +605,9 @@ class StockScreener:
         # 基本条件の定義（確率以外）
         # Bias25を -0.12 (12%下) まで許可し、低値からの上抜け候補を拾えるようにする
         cond_tech = (res_df["VolVCP"] < 1.15) & (res_df["Bias25"].between(-0.12, 0.05))
-        cond_slope = res_df["Slope20"] > -0.008 # わずかに緩和
-        cond_ret = res_df["ret10"].between(-0.07, 0.08) # 安定性の幅を少し広げる
-        cond_vol = res_df["VolRatio"] < 1.2
+        cond_slope = res_df["Slope20"] > -0.005 # 下落トレンドを排除
+        cond_ret = res_df["ret10"].between(-0.07, 0.12) # 上昇中の銘柄も許容するため上限を緩和
+        cond_vol = res_df["VolRatio"] < 1.8 # 出来高が活発な銘柄も許容
         # 確率閾値の適用
         cond_prob = (res_df["prob"] >= threshold)
         
@@ -601,8 +615,14 @@ class StockScreener:
 
         # 厳選候補からは、売りシグナルが出ているものを完全に除外する
         filtered = res_df[cond_prob & cond_tech & cond_slope & cond_ret & cond_vol & ~cond_sell].sort_values("EV", ascending=False)
+
         if not filtered.empty:
             filtered["is_potential"] = False
+            # 銘柄タイプの判定
+            filtered["signal_type"] = np.where(
+                (filtered["VolRatio"] < 1.2) & (filtered["ret5"] < 0.02),
+                "急騰予兆", "トレンド継続"
+            )
 
         # 厳選フィルタで0件の場合の救済ロジック修正
         if filtered.empty and not res_df.empty:
@@ -629,6 +649,7 @@ class StockScreener:
                 summary_reason = " / ".join(list(set(potential_reasons)))
                 potential_candidates["summary_reason"] = summary_reason
                 potential_candidates["is_potential"] = True
+                potential_candidates["signal_type"] = "準候補"
                 
                 logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential_candidates)}件)を準候補として保持します。理由: {summary_reason}")
                 filtered = potential_candidates
@@ -664,8 +685,9 @@ class StockScreener:
                 # ATRに基づく損切り目安 (2 * ATR)
                 # atr_ratio は ATR / Close なので、Close * (1 - atr_ratio * 2) が損切り価格
                 stop_loss_price = row['Close'] * (1 - row['atr_ratio'] * 2)
+                sig_type = row.get("signal_type", "不明")
                 
-                msg.append(f"{i}位 {row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} (目安損切:{stop_loss_price:.1f})\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['Slope20']:.4f} Vol:{row['VolRatio']:.2f}")
+                msg.append(f"{i}位 【{sig_type}】\n  {row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} (目安損切:{stop_loss_price:.1f})\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['Slope20']:.4f} Vol:{row['VolRatio']:.2f}")
                 # ログに詳細な分析根拠を出力（Slope20に統一）
                 logger.info(f"分析詳細 {i}位: {row['symbol']} ({name}) - 確率: {row['prob']:.3f}, EV: {row['EV']:.3f}, 傾き(Slope20): {row['Slope20']:.4f}, 出来高比: {row['VolRatio']:.2f}")
 
