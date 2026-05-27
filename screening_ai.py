@@ -9,6 +9,8 @@ import numpy as np
 import pandas as pd
 import requests
 import duckdb
+from sklearn.model_selection import TimeSeriesSplit
+from sklearn.calibration import CalibratedClassifierCV
 from joblib import Parallel, delayed
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.ensemble import RandomForestRegressor
@@ -488,7 +490,7 @@ def train_ai_model(all_data):
 
     print(f"✔ 学習対象銘柄数: {used_symbols}")
 
-    data = pd.concat(dfs, ignore_index=True)
+    data = pd.concat(dfs).sort_index()
 
     # =====================================================
     # ★安全補完（Slope系の欠損対策・統一）
@@ -547,7 +549,7 @@ def train_ai_model(all_data):
 
     print("RandomForest 学習開始...")
 
-    model = RandomForestClassifier(
+    base_model = RandomForestClassifier(
         n_estimators=300,
         max_depth=10,
         min_samples_split=5,
@@ -557,6 +559,11 @@ def train_ai_model(all_data):
         n_jobs=-1
     )
 
+    model = CalibratedClassifierCV(
+        estimator=base_model,
+        method="sigmoid",
+        cv=TimeSeriesSplit(n_splits=3)
+    )
     model.fit(X, y)
 
     print("✔ 学習完了")
@@ -604,7 +611,7 @@ def train_reg_model(all_data):
         print("⚠ 回帰データなし")
         return None
     
-    data = pd.concat(dfs, ignore_index=True)
+    data = pd.concat(dfs).sort_index()
     
     feature_cols = [
         "SMA5","SMA25","SMA75",
@@ -1747,11 +1754,7 @@ def run_screening():
         if model_new is None:
             print("AI学習スキップ → 既存モデルを使用")
             if os.path.exists(MODEL_PATH):
-                loaded = joblib.load(MODEL_PATH)
-                if isinstance(loaded, tuple):
-                    model_new, feature_cols = loaded
-                else:
-                    model_new = loaded
+                model_new, feature_cols = joblib.load(MODEL_PATH)
             else:
                 print("❌ モデルが存在しないため処理終了")
                 return
