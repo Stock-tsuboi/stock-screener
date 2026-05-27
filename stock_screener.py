@@ -109,7 +109,7 @@ class FeatureFactory:
         # 短期のボラティリティが長期に対して低下しているか（＝エネルギーが溜まっているか）
         vol_short = close.pct_change().rolling(10).std()
         vol_long = close.pct_change().rolling(60).std()
-        df["VolVCP"] = vol_short / vol_long.replace(0, np.nan)
+        df["VolVCP"] = vol_short / (vol_long + 1e-9)
 
         # RSI (14日間)
         delta = close.diff()
@@ -136,7 +136,13 @@ class FeatureFactory:
         df["SlopeAccel"] = df["Slope10"].diff()
 
         # ATR比率
-        atr = (df["High"] - df["Low"]).rolling(14).mean()
+        tr = pd.concat([
+        tr = pd.concat([
+            df["High"] - df["Low"],
+            (df["High"] - close.shift()).abs(),
+            (df["Low"] - close.shift()).abs()
+        ], axis=1).max(axis=1)
+        atr = tr.rolling(14).mean()
         df["atr_ratio"] = atr / close.replace(0, np.nan)
 
         # ローソク足
@@ -440,12 +446,12 @@ class StockScreener:
         
         now_jst = datetime.now(timezone.utc) + timedelta(hours=9)
         
-        # 9:00〜9:05の間は価格が極めて不安定なため、当日データが含まれている場合はそれを除外して前日ベースで判定する
-        if now_jst.hour == 9 and now_jst.minute < 5:
+        # 9:00〜9:15の間は価格が極めて不安定（寄り付きノイズ）なため、当日データが含まれている場合は除外
+        if now_jst.hour == 9 and now_jst.minute < 15:
             if df.index[-1].date() == now_jst.date():
                 df = df.iloc[:-1]
-        # 9:05以降の9時台は、始値を暫定的な終値として扱うことで、寄り付きの勢いを反映させる（既存ロジックの改善）
-        elif now_jst.hour == 9 and df.index[-1].date() == now_jst.date():
+        # 9:15以降の9時台は、始値を暫定的な終値として扱うことで、寄り付き後の勢いを反映させる
+        elif now_jst.hour == 9 and now_jst.minute >= 15 and df.index[-1].date() == now_jst.date():
             df.iloc[-1, df.columns.get_loc("Close")] = df.iloc[-1, df.columns.get_loc("Open")]
 
         feat_df = self.factory.calculate_metrics(df)
@@ -541,7 +547,7 @@ class StockScreener:
                 return False
         return self.model is not None
 
-    def _inference(self, feature_dict: Dict, threshold: float) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    def _inference(self, feature_dict: Dict, threshold: float) -> Tuple[pd.DataFrame, pd.DataFrame, float]:
         """
         最新の指標データに基づいてAIが「上昇確率」を予測します。
         確率が高い銘柄に対し、期待値（EV）を計算してランキングを作成します。
