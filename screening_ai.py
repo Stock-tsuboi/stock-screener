@@ -550,7 +550,8 @@ def train_ai_model(all_data):
         "ret20",
     
         # ===== リスク =====
-        "atr_ratio"
+        "atr_ratio",
+        "VolVCP"
     ]
     # =========================
     # Step12-2：欠損はdropnaで除外
