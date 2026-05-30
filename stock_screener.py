@@ -57,6 +57,11 @@ class Config:
     RETRAIN_DAYS = 7
     THRESHOLD_STRICT = 0.48  # 地合いが悪い時
     THRESHOLD_NORMAL = 0.42  # 標準（ログの0.44に合わせて少し緩和）
+    TRAILING_STOP_ATR_MULT = 2.5  # ATRの何倍下落したらトレールストップを発動するか（推奨: 2.0-3.0）
+    
+    PORTFOLIO_SIZE = 30000    # 運用予算（S株/少額運用 3万円）
+    RISK_PER_TRADE = 0.05     # 1トレードの許容損失（資金の5%：3万円なら1500円まで）
+    MAX_HOLDING_DAYS = 10     # タイムストップ（10日間動かなければ撤退）
 
 # =========================================================
 # Feature Engineering (Unified)
@@ -618,7 +623,10 @@ class StockScreener:
         
         logger.info(f"【条件別ヒット数】 AI確率({threshold:.2f}以上): {cond_prob.sum()}, 傾き: {cond_slope.sum()}, 安定性: {cond_ret.sum()}, 出来高: {cond_vol.sum()}")
 
-        # 厳選候補からは、売りシグナルが出ているものを完全に除外する
+        # 売りシグナルフラグを付与
+        res_df["is_sell_signal"] = cond_sell & (res_df["Slope10"] < 0.05)
+
+        # 厳選候補からは、売りシグナルが出ているものを除外する
         filtered = res_df[cond_prob & cond_tech & cond_slope & cond_ret & cond_vol & ~cond_sell].sort_values("EV", ascending=False)
 
         if not filtered.empty:
@@ -661,7 +669,7 @@ class StockScreener:
 
         logger.info(f"フィルタ最終通過: {len(filtered)} 銘柄")
 
-        return filtered.head(5), res_df[cond_sell & (res_df["Slope10"] < 0.05)].sort_values("ret1", ascending=True), max_prob
+        return filtered.head(5), res_df, max_prob
 
     def _notify(self, results: Tuple[pd.DataFrame, pd.DataFrame], symbols_df: pd.DataFrame, is_market_good: bool, max_prob: float):
         """最終的なランキング結果を整形し、LINEへ送信します。"""
@@ -686,39 +694,83 @@ class StockScreener:
         if not buy_results.empty:
             for i, (_, row) in enumerate(buy_results.iterrows(), 1):
                 name = name_map.get(row['symbol'], "不明")
-                
+
+                # ポジションサイジングの計算
+                # リスク額 = 総資金 * リスク率（地合いが悪い時は半分に）
+                risk_amount = Config.PORTFOLIO_SIZE * (Config.RISK_PER_TRADE if is_market_good else Config.RISK_PER_TRADE * 0.5)
+                # 損切り幅 = Close * (atr_ratio * ATR_MULT) ※ボラティリティに応じたリスク許容
+                stop_width = row['Close'] * (row['atr_ratio'] * Config.TRAILING_STOP_ATR_MULT)
+                # 推奨株数（S株対応：1株単位）
+                # 予算内で買える最大数と、リスク管理上の推奨数の小さい方を採用
+                recommended_units = max(1, int(min(risk_amount / stop_width, Config.PORTFOLIO_SIZE / row['Close'])))
+
                 # ATRに基づく損切り目安 (2 * ATR)
-                # atr_ratio は ATR / Close なので、Close * (1 - atr_ratio * 2) が損切り価格
                 stop_loss_price = row['Close'] * (1 - row['atr_ratio'] * 2)
                 sig_type = row.get("signal_type", "不明")
                 
-                msg.append(f"{i}位 【{sig_type}】\n  {row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} (目安損切:{stop_loss_price:.1f})\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}\n  Slope:{row['Slope20']:.4f} Vol:{row['VolRatio']:.2f}")
-                # ログに詳細な分析根拠を出力（Slope20に統一）
-                logger.info(f"分析詳細 {i}位: {row['symbol']} ({name}) - 確率: {row['prob']:.3f}, EV: {row['EV']:.3f}, 傾き(Slope20): {row['Slope20']:.4f}, 出来高比: {row['VolRatio']:.2f}")
+                msg.append(f"{i}位 【{sig_type}】\n  {row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} (損切:{stop_loss_price:.1f})\n  S株推奨:{recommended_units}株\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}")
 
         # --- 過去の推奨銘柄の管理ロジック ---
         # 実行環境のタイムゾーンに依らず日本時間(JST)で日付を管理します。
         jst = timezone(timedelta(hours=9))
         today_jst = datetime.now(jst).date()
 
-        history_df = pd.DataFrame(columns=["date", "symbol"])
+        # 履歴の読み込み（最高値とエントリー価格を管理）
+        history_df = pd.DataFrame(columns=["date", "symbol", "highest_price", "entry_price"])
         if os.path.exists(Config.HISTORY_PATH):
             try:
                 history_df = pd.read_csv(Config.HISTORY_PATH)
                 history_df["date"] = pd.to_datetime(history_df["date"]).dt.date
+                # 必要なカラムが不足している場合の補完
+                if "highest_price" not in history_df.columns:
+                    history_df["highest_price"] = np.nan
+                if "entry_price" not in history_df.columns:
+                    history_df["entry_price"] = np.nan
             except Exception as e:
                 logger.error(f"履歴ファイルの読み込みに失敗しました: {e}")
         
         # 監視対象：本日より前に推奨された銘柄のみを抽出
         sell_results_for_notified_buys = pd.DataFrame()
-        if not history_df.empty:
-            # 本日分を追加する前のリストで売り判定を行う
-            monitored_symbols = set(history_df[history_df["date"] < today_jst]['symbol'].tolist())
-            sell_results_for_notified_buys = sell_results[sell_results['symbol'].isin(monitored_symbols)]
+        if not history_df.empty and not sell_results.empty:
+            mask = history_df["date"] < today_jst
+            monitored_symbols = history_df.loc[mask, "symbol"].tolist()
+            
+            # 現在の情報を抽出
+            current_info = sell_results[sell_results['symbol'].isin(monitored_symbols)][
+                ['symbol', 'Close', 'is_sell_signal', 'RSI', 'ret1', 'SMA25', 'MACD_Hist', 'atr_ratio']
+            ]
+            
+            # 履歴データとマージ
+            merged_monitored = history_df[mask].merge(current_info, on='symbol', how='inner')
+            
+            if not merged_monitored.empty:
+                # 最高値の更新
+                merged_monitored['highest_price'] = merged_monitored[['highest_price', 'Close']].max(axis=1)
+                
+                # タイムストップ判定（保有日数の計算）
+                merged_monitored['holding_days'] = (today_jst - merged_monitored['date']).apply(lambda x: x.days)
+                merged_monitored['is_time_stop'] = merged_monitored['holding_days'] >= Config.MAX_HOLDING_DAYS
+                
+                # 動的トレールストップ判定（ATRに基づく）
+                merged_monitored['dynamic_stop_ratio'] = (merged_monitored['atr_ratio'] * Config.TRAILING_STOP_ATR_MULT).clip(0.04, 0.12)
+                merged_monitored['is_trailing_stop'] = merged_monitored['Close'] < merged_monitored['highest_price'] * (1 - merged_monitored['dynamic_stop_ratio'])
+                
+                # 売り条件の統合（静的シグナル or トレール or タイムストップ）
+                merged_monitored['should_sell'] = merged_monitored['is_sell_signal'] | merged_monitored['is_trailing_stop'] | merged_monitored['is_time_stop']
+                sell_results_for_notified_buys = merged_monitored[merged_monitored['should_sell']]
+                
+                # 履歴側の最高値を更新して保存に備える
+                for _, row in merged_monitored.iterrows():
+                    history_df.loc[(history_df['symbol'] == row['symbol']) & (history_df['date'] == row['date']), 'highest_price'] = row['highest_price']
 
         # 本日の新規推奨銘柄を履歴に追加
         if not buy_results.empty:
-            new_history = pd.DataFrame({"date": [today_jst] * len(buy_results), "symbol": buy_results["symbol"].tolist()})
+            new_history = pd.DataFrame({
+                "date": [today_jst] * len(buy_results), 
+                "symbol": buy_results["symbol"].tolist(),
+                "highest_price": buy_results["Close"].tolist(),
+                "entry_price": buy_results["Close"].tolist()
+            })
             history_df = pd.concat([history_df, new_history]).drop_duplicates(subset=["date", "symbol"])
 
         if not sell_results_for_notified_buys.empty:
@@ -730,7 +782,9 @@ class StockScreener:
                 
                 # 理由の特定
                 reason = "トレンド転換"
-                if row["ret1"] < -0.05: reason = f"急落(前日比{row['ret1']:.1%})"
+                if row.get("is_time_stop"): reason = f"タイムストップ({Config.MAX_HOLDING_DAYS}日経過)"
+                elif row.get("is_trailing_stop"): reason = f"トレール下落({row['dynamic_stop_ratio']:.1%})"
+                elif row["ret1"] < -0.05: reason = f"急落(前日比{row['ret1']:.1%})"
                 elif row["RSI"] > 80: reason = f"買われすぎ(RSI:{row['RSI']:.0f})"
                 elif row["Close"] < row["SMA25"] * 0.97: reason = f"25日線割れ({row['SMA25']:.1f})"
                 elif row["MACD_Hist"] < 0: reason = "勢い低下"
