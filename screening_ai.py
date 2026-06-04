@@ -281,6 +281,10 @@ def create_features(df):
     indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=5)
     future_max = df["High"].shift(-1).rolling(window=indexer, min_periods=5).max()
     future_gain = future_max / df["Close"] - 1
+
+    # 逆行リスクの計算
+    future_min = df["Low"].shift(-1).rolling(window=indexer, min_periods=5).min()
+    future_drawdown = future_min / df["Close"] - 1
     
     # ===== 現在の状態 =====
     current_ret5 = df["Close"] / df["Close"].shift(5) - 1
@@ -300,7 +304,8 @@ def create_features(df):
             (current_vol_ratio < 0.9) &   # 出来高静寂
     
             # ===== 未来：上昇 =====
-            (future_gain >= 0.05)         # 5日以内に5%以上の利確チャンスあり
+            (future_gain >= 0.05) &       # 5%以上の利益
+            (future_drawdown > -0.025)    # 逆行2.5%以内（クリーンな上昇）
         ).astype(int),
         np.nan
     )
