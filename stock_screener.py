@@ -149,6 +149,10 @@ class FeatureFactory:
         atr = tr.rolling(14).mean()
         df["atr_ratio"] = atr / close.replace(0, np.nan)
 
+        # 市場連動性（β）の簡易代用として日経平均の移動平均乖離などを入れるのが理想ですが
+        # ここでは個別銘柄の「直近の勢いの変化」を強調します
+        df["Momentum_Change"] = df["ret1"] - df["ret5"] / 5
+
         # ローソク足
         df["Bull"] = (close > df["Open"]).astype(int)
         df["BigBull"] = ((close - df["Open"]) / df["Open"].replace(0, np.nan) > 0.03).astype(int)
@@ -189,8 +193,8 @@ class FeatureFactory:
         # B. 5日後の終値が3%以上上昇（上昇の持続性）
         future_close_gain = df["Close"].shift(-5) / df["Close"] - 1
         will_hold = (future_close_gain >= 0.03)
-        # C. 【重要】逆行リスクの排除（利確前に-2.5%以上の下落がないこと）
-        is_clean_move = (future_drawdown > -0.025)
+        # C. 【改善】逆行リスクをATRの1.5倍までに緩和（一律2.5%は厳しすぎた）
+        is_clean_move = (future_drawdown > -(df["atr_ratio"] * 1.5).fillna(0.025))
 
         # いずれかのセットアップ条件を満たし、かつ未来で上昇したものを正解とする
         is_setup = is_precursor | is_trend
