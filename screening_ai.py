@@ -305,7 +305,7 @@ def create_features(df):
     
             # ===== 未来：上昇 =====
             (future_gain >= 0.05) &       # 5%以上の利益
-            (future_drawdown > -0.025)    # 逆行2.5%以内（クリーンな上昇）
+            (future_drawdown > -(df["atr_ratio"] * 1.5).fillna(0.025)) # ボラに応じた逆行許容
         ).astype(int),
         np.nan
     )
