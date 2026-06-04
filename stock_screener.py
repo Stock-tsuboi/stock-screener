@@ -172,6 +172,10 @@ class FeatureFactory:
         future_max = df["High"].shift(-1).rolling(window=indexer, min_periods=5).max()
         future_gain = future_max / df["Close"] - 1
         
+        # 未来の最大ドローダウン（明日から5日間の安値）
+        future_min = df["Low"].shift(-1).rolling(window=indexer, min_periods=5).min()
+        future_drawdown = future_min / df["Close"] - 1
+
         # 仕込み時の条件（現在が静かであること）
         # 1. 急騰予兆パターン: 出来高が平均的で価格が安定
         is_precursor = (df["VolRatio"] < 1.2) & (df["ret5"].between(-0.05, 0.02))
@@ -185,12 +189,14 @@ class FeatureFactory:
         # B. 5日後の終値が3%以上上昇（上昇の持続性）
         future_close_gain = df["Close"].shift(-5) / df["Close"] - 1
         will_hold = (future_close_gain >= 0.03)
+        # C. 【重要】逆行リスクの排除（利確前に-2.5%以上の下落がないこと）
+        is_clean_move = (future_drawdown > -0.025)
 
         # いずれかのセットアップ条件を満たし、かつ未来で上昇したものを正解とする
         is_setup = is_precursor | is_trend
 
         # 両方の条件を満たすものを「質の高い上昇」として学習させる
-        df["Target"] = np.where(future_gain.notna(), (is_setup & will_breakout & will_hold).astype(int), np.nan)
+        df["Target"] = np.where(future_gain.notna(), (is_setup & will_breakout & will_hold & is_clean_move).astype(int), np.nan)
         return df
 
 # =========================================================
@@ -608,6 +614,7 @@ class StockScreener:
         cond_sell = (
             ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)) |  # 超買われすぎからの反落
             (res_df["MACD_Hist"] < 0) |                         # デッドクロス（勢いの低下）
+            (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2) |   # ボリンジャーバンド標準偏差の20%を超える明確な勢い低下
             ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)) | # 明確な下抜け
             (res_df["ret1"] < -0.05)                             # 5%以上の急落
         )
@@ -753,6 +760,7 @@ class StockScreener:
                 
                 # 動的トレールストップ判定（ATRに基づく）
                 merged_monitored['dynamic_stop_ratio'] = (merged_monitored['atr_ratio'] * Config.TRAILING_STOP_ATR_MULT).clip(0.04, 0.12)
+                merged_monitored['dynamic_stop_ratio'] = (merged_monitored['atr_ratio'] * Config.TRAILING_STOP_ATR_MULT).clip(0.05, 0.15)
                 merged_monitored['is_trailing_stop'] = merged_monitored['Close'] < merged_monitored['highest_price'] * (1 - merged_monitored['dynamic_stop_ratio'])
                 
                 # 売り条件の統合（静的シグナル or トレール or タイムストップ）
