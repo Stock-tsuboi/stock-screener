@@ -3,12 +3,14 @@
 # =========================================================
 import os
 import time
+import logging
 from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd
 import requests
 import duckdb
+import yfinance as yf
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.calibration import CalibratedClassifierCV
 from joblib import Parallel, delayed
@@ -19,6 +21,11 @@ from sklearn.linear_model import LinearRegression
 import joblib
 import warnings
 warnings.filterwarnings("ignore")
+
+# yfinanceの内部ログ出力（404エラーや上場廃止銘柄の警告、サマリー表示など）を抑制
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+# キャッシュディレクトリをカレントディレクトリに固定して警告を回避
+yf.set_tz_cache_location(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache"))
 
 # =========================================================
 # Step0-2　LINE送信関数（環境変数版）
@@ -902,9 +909,6 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
 
     print("DuckDBバッチ更新開始...")
 
-    import yfinance as yf
-    import duckdb
-
     conn = duckdb.connect(DB_PATH)
 
     # --- テーブル保証（既存DBを壊さない） ---
@@ -1020,10 +1024,7 @@ def update_duckdb_from_yfinance(symbols, retrain=False):
 # =========================================================
 def update_one_symbol(code):
 
-    import duckdb
-    import yfinance as yf
     from datetime import timedelta
-
     conn = duckdb.connect(DB_PATH)
 
     last_date = conn.execute("""
