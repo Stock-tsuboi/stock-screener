@@ -24,6 +24,8 @@ warnings.filterwarnings("ignore")
 
 # yfinanceの内部ログ出力（404エラーや上場廃止銘柄の警告、サマリー表示など）を抑制
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+logging.getLogger('urllib3').setLevel(logging.CRITICAL)
+logging.getLogger('requests').setLevel(logging.CRITICAL)
 # キャッシュディレクトリをカレントディレクトリに固定して警告を回避
 yf.set_tz_cache_location(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache"))
 
