@@ -677,7 +677,7 @@ class StockScreener:
                 potential_candidates["is_potential"] = True
                 potential_candidates["signal_type"] = "準候補"
                 
-                logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential_candidates)}件)を準候補として保持します。理由: {summary_reason}")
+                logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential_candidates)}件)を準候補として保持します。理由: {main_reason}")
                 filtered = potential_candidates
             else:
                 logger.info("救済対象となる高確率銘柄も期待値が低すぎるため、該当なしとします。")
