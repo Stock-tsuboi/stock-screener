@@ -654,15 +654,17 @@ class StockScreener:
             potential_candidates = res_df[cond_tech & ~cond_sell].sort_values("prob", ascending=False).head(5).copy()
             
             if not potential_candidates.empty:
-                # 期待値の閾値を緩和 (-0.02 -> -0.05) し、地合いが悪くても上位を救済する
-                potential_candidates = potential_candidates[potential_candidates["EV"] > -0.05].head(3)
-                
+                # 期待値が一定基準を満たすもののみに絞り込み（緩和せず -0.05 を維持）
+                potential_candidates = potential_candidates[potential_candidates["EV"] > -0.05].head(3).copy()
+
+            # 期待値フィルタ後も残っている場合のみ「準候補」として扱う
+            if not potential_candidates.empty:
                 potential_reasons = []
                 for idx, row in potential_candidates.iterrows():
                     reasons = []
                     if row["prob"] < threshold: reasons.append("確率不足")
-                    if row["Slope20"] <= -0.008: reasons.append("傾き不足")
-                    if not (-0.07 <= row["ret10"] <= 0.08): reasons.append("安定性不足")
+                    if row["Slope20"] <= -0.005: reasons.append("傾き不足")
+                    if not (-0.07 <= row["ret10"] <= 0.08): reasons.append("推移不安定")
                     if row["VolRatio"] >= 1.2: reasons.append("出来高過多")
                     
                     reason_text = "、".join(reasons) if reasons else "基準未達"
@@ -677,6 +679,8 @@ class StockScreener:
                 
                 logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential_candidates)}件)を準候補として保持します。理由: {summary_reason}")
                 filtered = potential_candidates
+            else:
+                logger.info("救済対象となる高確率銘柄も期待値が低すぎるため、該当なしとします。")
 
         logger.info(f"フィルタ最終通過: {len(filtered)} 銘柄")
 
@@ -691,10 +695,12 @@ class StockScreener:
         if not is_market_good:
             msg.append("（⚠️地合い弱気・厳選モード）")
 
-        # 厳選（メイン）の該当がない場合（空、または準候補による救済のみの場合）は、準候補の有無に関わらず「該当なし」を表示
-        is_potential_rescue = not buy_results.empty and "is_potential" in buy_results.columns and buy_results["is_potential"].any()
-        if buy_results.empty or is_potential_rescue:
-            msg.append("該当なし")
+        is_potential_rescue = not buy_results.empty and buy_results.get("is_potential", pd.Series([False]*len(buy_results))).any()
+
+        if buy_results.empty:
+            msg.append("厳選・準候補ともに該当なし")
+        elif is_potential_rescue:
+            msg.append("厳選基準の該当なし")
 
         # 準候補（フィルタ落ちだが高確率）がある場合のヘッダー追加
         if is_potential_rescue:
