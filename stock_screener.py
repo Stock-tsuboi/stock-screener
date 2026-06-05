@@ -650,30 +650,30 @@ class StockScreener:
 
         # 厳選フィルタで0件の場合の救済ロジック修正
         if filtered.empty and not res_df.empty:
-            # 確率が高い上位3銘柄を抽出（ここでも売りシグナルが出ているものは除外）
-            potential_candidates = res_df[cond_tech & ~cond_sell].sort_values("prob", ascending=False).head(5).copy()
+            # 確率が高い上位銘柄を抽出（ここでも最低限のテクニカルと売りサインなしを確認）
+            potential_candidates = res_df[cond_tech & ~cond_sell].sort_values("prob", ascending=False).head(3).copy()
             
             if not potential_candidates.empty:
                 # 期待値が一定基準を満たすもののみに絞り込み（緩和せず -0.05 を維持）
-                potential_candidates = potential_candidates[potential_candidates["EV"] > -0.05].head(3).copy()
+                potential_candidates = potential_candidates[potential_candidates["EV"] > -0.05]
 
-            # 期待値フィルタ後も残っている場合のみ「準候補」として扱う
             if not potential_candidates.empty:
-                potential_reasons = []
+                # 各銘柄の除外理由を特定
+                summary_reasons = []
                 for idx, row in potential_candidates.iterrows():
-                    reasons = []
-                    if row["prob"] < threshold: reasons.append("確率不足")
-                    if row["Slope20"] <= -0.005: reasons.append("傾き不足")
-                    if not (-0.07 <= row["ret10"] <= 0.08): reasons.append("推移不安定")
-                    if row["VolRatio"] >= 1.2: reasons.append("出来高過多")
+                    r = []
+                    if row["prob"] < threshold: r.append("確率不足")
+                    if row["Slope20"] <= -0.005: r.append("トレンド弱")
+                    if not (-0.07 <= row["ret10"] <= 0.08): r.append("不安定")
+                    if row["VolRatio"] >= 1.2: r.append("出来高過多")
                     
-                    reason_text = "、".join(reasons) if reasons else "基準未達"
-                    potential_candidates.loc[idx, "potential_reason"] = reason_text
-                    potential_reasons.append(reason_text)
+                    reason_text = "、".join(r) if r else "基準未達"
+                    potential_candidates.at[idx, "potential_reason"] = reason_text
+                    summary_reasons.append(reason_text)
 
-                # 重複を排除して代表的な理由を作成
-                summary_reason = " / ".join(list(set(potential_reasons)))
-                potential_candidates["summary_reason"] = summary_reason
+                # 全体的な傾向としての理由
+                main_reason = " / ".join(list(set(summary_reasons)))
+                potential_candidates["summary_reason"] = main_reason
                 potential_candidates["is_potential"] = True
                 potential_candidates["signal_type"] = "準候補"
                 
@@ -770,7 +770,6 @@ class StockScreener:
                 
                 # 動的トレールストップ判定（ATRに基づく）
                 merged_monitored['dynamic_stop_ratio'] = (merged_monitored['atr_ratio'] * Config.TRAILING_STOP_ATR_MULT).clip(0.04, 0.12)
-                merged_monitored['dynamic_stop_ratio'] = (merged_monitored['atr_ratio'] * Config.TRAILING_STOP_ATR_MULT).clip(0.05, 0.15)
                 merged_monitored['is_trailing_stop'] = merged_monitored['Close'] < merged_monitored['highest_price'] * (1 - merged_monitored['dynamic_stop_ratio'])
                 
                 # 売り条件の統合（静的シグナル or トレール or タイムストップ）
