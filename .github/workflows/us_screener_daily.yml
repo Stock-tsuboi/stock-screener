@@ -20,12 +20,16 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Download existing artifacts
-        uses: actions/download-artifact@v4
+      - name: Restore Market Data Cache
+        uses: actions/cache@v4
         with:
-          name: us-screener-artifacts
-          path: .
-        continue-on-error: true
+          path: |
+            us_market.db
+            us_model_v2.pkl
+            us_recommendation_history.csv
+          key: us-screener-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            us-screener-${{ runner.os }}-
 
       - name: Ensure us_stocks.csv exists
         run: |
@@ -38,13 +42,3 @@ jobs:
           LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python us_stock_screener.py
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: us-screener-artifacts
-          path: |
-            us_model_v2.pkl
-            us_market.db
-            us_recommendation_history.csv
-          if-no-files-found: ignore
