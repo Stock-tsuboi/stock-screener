@@ -1,0 +1,33 @@
+name: Update US Stocks List
+
+on:
+  schedule:
+    # 毎週日曜日の午前0時 (UTC) に実行
+    # 日本時間では毎週日曜日の午前9時
+    - cron: '0 0 * * SUN'
+  workflow_dispatch: # 手動実行を可能にする
+
+jobs:
+  update-list:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.9' # または使用しているPythonバージョン
+
+    - name: Install dependencies
+      run: pip install -r requirements.txt
+
+    - name: Run script to generate us_stocks.csv
+      run: python generate_us_stocks.py
+
+    - name: Commit and push changes
+      uses: stefanzweifel/git-auto-commit-action@v5
+      with:
+        commit_message: "Update us_stocks.csv (automated)"
+        file_pattern: "us_stocks.csv"
