@@ -8,6 +8,10 @@ on:
 jobs:
   update-list:
     runs-on: ubuntu-latest
+    # リポジトリへの書き込み権限を明示的に許可
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,7 +22,7 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: pip install pandas lxml requests
+        run: pip install pandas requests
 
       - name: Run script
         run: python generate_us_stocks.py
