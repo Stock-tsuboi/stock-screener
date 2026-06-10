@@ -18,7 +18,7 @@ jobs:
           python-version: '3.9'
 
       - name: Install dependencies
-        run: pip install pandas lxml
+        run: pip install pandas requests
 
       - name: Run script
         run: python generate_us_stocks.py
