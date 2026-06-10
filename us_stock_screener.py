@@ -208,7 +208,11 @@ class DatabaseManager:
                     dfs_to_insert = []
                     for ticker in batch:
                         if ticker not in df.columns.get_level_values(0): continue
-                        df_s = df[ticker].dropna().reset_index()
+                        df_s = df[ticker].dropna()
+                        # yfinanceが返すAdj Close列を削除して列数をDBに合わせる
+                        if "Adj Close" in df_s.columns:
+                            df_s = df_s.drop(columns=["Adj Close"])
+                        df_s = df_s.reset_index()
                         if df_s.empty: continue
                         df_s.columns = ["date", "open", "high", "low", "close", "volume"]
                         df_s["code"] = ticker
@@ -221,7 +225,7 @@ class DatabaseManager:
                         conn.unregister("tmp_df")
                     time.sleep(0.5)
                 except Exception as e:
-                    logger.error(f"Batch download error: {e}")
+                    logger.error(f"Batch {ticker} error: {e}")
 
     def load_all_data(self, symbols_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         tickers = symbols_df["Ticker"].tolist()
@@ -278,8 +282,7 @@ class USStockScreener:
         
         # 米国市場時間(ET)の判定。簡易的にUTCからのオフセットで計算（サマータイム非考慮の例）
         now_utc = datetime.now(timezone.utc)
-        # 米国のサマータイム（3月第2日曜〜11月第1日曜）を簡易的に判定
-        # より正確には月日を確認すべきですが、3月〜10月を夏時間(UTC-4)、それ以外を標準時(UTC-5)と近似します
+        # 米国のサマータイム（3月〜11月）を考慮
         is_dst = 3 <= now_utc.month <= 10
         now_et = now_utc - timedelta(hours=4 if is_dst else 5)
         
