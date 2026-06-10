@@ -2,64 +2,49 @@ name: US Stock Screener Daily Run
 
 on:
   schedule:
-    # 毎日22時 (UTC) に実行
-    # 米国東部時間(ET)の午後6時、市場閉場後
-    # 日本時間では翌日の午前7時
-    - cron: '0 22 * * *'
-  workflow_dispatch: # 手動実行を可能にする
+    - cron: '0 22 * * *' # 毎日 UTC 22:00 (ET 18:00 / JST 7:00)
+  workflow_dispatch:
 
 jobs:
   run-screener:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.9' # または使用しているPythonバージョン
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
 
-    - name: Install dependencies
-      run: pip install -r requirements.txt
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-    - name: Download existing artifacts (model, db, history)
-      uses: actions/download-artifact@v4
-      with:
-        name: us-screener-artifacts
-        path: .
-        # artifactsがまだ存在しない場合でもエラーにしない
-        # GitHub Actionsの仕様上、ダウンロードに失敗してもステップは成功とみなされるため、
-        # ファイルが存在しない場合はスクリプト内で新規作成されることを期待する
+      - name: Download existing artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: us-screener-artifacts
+          path: .
+        continue-on-error: true
 
-    - name: Ensure us_stocks.csv exists (fallback if not in repo)
-      run: |
-        if [ ! -f us_stocks.csv ]; then
-          echo "us_stocks.csv not found, running generate_us_stocks.py as fallback."
-          python generate_us_stocks.py
-        fi
+      - name: Ensure us_stocks.csv exists
+        run: |
+          if [ ! -f us_stocks.csv ]; then
+            python generate_us_stocks.py
+          fi
 
-    - name: Run US Stock Screener
-      env:
-        LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
-        LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
-      run: python us_stock_screener.py
+      - name: Run US Stock Screener
+        env:
+          LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+        run: python us_stock_screener.py
 
-    - name: Upload artifacts (model, db, history)
-      uses: actions/upload-artifact@v4
-      with:
-        name: us-screener-artifacts
-        path: |
-          us_model_v2.pkl
-          us_market.db
-          us_recommendation_history.csv
-        # これらのファイルが存在しない場合でもエラーにしない
-        # (例: 初回実行時やエラーでファイルが生成されなかった場合)
-        if-no-files-found: ignore
-
-    - name: Clean up cache (optional, to prevent large cache)
-      run: |
-        rm -rf cache_us
-        rm -rf us_market.db
-        rm -rf us_model_v2.pkl
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: us-screener-artifacts
+          path: |
+            us_model_v2.pkl
+            us_market.db
+            us_recommendation_history.csv
+          if-no-files-found: ignore
