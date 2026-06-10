@@ -32,8 +32,10 @@ def generate_us_stocks_csv():
         output_df = df[['symbol', 'name']].copy()
         output_df.columns = ['Ticker', 'Name']
         
-        # 記号のクリーンアップ（yfinanceは / や ^ ではなく - を使用することが多い）
-        output_df['Ticker'] = output_df['Ticker'].str.strip().str.replace(r'[/^]', '-', regex=True)
+        # クリーンアップ: 記号を含む銘柄（優先株、ワラント、ユニット等）を除外
+        # これらは yfinance で 404 になりやすく、流動性も低いためAI分析の対象外とする
+        output_df['Ticker'] = output_df['Ticker'].str.strip()
+        output_df = output_df[output_df['Ticker'].str.match(r'^[A-Z]+$', na=False)]
         
         # 重複削除
         output_df = output_df.drop_duplicates(subset=['Ticker'])
