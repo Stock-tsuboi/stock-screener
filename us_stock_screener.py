@@ -225,7 +225,7 @@ class DatabaseManager:
                         conn.unregister("tmp_df")
                     time.sleep(0.5)
                 except Exception as e:
-                    logger.error(f"Batch {ticker} error: {e}")
+                    logger.error(f"Batch processing error at index {i}: {e}")
 
     def load_all_data(self, symbols_df: pd.DataFrame) -> Dict[str, pd.DataFrame]:
         tickers = symbols_df["Ticker"].tolist()
@@ -271,7 +271,10 @@ class USStockScreener:
                 "Name": ["Apple", "Microsoft", "Alphabet", "Amazon", "Tesla", "Nvidia", "Meta", "Netflix", "AMD", "Intel"]
             })
         df = pd.read_csv(path, dtype=str)
-        return df.dropna(subset=["Ticker"])
+        df = df.dropna(subset=["Ticker"])
+        # 特殊記号を含む銘柄を念のため再度除外
+        df = df[df["Ticker"].str.match(r"^[A-Z]+$", na=False)]
+        return df
 
     def _parallel_feature_engineering(self, all_data: Dict) -> Dict:
         results = Parallel(n_jobs=-1)(delayed(self._feature_worker)(s, d) for s, d in all_data.items())
