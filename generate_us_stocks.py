@@ -43,7 +43,10 @@ def generate_us_stocks_csv():
         
         # クリーンアップ: 記号を含む銘柄（優先株、ワラント、ユニット等）を除外
         output_df['Ticker'] = output_df['Ticker'].str.strip()
-        output_df = output_df[output_df['Ticker'].str.match(r'^[A-Z]+$', na=False)]
+        # 通常の米国株（1-4文字）に限定し、5文字以上のワラントや権利を除外
+        output_df = output_df[
+            (output_df['Ticker'].str.match(r'^[A-Z]{1,4}$', na=False))
+        ]
         
         # 重複削除
         output_df = output_df.drop_duplicates(subset=['Ticker'])
