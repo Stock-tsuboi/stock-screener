@@ -7,33 +7,32 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 def generate_us_stocks_csv():
-    """NASDAQ/NYSE/AMEXの全銘柄リストをNASDAQ APIから取得してCSV保存する"""
+    """NASDAQ FTPディレクトリから全銘柄リストを取得してCSV保存する"""
     logger.info("米国市場（NASDAQ/NYSE/AMEX）全銘柄リストを取得中...")
     
     try:
-        # NASDAQ Screener API (全銘柄取得用のURL)
-        url = "https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=0&offset=0&download=true"
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
-            'Accept': 'application/json, text/plain, */*',
-            'Origin': 'https://www.nasdaq.com',
-            'Referer': 'https://www.nasdaq.com/'
-        }
+        # 1. NASDAQ上場銘柄の取得
+        nasdaq_url = "https://ftp.nasdaqtrader.com/SymbolDirectory/nasdaqlisted.txt"
+        df_nasdaq = pd.read_csv(nasdaq_url, sep="|")
+        df_nasdaq = df_nasdaq.iloc[:-1]  # 最終行のメタデータ（File Creation Time）を削除
         
-        response = requests.get(url, headers=headers, timeout=30)
-        response.raise_for_status()
-        data = response.json()
+        # ETFを除外し、TickerとNameを抽出
+        df_nasdaq = df_nasdaq[df_nasdaq['ETF'] == 'N']
+        df_nasdaq = df_nasdaq[['Symbol', 'Security Name']].rename(columns={'Symbol': 'Ticker', 'Security Name': 'Name'})
+
+        # 2. その他市場（NYSE, AMEX等）の取得
+        other_url = "https://ftp.nasdaqtrader.com/SymbolDirectory/otherlisted.txt"
+        df_other = pd.read_csv(other_url, sep="|")
+        df_other = df_other.iloc[:-1]  # 最終行のメタデータを削除
         
-        # JSONデータから銘柄一覧を抽出
-        rows = data['data']['rows']
-        df = pd.DataFrame(rows)
-        
-        # yfinanceで利用可能な形式に変換 (symbol -> Ticker, name -> Name)
-        output_df = df[['symbol', 'name']].copy()
-        output_df.columns = ['Ticker', 'Name']
+        # ETFを除外し、TickerとNameを抽出 (Otherは ACT Symbol がティッカー)
+        df_other = df_other[df_other['ETF'] == 'N']
+        df_other = df_other[['ACT Symbol', 'Security Name']].rename(columns={'ACT Symbol': 'Ticker', 'Security Name': 'Name'})
+
+        # 3. リストの結合
+        output_df = pd.concat([df_nasdaq, df_other], ignore_index=True)
         
         # クリーンアップ: 記号を含む銘柄（優先株、ワラント、ユニット等）を除外
-        # これらは yfinance で 404 になりやすく、流動性も低いためAI分析の対象外とする
         output_df['Ticker'] = output_df['Ticker'].str.strip()
         output_df = output_df[output_df['Ticker'].str.match(r'^[A-Z]+$', na=False)]
         
