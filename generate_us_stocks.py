@@ -14,20 +14,29 @@ def generate_us_stocks_csv():
         # 1. NASDAQ上場銘柄の取得
         nasdaq_url = "https://ftp.nasdaqtrader.com/SymbolDirectory/nasdaqlisted.txt"
         df_nasdaq = pd.read_csv(nasdaq_url, sep="|")
-        df_nasdaq = df_nasdaq.iloc[:-1]  # 最終行のメタデータ（File Creation Time）を削除
+        # メタデータ行（File Creation Timeで始まる行）を除外
+        df_nasdaq = df_nasdaq[~df_nasdaq['Symbol'].astype(str).str.startswith('File Creation Time')]
         
-        # ETFを除外し、TickerとNameを抽出
-        df_nasdaq = df_nasdaq[df_nasdaq['ETF'] == 'N']
+        # ETFを除外し、テスト銘柄を除外
+        df_nasdaq = df_nasdaq[(df_nasdaq['ETF'] == 'N') & (df_nasdaq['Test Issue'] == 'N')]
         df_nasdaq = df_nasdaq[['Symbol', 'Security Name']].rename(columns={'Symbol': 'Ticker', 'Security Name': 'Name'})
+        df_nasdaq['Exchange'] = 'NASDAQ'
 
         # 2. その他市場（NYSE, AMEX等）の取得
         other_url = "https://ftp.nasdaqtrader.com/SymbolDirectory/otherlisted.txt"
         df_other = pd.read_csv(other_url, sep="|")
-        df_other = df_other.iloc[:-1]  # 最終行のメタデータを削除
+        # メタデータ行を除外
+        df_other = df_other[~df_other['ACT Symbol'].astype(str).str.startswith('File Creation Time')]
         
-        # ETFを除外し、TickerとNameを抽出 (Otherは ACT Symbol がティッカー)
-        df_other = df_other[df_other['ETF'] == 'N']
-        df_other = df_other[['ACT Symbol', 'Security Name']].rename(columns={'ACT Symbol': 'Ticker', 'Security Name': 'Name'})
+        # NYSE(N)とAMEX(A)に限定し、かつETFとテスト銘柄を除去
+        exchange_map = {'N': 'NYSE', 'A': 'AMEX'}
+        df_other = df_other[
+            (df_other['Exchange'].isin(exchange_map.keys())) & 
+            (df_other['ETF'] == 'N') & 
+            (df_other['Test Issue'] == 'N')
+        ].copy()
+        df_other['Exchange'] = df_other['Exchange'].map(exchange_map)
+        df_other = df_other[['ACT Symbol', 'Security Name', 'Exchange']].rename(columns={'ACT Symbol': 'Ticker', 'Security Name': 'Name'})
 
         # 3. リストの結合
         output_df = pd.concat([df_nasdaq, df_other], ignore_index=True)
