@@ -265,13 +265,22 @@ class DatabaseManager:
             """)
             
             res = conn.execute("SELECT COUNT(*) FROM prices").fetchone()
-            period_setting = "5d" if res[0] > 0 else "2y" # 米国株は2年分
+            # 初回は2010年からの長期データを取得して学習精度を向上させる
+            period_setting = "5d" if res[0] > 0 else "max" 
             
             batch_size = 50 # 米国株は1ティッカーあたりのデータ量が多いため少し小さめに
             for i in range(0, len(tickers_list), batch_size):
                 batch = tickers_list[i:i+batch_size]
                 try:
-                    df = yf.download(batch, period=period_setting, group_by="ticker", progress=False, threads=True)
+                    # auto_adjust=Trueを適用し、分割併合調整後の価格を取得
+                    df = yf.download(
+                        batch, 
+                        period=period_setting, 
+                        group_by="ticker", 
+                        auto_adjust=True, 
+                        progress=False, 
+                        threads=True
+                    )
                     if df.empty: continue
 
                     if not isinstance(df.columns, pd.MultiIndex) and len(batch) == 1:
