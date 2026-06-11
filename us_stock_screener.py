@@ -204,10 +204,16 @@ class DatabaseManager:
         logger.info("マクロデータの更新中...")
         dfs = []
         for name, ticker in Config.MACRO_TICKERS.items():
-            d = yf.download(ticker, period="2y", progress=False)["Close"]
-            d = d.rename(f"Macro_{name.split('_')[-1]}")
+            data = yf.download(ticker, period="2y", progress=False)
+            if data.empty: continue
+            d = data["Close"]
+            # yfinanceがマルチインデックスを返す場合、DataFrameになるためSeriesに変換
+            if isinstance(d, pd.DataFrame):
+                d = d.iloc[:, 0]
+            # FeatureFactoryが期待する名称に合わせる (例: 10Y_Yield -> Macro_10Y)
+            d.name = f"Macro_{name.split('_')[0]}"
             dfs.append(d)
-        macro_df = pd.concat(dfs, axis=1).fillna(method="ffill")
+        macro_df = pd.concat(dfs, axis=1).ffill()
         
         with self._get_connection() as conn:
             conn.execute("CREATE TABLE IF NOT EXISTS macro (date DATE PRIMARY KEY, VIX DOUBLE, Y10 DOUBLE)")
@@ -367,7 +373,10 @@ class USStockScreener:
         for s, d in all_data.items():
             f_data = self.db.fetch_fundamentals(s)
             results.append(self._feature_worker(s, d, f_data, macro_df))
-            
+            # Rate Limit対策: 銘柄数が多い場合のAPI負荷軽減
+            if len(all_data) > 20:
+                time.sleep(0.2)
+
         return {r[0]: r[1] for r in results if r is not None}
 
     def _feature_worker(self, symbol, df, fundamentals=None, macro_df=None):
