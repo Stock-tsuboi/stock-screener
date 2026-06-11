@@ -2,9 +2,27 @@ import pandas as pd
 import os
 import requests
 import logging
+import io
+import time
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+def fetch_nasdaq_data(url):
+    """HTTPリクエストを使用してデータを取得する（リトライ機能付き）"""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36'
+    }
+    for attempt in range(3):
+        try:
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            return pd.read_csv(io.StringIO(response.text), sep="|")
+        except Exception as e:
+            logger.warning(f"取得試行 {attempt + 1} 失敗: {e}")
+            if attempt == 2:
+                raise e
+            time.sleep(5)
 
 def generate_us_stocks_csv():
     """NASDAQ FTPディレクトリから全銘柄リストを取得してCSV保存する"""
@@ -13,7 +31,7 @@ def generate_us_stocks_csv():
     try:
         # 1. NASDAQ上場銘柄の取得
         nasdaq_url = "https://ftp.nasdaqtrader.com/SymbolDirectory/nasdaqlisted.txt"
-        df_nasdaq = pd.read_csv(nasdaq_url, sep="|")
+        df_nasdaq = fetch_nasdaq_data(nasdaq_url)
         # メタデータ行（File Creation Timeで始まる行）を除外
         df_nasdaq = df_nasdaq[~df_nasdaq['Symbol'].astype(str).str.startswith('File Creation Time')]
         
@@ -24,7 +42,7 @@ def generate_us_stocks_csv():
 
         # 2. その他市場（NYSE, AMEX等）の取得
         other_url = "https://ftp.nasdaqtrader.com/SymbolDirectory/otherlisted.txt"
-        df_other = pd.read_csv(other_url, sep="|")
+        df_other = fetch_nasdaq_data(other_url)
         # メタデータ行を除外
         df_other = df_other[~df_other['ACT Symbol'].astype(str).str.startswith('File Creation Time')]
         
