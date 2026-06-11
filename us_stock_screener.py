@@ -367,9 +367,6 @@ class USStockScreener:
         for s, d in all_data.items():
             f_data = self.db.fetch_fundamentals(s)
             results.append(self._feature_worker(s, d, f_data, macro_df))
-            # Rate Limit対策: 銘柄数が多い場合は待機を入れる
-            if len(all_data) > 100:
-                time.sleep(0.5)
             
         return {r[0]: r[1] for r in results if r is not None}
 
