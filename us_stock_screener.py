@@ -60,6 +60,13 @@ class Config:
     RISK_PER_TRADE = 0.05
     MAX_HOLDING_DAYS = 15
 
+    # 財務・マクロ・イベント用設定
+    MACRO_TICKERS = {"10Y_Yield": "^TNX", "VIX": "^VIX", "SPY": "SPY"}
+    FUNDAMENTAL_COLS = [
+        "trailingPE", "priceToBook", "returnOnEquity", "revenueGrowth", 
+        "earningsGrowth", "operatingMargins", "debtToEquity", "marketCap"
+    ]
+
 # =========================================================
 # Feature Engineering (Unified)
 # =========================================================
@@ -71,11 +78,14 @@ class FeatureFactory:
         "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2", "VolRatio",
         "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10", "RSI", "MACD_Hist",
         "ret1", "ret3", "ret5", "ret20", "atr_ratio",
-        "VolVCP"
+        "VolVCP",
+        # 追加される多角的特徴量
+        "PE_Ratio", "PB_Ratio", "ROE", "Rev_Growth", "EPS_Growth", 
+        "Op_Margin", "Debt_Equity", "Macro_VIX", "Macro_10Y", "Days_To_Earnings"
     ]
 
     @staticmethod
-    def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    def calculate_metrics(df: pd.DataFrame, fundamentals: Dict = None, macro_df: pd.DataFrame = None) -> pd.DataFrame:
         df = df.copy()
         close = df["Close"]
         
@@ -133,6 +143,28 @@ class FeatureFactory:
         df["BigBull"] = ((close - df["Open"]) / df["Open"].replace(0, np.nan) > 0.04).astype(int) # 米国株は4%以上
         df["BigBear"] = ((df["Open"] - close) / df["Open"].replace(0, np.nan) > 0.04).astype(int)
 
+        # 財務データの統合
+        if fundamentals:
+            df["PE_Ratio"] = fundamentals.get("trailingPE", 0)
+            df["PB_Ratio"] = fundamentals.get("priceToBook", 0)
+            df["ROE"] = fundamentals.get("returnOnEquity", 0)
+            df["Rev_Growth"] = fundamentals.get("revenueGrowth", 0)
+            df["EPS_Growth"] = fundamentals.get("earningsGrowth", 0)
+            df["Op_Margin"] = fundamentals.get("operatingMargins", 0)
+            df["Debt_Equity"] = fundamentals.get("debtToEquity", 0)
+            # 決算までの日数（簡易版：直近データから計算）
+            df["Days_To_Earnings"] = fundamentals.get("days_to_earnings", 30)
+        else:
+            for col in ["PE_Ratio", "PB_Ratio", "ROE", "Rev_Growth", "EPS_Growth", "Op_Margin", "Debt_Equity", "Days_To_Earnings"]:
+                df[col] = 0
+
+        # マクロデータの統合 (日付でマージ)
+        if macro_df is not None:
+            df = df.join(macro_df, how="left").fillna(method="ffill")
+        else:
+            df["Macro_VIX"] = 20
+            df["Macro_10Y"] = 4.0
+
         df = df.replace([np.inf, -np.inf], np.nan)
         return df.dropna(subset=["SMA75", "Slope20"]).fillna(0).replace([np.inf, -np.inf], 0)
 
@@ -166,6 +198,46 @@ class DatabaseManager:
 
     def _get_connection(self):
         return duckdb.connect(self.db_path)
+
+    def update_macro_data(self):
+        """マクロ経済指標（金利、VIX）を更新"""
+        logger.info("マクロデータの更新中...")
+        dfs = []
+        for name, ticker in Config.MACRO_TICKERS.items():
+            d = yf.download(ticker, period="2y", progress=False)["Close"]
+            d = d.rename(f"Macro_{name.split('_')[-1]}")
+            dfs.append(d)
+        macro_df = pd.concat(dfs, axis=1).fillna(method="ffill")
+        
+        with self._get_connection() as conn:
+            conn.execute("CREATE TABLE IF NOT EXISTS macro (date DATE PRIMARY KEY, VIX DOUBLE, Y10 DOUBLE)")
+            # DuckDBへの保存処理（省略可、ここではメモリ保持でも可）
+        return macro_df
+
+    def fetch_fundamentals(self, ticker: str) -> Dict:
+        """財務データと決算予定の取得（API負荷軽減のためキャッシュ推奨）"""
+        try:
+            t = yf.Ticker(ticker)
+            info = t.info
+            # 決算日
+            calendar = t.calendar
+            days_to_earnings = 30
+            if calendar is not None and not calendar.empty:
+                next_event = calendar.iloc[0, 0]
+                days_to_earnings = (next_event.date() - datetime.now().date()).days
+            
+            return {
+                "trailingPE": info.get("trailingPE", 0),
+                "priceToBook": info.get("priceToBook", 0),
+                "returnOnEquity": info.get("returnOnEquity", 0),
+                "revenueGrowth": info.get("revenueGrowth", 0),
+                "earningsGrowth": info.get("earningsGrowth", 0),
+                "operatingMargins": info.get("operatingMargins", 0),
+                "debtToEquity": info.get("debtToEquity", 0),
+                "days_to_earnings": days_to_earnings
+            }
+        except:
+            return {}
 
     def get_market_regime(self) -> bool:
         """S&P 500で地合い判定"""
@@ -276,25 +348,20 @@ class USStockScreener:
         df = df[df["Ticker"].str.match(r"^[A-Z]+$", na=False)]
         return df
 
-    def _parallel_feature_engineering(self, all_data: Dict) -> Dict:
-        results = Parallel(n_jobs=-1)(delayed(self._feature_worker)(s, d) for s, d in all_data.items())
+    def _parallel_feature_engineering(self, all_data: Dict, macro_df: pd.DataFrame) -> Dict:
+        # 財務データは逐次取得（またはDBキャッシュから）
+        logger.info("財務データとテクニカル指標の統合を開始...")
+        results = []
+        for s, d in all_data.items():
+            f_data = self.db.fetch_fundamentals(s)
+            results.append(self._feature_worker(s, d, f_data, macro_df))
+            
         return {r[0]: r[1] for r in results if r is not None}
 
-    def _feature_worker(self, symbol, df):
+    def _feature_worker(self, symbol, df, fundamentals=None, macro_df=None):
         if len(df) < 100: return None
         
-        # 米国市場時間(ET)の判定。簡易的にUTCからのオフセットで計算（サマータイム非考慮の例）
-        now_utc = datetime.now(timezone.utc)
-        # 米国のサマータイム（3月〜11月）を考慮
-        is_dst = 3 <= now_utc.month <= 10
-        now_et = now_utc - timedelta(hours=4 if is_dst else 5)
-        
-        # 寄り付き直後(9:30-9:45)のフィルタリング
-        if now_et.hour == 9 and 30 <= now_et.minute < 45:
-            if df.index[-1].date() == now_et.date():
-                df = df.iloc[:-1]
-
-        feat_df = self.factory.calculate_metrics(df)
+        feat_df = self.factory.calculate_metrics(df, fundamentals, macro_df)
         return (symbol, feat_df.iloc[-1]) if len(feat_df) > 10 else None
 
     def _prepare_model(self, all_data: Dict) -> bool:
