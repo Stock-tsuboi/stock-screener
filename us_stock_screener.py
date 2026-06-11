@@ -330,9 +330,12 @@ class USStockScreener:
         is_market_good = self.db.get_market_regime()
         current_threshold = Config.THRESHOLD_STRICT if not is_market_good else Config.THRESHOLD_NORMAL
         
+        # マクロデータの取得
+        macro_df = self.db.update_macro_data()
+        
         self.db.update_prices(symbols)
         all_data = self.db.load_all_data(symbols)
-        processed_data = self._parallel_feature_engineering(all_data)
+        processed_data = self._parallel_feature_engineering(all_data, macro_df)
         
         if not self._prepare_model(all_data): return
         buy_results, sell_results, max_prob = self._inference(processed_data, current_threshold)
@@ -364,6 +367,9 @@ class USStockScreener:
         for s, d in all_data.items():
             f_data = self.db.fetch_fundamentals(s)
             results.append(self._feature_worker(s, d, f_data, macro_df))
+            # Rate Limit対策: 銘柄数が多い場合は待機を入れる
+            if len(all_data) > 100:
+                time.sleep(0.5)
             
         return {r[0]: r[1] for r in results if r is not None}
 
