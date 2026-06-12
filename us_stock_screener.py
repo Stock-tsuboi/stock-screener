@@ -466,7 +466,15 @@ class USStockScreener:
         buy_results, sell_results = results
         name_map = dict(zip(symbols_df["Ticker"], symbols_df["Name"]))
         
-        msg = [f"【US株AI厳選ランキング】(Max Prob: {max_prob:.1%})"]
+        # 準候補（救済ロジック）かどうかの判定
+        is_potential = not buy_results.empty and buy_results.get("is_potential", pd.Series([False]*len(buy_results))).any()
+
+        if is_potential:
+            msg = [f"【US株AI準候補・要監視】(最大確率: {max_prob:.1%})"]
+            msg.append("（※厳選基準に満たないため、確率は低めです）")
+        else:
+            msg = [f"【US株AI厳選ランキング】(最大確率: {max_prob:.1%})"]
+
         if not is_market_good: msg.append("（⚠️US市場 弱気トレンド）")
 
         if buy_results.empty:
@@ -475,7 +483,8 @@ class USStockScreener:
             for i, (_, row) in enumerate(buy_results.iterrows(), 1):
                 name = name_map.get(row['symbol'], "Unknown")
                 stop_loss = row['Close'] * (1 - row['atr_ratio'] * 2.2)
-                msg.append(f"{i}位 {row['symbol']} {name[:10]}\n  Price:${row['Close']:.2f} (SL:${stop_loss:.2f})\n  Prob:{row['prob']:.1%} EV:{row['EV']:.2f}")
+                rank_label = "準" if is_potential else f"{i}位"
+                msg.append(f"{rank_label} {row['symbol']} {name[:10]}\n  価格:${row['Close']:.2f} (損切:${stop_loss:.2f})\n  確率:{row['prob']:.1%} 期待値:{row['EV']:.2f}")
 
         # 履歴管理 (JSTで記録)
         jst = timezone(timedelta(hours=9))
@@ -489,12 +498,25 @@ class USStockScreener:
         if not history_df.empty and not sell_results.empty:
             monitored = history_df[history_df["date"] < today_jst].merge(sell_results, on='symbol', how='inner')
             if not monitored.empty:
-                monitored['is_trailing'] = monitored['Close'] < monitored['highest_price'] * (1 - (monitored['atr_ratio'] * 3.0).clip(0.05, 0.15))
-                to_sell = monitored[monitored['is_sell_signal'] | monitored['is_trailing']]
+                # タイムストップ（保有期間経過）判定
+                monitored['holding_days'] = (today_jst - monitored['date']).apply(lambda x: x.days)
+                monitored['is_time_stop'] = monitored['holding_days'] >= Config.MAX_HOLDING_DAYS
+                
+                # トレールストップ判定
+                monitored['dynamic_stop_ratio'] = (monitored['atr_ratio'] * Config.TRAILING_STOP_ATR_MULT).clip(0.05, 0.15)
+                monitored['is_trailing'] = monitored['Close'] < monitored['highest_price'] * (1 - monitored['dynamic_stop_ratio'])
+                
+                to_sell = monitored[monitored['is_sell_signal'] | monitored['is_trailing'] | monitored['is_time_stop']]
                 if not to_sell.empty:
-                    msg.append("\n【⚠️ US Sell Signal】")
+                    msg.append("\n【⚠️ 米国株 売り・手仕舞い警戒】")
                     for _, s_row in to_sell.iterrows():
-                        msg.append(f"・{s_row['symbol']} Price:${s_row['Close']:.2f} (Exit Recommendation)")
+                        # 売却理由の特定
+                        reason = "テクニカル売り"
+                        if s_row['is_time_stop']: reason = f"タイムストップ({Config.MAX_HOLDING_DAYS}日経過)"
+                        elif s_row['is_trailing']: reason = f"トレール下落(-{s_row['dynamic_stop_ratio']:.1%})"
+                        elif s_row['ret1'] < -0.07: reason = f"急落({s_row['ret1']:.1%})"
+                        
+                        msg.append(f"・{s_row['symbol']} 価格:${s_row['Close']:.2f} ({reason})")
                     history_df = history_df[~history_df['symbol'].isin(to_sell['symbol'])]
 
         if not buy_results.empty:
