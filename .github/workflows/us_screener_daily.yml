@@ -49,5 +49,5 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git add us_recommendation_history.csv # 履歴ファイルのみを対象にする
           git commit -m "Update US recommendation history [skip ci]" || echo "No changes to commit"
-          git pull --rebase origin main # Push前に最新の状態を取り込む
+          git pull --rebase origin main --autostash # 競合を自動回避しながら最新化
           git push origin main
