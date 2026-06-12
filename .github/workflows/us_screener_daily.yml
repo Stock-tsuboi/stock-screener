@@ -42,3 +42,12 @@ jobs:
           LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
         run: python us_stock_screener.py
+
+      - name: Commit and Push changes
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git add us_recommendation_history.csv # 履歴ファイルのみを対象にする
+          git commit -m "Update US recommendation history [skip ci]" || echo "No changes to commit"
+          git pull --rebase origin main # Push前に最新の状態を取り込む
+          git push origin main
