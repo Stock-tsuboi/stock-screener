@@ -36,6 +36,10 @@ handler.setFormatter(JSTFormatter('%(asctime)s - %(levelname)s - %(message)s', d
 logging.basicConfig(level=logging.INFO, handlers=[handler])
 logger = logging.getLogger(__name__)
 
+# yfinanceの内部ログ出力を抑制してエラーログの煩雑さを抑える
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+logging.getLogger('urllib3').setLevel(logging.CRITICAL)
+
 # yfinanceのキャッシュ警告対策（GitHub Actions環境などでの権限エラー回避）
 yf.set_tz_cache_location(os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache"))
 
@@ -64,7 +68,7 @@ class Config:
     MAX_HOLDING_DAYS = 10     # タイムストップ（10日間動かなければ撤退）
     
     # 財務・マクロ・イベント用設定
-    MACRO_TICKERS_JP = {"VXJ": "^N225VI", "JPY": "JPY=X"} # 日経平均ボラティリティ・インデックス, USD/JPY
+    MACRO_TICKERS_JP = {"VXJ": "^JNIV", "JPY": "JPY=X"} # 日経平均ボラティリティ・インデックス, USD/JPY
     FUNDAMENTAL_COLS = ["days_to_earnings"] # 現時点では決算日までの日数のみ
 
 
@@ -312,10 +316,6 @@ class DatabaseManager:
             logger.info(f"既存のDBファイルを検出: {self.db_path} ({os.path.getsize(self.db_path)} bytes)")
         else:
             logger.info("既存のDBファイルが見つかりません。新規作成します。")
-
-        # yfinance自体のログ出力を抑制して、エラーログの煩雑さを抑える
-        yf_logger = logging.getLogger('yfinance')
-        yf_logger.setLevel(logging.CRITICAL)
 
         with self._get_connection() as conn:
             conn.execute("""
