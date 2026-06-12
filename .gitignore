@@ -1,0 +1,7 @@
+# データベースとモデル
+*.db
+*.pkl
+*.csv.tmp
+# キャッシュディレクトリ
+cache/
+cache_us/
