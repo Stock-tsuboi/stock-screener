@@ -64,7 +64,7 @@ class Config:
     MAX_HOLDING_DAYS = 10     # タイムストップ（10日間動かなければ撤退）
     
     # 財務・マクロ・イベント用設定
-    MACRO_TICKERS_JP = {"VXJ": "^VXJ", "JPY": "JPY=X"} # 日経平均ボラティリティ・インデックス, USD/JPY
+    MACRO_TICKERS_JP = {"VXJ": "^N225VI", "JPY": "JPY=X"} # 日経平均ボラティリティ・インデックス, USD/JPY
     FUNDAMENTAL_COLS = ["days_to_earnings"] # 現時点では決算日までの日数のみ
 
 
@@ -171,14 +171,17 @@ class FeatureFactory:
             # 学習時など、財務データがない場合はデフォルト値
             df["Days_To_Earnings"] = 30
 
-        # マクロデータの統合 (日付でマージ)
-        if macro_df is not None:
-            # マクロデータは日次なので、株価データの日付にffillで結合
-            df = df.join(macro_df, how="left").fillna(method="ffill")
-        else:
-            # マクロデータがない場合はデフォルト値
-            df["Macro_VXJ"] = 20 # VIXの平均的な値
-            df["Macro_JPY"] = 150 # USD/JPYの平均的な値
+        # マクロデータの統合
+        if macro_df is not None and not macro_df.empty:
+            df = df.join(macro_df, how="left").ffill()
+        
+        # カラムが存在しない、または取得失敗時のデフォルト値補完
+        if "Macro_VXJ" not in df.columns: df["Macro_VXJ"] = 20
+        if "Macro_JPY" not in df.columns: df["Macro_JPY"] = 150
+        
+        # 個別銘柄の期間中にマクロデータが欠落している場合を埋める
+        df["Macro_VXJ"] = df["Macro_VXJ"].fillna(20)
+        df["Macro_JPY"] = df["Macro_JPY"].fillna(150)
 
         # 無限大をNaNに変換
         df = df.replace([np.inf, -np.inf], np.nan)
@@ -433,10 +436,17 @@ class DatabaseManager:
             # 決算日までの日数を取得
             days_to_earnings = 30 # デフォルト値
             calendar = t.calendar
-            if calendar is not None and not calendar.empty:
-                # 次の決算発表日を取得
-                next_event_date = calendar.iloc[0, 0] # 最初の列が日付
-                if isinstance(next_event_date, pd.Timestamp):
+            if calendar is not None:
+                next_event_date = None
+                # DataFrameで返る場合と辞書で返る場合の両方に対応
+                if isinstance(calendar, pd.DataFrame) and not calendar.empty:
+                    next_event_date = calendar.iloc[0, 0]
+                elif isinstance(calendar, dict):
+                    ed = calendar.get('Earnings Date')
+                    if ed and isinstance(ed, list) and len(ed) > 0:
+                        next_event_date = ed[0]
+                
+                if isinstance(next_event_date, (pd.Timestamp, datetime)):
                     days_to_earnings = (next_event_date.date() - datetime.now().date()).days
             
             return {"days_to_earnings": days_to_earnings}
