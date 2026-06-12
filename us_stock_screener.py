@@ -18,6 +18,10 @@ from sklearn.calibration import CalibratedClassifierCV
 # =========================================================
 # ロギングと警告の設定
 # =========================================================
+# yfinanceの内部ログ出力を抑制してエラーログの煩雑さを抑える
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
+logging.getLogger('urllib3').setLevel(logging.CRITICAL)
+
 class ETFormatter(logging.Formatter):
     """ログのタイムスタンプを米国東部時間(ET)に近い形で出力（あるいはJST）"""
     def formatTime(self, record, datefmt=None):
@@ -271,10 +275,10 @@ class DatabaseManager:
             """)
             
             res = conn.execute("SELECT COUNT(*) FROM prices").fetchone()
-            # 初回は2010年からの長期データを取得して学習精度を向上させる
-            period_setting = "5d" if res[0] > 0 else "max" 
+            # 米国株はデータ量が多いため、初回取得を2年に制限してレートリミットを回避
+            period_setting = "5d" if res[0] > 0 else "2y" 
             
-            batch_size = 50 # 米国株は1ティッカーあたりのデータ量が多いため少し小さめに
+            batch_size = 30 # 米国株は1ティッカーあたりの負荷が高いためバッチサイズを縮小
             for i in range(0, len(tickers_list), batch_size):
                 batch = tickers_list[i:i+batch_size]
                 try:
@@ -310,7 +314,7 @@ class DatabaseManager:
                         conn.register("tmp_df", merged)
                         conn.execute("INSERT INTO prices SELECT * FROM tmp_df ON CONFLICT DO NOTHING")
                         conn.unregister("tmp_df")
-                    time.sleep(0.5)
+                    time.sleep(2.0) # レートリミット回避のため待機時間を延長
                 except Exception as e:
                     logger.error(f"Batch processing error at index {i}: {e}")
 
@@ -368,7 +372,7 @@ class USStockScreener:
 
     def _parallel_feature_engineering(self, all_data: Dict, macro_df: pd.DataFrame) -> Dict:
         # 財務データは逐次取得（またはDBキャッシュから）
-        logger.info("財務データとテクニカル指標の統合を開始...")
+        logger.info(f"財務データとテクニカル指標の統合を開始... (対象: {len(all_data)} 銘柄)")
         results = []
         for s, d in all_data.items():
             f_data = self.db.fetch_fundamentals(s)
@@ -394,8 +398,24 @@ class USStockScreener:
             cols = self.factory.FEATURE_COLS + ["Target"]
             return feat_df.iloc[:-5][cols]
 
-        need_training = not os.path.exists(Config.MODEL_PATH) or \
-                        (datetime.now() - datetime.fromtimestamp(os.path.getmtime(Config.MODEL_PATH))).days >= Config.RETRAIN_DAYS
+        need_training = False
+        if not os.path.exists(Config.MODEL_PATH):
+            need_training = True
+        elif (datetime.now() - datetime.fromtimestamp(os.path.getmtime(Config.MODEL_PATH))).days >= Config.RETRAIN_DAYS:
+            need_training = True
+        else:
+            try:
+                self.model = joblib.load(Config.MODEL_PATH)
+                # 学習時の特徴量構成を確認し、変更があれば再学習を強制
+                base_est = self.model.calibrated_classifiers_[0].estimator
+                if hasattr(base_est, "feature_names_in_"):
+                    trained_features = list(base_est.feature_names_in_)
+                    if trained_features != self.factory.FEATURE_COLS:
+                        logger.warning(f"特徴量構成の変更を検知しました（旧:{len(trained_features)}種 -> 新:{len(self.factory.FEATURE_COLS)}種）。再学習を強制します。")
+                        need_training = True
+            except Exception as e:
+                logger.warning(f"モデルチェック中にエラーが発生しました: {e}。再学習を実行します。")
+                need_training = True
 
         if need_training:
             logger.info("米国株モデル再学習中...")
