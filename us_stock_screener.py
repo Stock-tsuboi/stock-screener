@@ -292,6 +292,8 @@ class DatabaseManager:
                     low DOUBLE, close DOUBLE, volume DOUBLE, PRIMARY KEY (code, date)
                 )
             """)
+            # インデックスの作成（検索高速化）
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_us_prices_date ON prices (date)")
             
             res = conn.execute("SELECT COUNT(*) FROM prices").fetchone()
             # 米国株はデータ量が多いため、初回取得を2年に制限してレートリミットを回避
@@ -308,9 +310,10 @@ class DatabaseManager:
                         group_by="ticker", 
                         auto_adjust=True, 
                         progress=False, 
-                        threads=True
+                        threads=True,
+                        timeout=15 # 応答がない場合に15秒で切り上げる
                     )
-                    if df.empty: continue
+                    if df is None or df.empty: continue
 
                     if not isinstance(df.columns, pd.MultiIndex) and len(batch) == 1:
                         df.columns = pd.MultiIndex.from_product([[batch[0]], df.columns])
@@ -475,8 +478,14 @@ class USStockScreener:
 
         symbols = list(feature_dict.keys())
         features = pd.DataFrame([feature_dict[s] for s in symbols])
-        probs = self.model.predict_proba(features[self.factory.FEATURE_COLS])[:, 1]
-        
+        proba = self.model.predict_proba(features[self.factory.FEATURE_COLS])
+
+        # クラス数のチェック（学習データにTarget=1が不在の場合のIndexErrorを防止）
+        if proba.shape[1] < 2:
+            logger.error("AIモデルの学習データに正解（Target=1）が含まれていなかったため、推論をスキップします。")
+            return pd.DataFrame(), pd.DataFrame(), 0.0
+
+        probs = proba[:, 1]
         res_df = pd.DataFrame({"symbol": symbols, "prob": probs})
         res_df = pd.concat([res_df, features.reset_index(drop=True)], axis=1)
         
