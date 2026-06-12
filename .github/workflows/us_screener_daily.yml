@@ -2,7 +2,7 @@ name: US Stock Screener Daily Run
 
 on:
   schedule:
-    - cron: '0 22 * * *' # 毎日 UTC 22:00 (ET 18:00 / JST 7:00)
+    - cron: '0 23 * * 1-5' # 火〜土の日本時間 8:00 (UTC 23:00) 米国閉場後のデータ確定を待って実行
   workflow_dispatch:
 
 jobs:
