@@ -429,7 +429,12 @@ class USStockScreener:
         return (symbol, feat_df.iloc[-1]) if len(feat_df) > 10 else None
 
     def _prepare_model(self, all_data: Dict) -> bool:
+        """
+        AIモデルの準備。
+        特徴量の変更や、一定期間の経過、またはモデルが存在しない場合に再学習を行います。
+        """
         def train_worker(symbol, df):
+            # 学習には最低150日分のデータが必要
             if len(df) < 150: return None
             feat_df = self.factory.calculate_metrics(df)
             feat_df = self.factory.add_target_label(feat_df)
@@ -458,11 +463,15 @@ class USStockScreener:
 
         if need_training:
             logger.info("米国株モデル再学習中...")
+            # 学習データの準備（データ量が増えるため、メモリ管理に注意）
             results = Parallel(n_jobs=2)(delayed(train_worker)(s, d) for s, d in all_data.items())
             training_dfs = [r for r in results if r is not None]
-            if not training_dfs: return False
+            if not training_dfs: 
+                logger.error("学習に使用できる有効なデータが不足しています。")
+                return False
 
             full_train = pd.concat(training_dfs).sort_index().dropna(subset=["Target"])
+            logger.info(f"学習データ件数: {len(full_train)} (上昇事例: {full_train['Target'].sum()})")
             X, y = full_train[self.factory.FEATURE_COLS], full_train["Target"]
             
             base_model = RandomForestClassifier(n_estimators=400, max_depth=14, n_jobs=-1, random_state=42, class_weight="balanced")
