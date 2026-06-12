@@ -62,6 +62,11 @@ class Config:
     PORTFOLIO_SIZE = 30000    # 運用予算（S株/少額運用 3万円）
     RISK_PER_TRADE = 0.05     # 1トレードの許容損失（資金の5%：3万円なら1500円まで）
     MAX_HOLDING_DAYS = 10     # タイムストップ（10日間動かなければ撤退）
+    
+    # 財務・マクロ・イベント用設定
+    MACRO_TICKERS_JP = {"VXJ": "^VXJ", "JPY": "JPY=X"} # 日経平均ボラティリティ・インデックス, USD/JPY
+    FUNDAMENTAL_COLS = ["days_to_earnings"] # 現時点では決算日までの日数のみ
+
 
 # =========================================================
 # Feature Engineering (Unified)
@@ -75,13 +80,14 @@ class FeatureFactory:
     FEATURE_COLS = [
         "SMA5", "SMA25", "SMA75", "Bias5", "Bias25", "Bias75",
         "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2", "VolRatio",
-        "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10", "RSI", "MACD_Hist",
+        "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10", "RSI", "MACD_Hist", "Momentum_Change",
         "ret1", "ret3", "ret5", "ret20", "atr_ratio",
-        "VolVCP"
+        "VolVCP",
+        "Days_To_Earnings", "Macro_VXJ", "Macro_JPY" # 新規追加
     ] # AIが判断に使用する項目のリスト
 
     @staticmethod
-    def calculate_metrics(df: pd.DataFrame) -> pd.DataFrame:
+    def calculate_metrics(df: pd.DataFrame, fundamentals: Dict = None, macro_df: pd.DataFrame = None) -> pd.DataFrame:
         """
         移動平均、ボリンジャーバンド、出来高比率、スロープ（傾き）などの
         テクニカル指標を計算します。
@@ -157,12 +163,29 @@ class FeatureFactory:
         df["Bull"] = (close > df["Open"]).astype(int)
         df["BigBull"] = ((close - df["Open"]) / df["Open"].replace(0, np.nan) > 0.03).astype(int)
         df["BigBear"] = ((df["Open"] - close) / df["Open"].replace(0, np.nan) > 0.03).astype(int)
+        
+        # 財務データの統合 (決算発表日までの日数)
+        if fundamentals:
+            df["Days_To_Earnings"] = fundamentals.get("days_to_earnings", 30)
+        else:
+            # 学習時など、財務データがない場合はデフォルト値
+            df["Days_To_Earnings"] = 30
+
+        # マクロデータの統合 (日付でマージ)
+        if macro_df is not None:
+            # マクロデータは日次なので、株価データの日付にffillで結合
+            df = df.join(macro_df, how="left").fillna(method="ffill")
+        else:
+            # マクロデータがない場合はデフォルト値
+            df["Macro_VXJ"] = 20 # VIXの平均的な値
+            df["Macro_JPY"] = 150 # USD/JPYの平均的な値
 
         # 無限大をNaNに変換
         df = df.replace([np.inf, -np.inf], np.nan)
         
         # 指標が計算できていない初期の行（SMA75などがNaNの期間）を削除してから、残りを0埋め
-        return df.dropna(subset=["SMA75", "Slope20"]).fillna(0).replace([np.inf, -np.inf], 0)
+        # 新しい特徴量もNaNになりうるので、dropnaのsubsetに追加
+        return df.dropna(subset=["SMA75", "Slope20", "Days_To_Earnings", "Macro_VXJ", "Macro_JPY"]).fillna(0).replace([np.inf, -np.inf], 0)
 
     @staticmethod
     def add_target_label(df: pd.DataFrame) -> pd.DataFrame:
@@ -238,6 +261,38 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"地合い判定エラー: {e}")
             return True
+
+    def update_macro_data_jp(self) -> pd.DataFrame:
+        """
+        日本株向けのマクロ経済指標（日経平均ボラティリティ・インデックス、USD/JPY）を更新します。
+        """
+        logger.info("マクロデータの更新中...")
+        dfs = []
+        for name, ticker in Config.MACRO_TICKERS_JP.items():
+            # 過去2年間のデータを取得
+            data = yf.download(ticker, period="2y", progress=False, timeout=10)
+            if data.empty:
+                logger.warning(f"マクロデータ取得失敗: {ticker} はデータがありませんでした。")
+                continue
+            
+            # Close列を抽出。yfinanceがDataFrameを返す場合があるため対応
+            d = data["Close"]
+            if isinstance(d, pd.DataFrame):
+                d = d.iloc[:, 0]
+            
+            # FeatureFactoryが期待する名称に合わせる (例: VXJ -> Macro_VXJ)
+            d.name = f"Macro_{name}"
+            dfs.append(d)
+        
+        if not dfs:
+            logger.warning("すべてのマクロデータ取得に失敗しました。デフォルト値を使用します。")
+            # 全て失敗した場合、ダミーのDataFrameを返す
+            return pd.DataFrame(columns=[f"Macro_{k}" for k in Config.MACRO_TICKERS_JP.keys()])
+
+        # 全てのSeriesを結合し、欠損値を前方補完
+        macro_df = pd.concat(dfs, axis=1).ffill()
+        macro_df.index.name = "date" # インデックス名を 'date' に設定
+        return macro_df
 
     def update_prices(self, symbols_df: pd.DataFrame):
         """
@@ -368,6 +423,27 @@ class DatabaseManager:
 
         return {f"{code.zfill(4)}.T": group.set_index("date") for code, group in df.groupby("code")}
 
+    def fetch_fundamentals(self, ticker: str) -> Dict:
+        """
+        財務データ（決算発表日までの日数）を取得します。
+        """
+        try:
+            t = yf.Ticker(ticker)
+            
+            # 決算日までの日数を取得
+            days_to_earnings = 30 # デフォルト値
+            calendar = t.calendar
+            if calendar is not None and not calendar.empty:
+                # 次の決算発表日を取得
+                next_event_date = calendar.iloc[0, 0] # 最初の列が日付
+                if isinstance(next_event_date, pd.Timestamp):
+                    days_to_earnings = (next_event_date.date() - datetime.now().date()).days
+            
+            return {"days_to_earnings": days_to_earnings}
+        except Exception as e:
+            logger.warning(f"財務データ取得失敗 for {ticker}: {e}")
+            return {"days_to_earnings": 30} # 取得失敗時はデフォルト値
+
 # =========================================================
 # Notification
 # =========================================================
@@ -418,11 +494,12 @@ class StockScreener:
             current_threshold = Config.THRESHOLD_NORMAL
         
         # データ更新
+        macro_df = self.db.update_macro_data_jp() # マクロデータ取得
         self.db.update_prices(symbols)
         all_data = self.db.load_all_data(symbols)
         
-        # 特徴量生成（並列）
-        processed_data = self._parallel_feature_engineering(all_data)
+        # 特徴量生成（並列）と財務データ取得
+        processed_data = self._parallel_feature_engineering(all_data, macro_df)
         
         # モデル準備
         if not self._prepare_model(all_data):
@@ -446,19 +523,28 @@ class StockScreener:
         df["市場"] = df["市場・商品区分"].str.extract(r"(プライム|スタンダード|グロース)")
         return df[df["市場"].isin(Config.TARGET_MARKETS)][["コード", "銘柄名", "市場"]].dropna()
 
-    def _parallel_feature_engineering(self, all_data: Dict) -> Dict:
-        logger.info("特徴量生成（並列処理）を開始します...")
-        results = Parallel(n_jobs=-1)(delayed(self._feature_worker)(s, d) for s, d in all_data.items())
+    def _parallel_feature_engineering(self, all_data: Dict, macro_df: pd.DataFrame) -> Dict:
+        logger.info(f"財務データとテクニカル指標の統合を開始... (対象: {len(all_data)} 銘柄)")
+        results = []
+        for s, d in all_data.items():
+            # 財務データは銘柄ごとに取得（キャッシュがないため逐次）
+            f_data = self.db.fetch_fundamentals(s)
+            results.append(self._feature_worker(s, d, f_data, macro_df))
+            # APIレート制限対策: 銘柄数が多い場合の負荷軽減
+            if len(all_data) > 50: # 50銘柄以上なら少し待つ
+                time.sleep(0.1)
+
         processed_data = {r[0]: r[1] for r in results if r is not None}
-        logger.info(f"特徴量生成（並列処理）が完了しました。処理済み銘柄数: {len(processed_data)}")
+        logger.info(f"財務データとテクニカル指標の統合が完了しました。処理済み銘柄数: {len(processed_data)}")
         return processed_data
 
-    def _feature_worker(self, symbol, df):
+    def _feature_worker(self, symbol, df, fundamentals: Dict = None, macro_df: pd.DataFrame = None):
         """個別の銘柄の特徴量計算ワーカー関数"""
         if len(df) < 80:
             return None
         
         now_jst = datetime.now(timezone.utc) + timedelta(hours=9)
+        
         
         # 9:00〜9:15の間は価格が極めて不安定（寄り付きノイズ）なため、当日データが含まれている場合は除外
         if now_jst.hour == 9 and now_jst.minute < 15:
@@ -467,8 +553,8 @@ class StockScreener:
         # 9:15以降の9時台は、始値を暫定的な終値として扱うことで、寄り付き後の勢いを反映させる
         elif now_jst.hour == 9 and now_jst.minute >= 15 and df.index[-1].date() == now_jst.date():
             df.iloc[-1, df.columns.get_loc("Close")] = df.iloc[-1, df.columns.get_loc("Open")]
-
-        feat_df = self.factory.calculate_metrics(df)
+        
+        feat_df = self.factory.calculate_metrics(df, fundamentals, macro_df)
         if len(feat_df) < 10:
             return None
         return symbol, feat_df.iloc[-1]
@@ -480,10 +566,10 @@ class StockScreener:
         そうでなければ保存されたモデルファイルを読み込みます。
         """
         def train_worker(symbol, df):
-            if len(df) < 120: return None
+            if len(df) < 120: return None # 過去データが少ない銘柄は学習から除外
             logger.debug(f"Preparing training features for {symbol}")
-            feat_df = self.factory.calculate_metrics(df)
-            logger.debug(f"Finished preparing training features for {symbol}")
+            # 学習時は財務データとマクロデータは利用しない（またはデフォルト値）
+            feat_df = self.factory.calculate_metrics(df, fundamentals=None, macro_df=None)
             feat_df = self.factory.add_target_label(feat_df)
             # 特徴量計算後の有効データが少ない銘柄は、学習の質を下げるため除外
             if len(feat_df) < 30:
