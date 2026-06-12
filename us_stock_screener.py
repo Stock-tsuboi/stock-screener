@@ -162,12 +162,17 @@ class FeatureFactory:
             for col in ["PE_Ratio", "PB_Ratio", "ROE", "Rev_Growth", "EPS_Growth", "Op_Margin", "Debt_Equity", "Days_To_Earnings"]:
                 df[col] = 0
 
-        # マクロデータの統合 (日付でマージ)
-        if macro_df is not None:
-            df = df.join(macro_df, how="left").fillna(method="ffill")
-        else:
-            df["Macro_VIX"] = 20
-            df["Macro_10Y"] = 4.0
+        # マクロデータの統合
+        if macro_df is not None and not macro_df.empty:
+            df = df.join(macro_df, how="left").ffill()
+        
+        # カラムが存在しない、または取得失敗時のデフォルト値補完
+        if "Macro_VIX" not in df.columns: df["Macro_VIX"] = 20
+        if "Macro_10Y" not in df.columns: df["Macro_10Y"] = 4.0
+        
+        # 個別銘柄の期間中にマクロデータが欠落している場合を埋める
+        df["Macro_VIX"] = df["Macro_VIX"].fillna(20)
+        df["Macro_10Y"] = df["Macro_10Y"].fillna(4.0)
 
         df = df.replace([np.inf, -np.inf], np.nan)
         return df.dropna(subset=["SMA75", "Slope20"]).fillna(0).replace([np.inf, -np.inf], 0)
@@ -231,10 +236,18 @@ class DatabaseManager:
             info = t.info
             # 決算日
             calendar = t.calendar
-            days_to_earnings = 30
-            if calendar is not None and not calendar.empty:
-                next_event = calendar.iloc[0, 0]
-                days_to_earnings = (next_event.date() - datetime.now().date()).days
+            days_to_earnings = 30 # デフォルト値
+            if calendar is not None:
+                next_event_date = None
+                if isinstance(calendar, pd.DataFrame) and not calendar.empty:
+                    next_event_date = calendar.iloc[0, 0]
+                elif isinstance(calendar, dict):
+                    ed = calendar.get('Earnings Date')
+                    if ed and isinstance(ed, list) and len(ed) > 0:
+                        next_event_date = ed[0]
+                
+                if isinstance(next_event_date, (pd.Timestamp, datetime)):
+                    days_to_earnings = (next_event_date.date() - datetime.now().date()).days
             
             return {
                 "trailingPE": info.get("trailingPE", 0),
@@ -385,7 +398,24 @@ class USStockScreener:
 
     def _feature_worker(self, symbol, df, fundamentals=None, macro_df=None):
         if len(df) < 100: return None
+
+        # --- 米国市場時間（ET）に基づいたノイズ判定 ---
+        # UTCから米国東部時間（ET）を算出（通常-5時間、夏時間-4時間だが簡易的に-5で判定、またはUTCで判定）
+        now_utc = datetime.now(timezone.utc)
+        # 米国市場開場は 14:30 UTC (冬) または 13:30 UTC (夏)
+        # 寄り付き直後の30分間（ノイズ期間）に実行された場合、当日データを除外して前日までの確定足で分析
         
+        # 直近のデータが「今日」のものであるか確認
+        latest_date = df.index[-1]
+        if isinstance(latest_date, pd.Timestamp):
+            latest_date = latest_date.date()
+
+        # 市場が開いている時間帯（現地9:30-10:00）に実行された場合の暫定処理
+        # 14:30 UTC = 9:30 ET (冬) / 13:30 UTC = 9:30 ET (夏)
+        if (13 <= now_utc.hour <= 15) and (latest_date == now_utc.date()):
+             # 寄り付き直後の不安定な足を除去し、前日までの確定データで推論
+             df = df.iloc[:-1]
+
         feat_df = self.factory.calculate_metrics(df, fundamentals, macro_df)
         return (symbol, feat_df.iloc[-1]) if len(feat_df) > 10 else None
 
