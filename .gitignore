@@ -1,7 +1,25 @@
-# データベースとモデル
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments (機密情報が含まれる場合があるため)
+.env
+.venv
+env/
+venv/
+
+# Databases (ローカルで更新されるため)
 *.db
+
+# AI Models (大容量バイナリファイル)
 *.pkl
-*.csv.tmp
-# キャッシュディレクトリ
+
+# Logs and History (実行ごとに更新されるデータ)
+recommendation_history.csv
+us_recommendation_history.csv
+log_*.csv
+
+# yfinance cache
 cache/
 cache_us/
