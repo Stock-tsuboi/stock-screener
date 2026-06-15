@@ -309,6 +309,7 @@ class DatabaseManager:
     def update_prices(self, symbols_df: pd.DataFrame):
         logger.info("DuckDB米国株価格更新開始...")
         tickers_list = symbols_df["Ticker"].tolist()
+        total_tickers = len(tickers_list)
         
         with self._get_connection() as conn:
             conn.execute("""
@@ -325,8 +326,11 @@ class DatabaseManager:
             period_setting = "5d" if res[0] > 0 else "2y" 
             
             batch_size = 30 # 米国株は1ティッカーあたりの負荷が高いためバッチサイズを縮小
-            for i in range(0, len(tickers_list), batch_size):
+            for i in range(0, total_tickers, batch_size):
                 batch = tickers_list[i:i+batch_size]
+                if i % 60 == 0: # 2バッチごとに進捗を表示
+                    logger.info(f"株価取得進捗: {i}/{total_tickers} 銘柄完了...")
+
                 try:
                     # auto_adjust=Trueを適用し、分割併合調整後の価格を取得
                     df = yf.download(
@@ -401,11 +405,10 @@ class USStockScreener:
     def _load_symbols(self) -> pd.DataFrame:
         """
         us_stocks.csv を読み込む。
-        例: Ticker, Name, Exchange
+        アルファベット順ではなく、売買代金（流動性）の大きい有力銘柄を優先して選択する。
         """
         path = os.path.join(Config.BASE_DIR, "us_stocks.csv")
         if not os.path.exists(path):
-            # ファイルがない場合は主要なハイテク株をデフォルトにする例
             logger.warning("us_stocks.csv がないため、デフォルトリストを使用します。")
             return pd.DataFrame({
                 "Ticker": ["AAPL", "MSFT", "GOOGL", "AMZN", "TSLA", "NVDA", "META", "NFLX", "AMD", "INTC"],
@@ -413,22 +416,71 @@ class USStockScreener:
             })
         df = pd.read_csv(path, dtype=str)
         df = df.dropna(subset=["Ticker"])
-        # 特殊記号を含む銘柄を念のため再度除外
         df = df[df["Ticker"].str.match(r"^[A-Z]+$", na=False)]
-        return df
+        
+        all_tickers = df["Ticker"].unique().tolist()
+        
+        # 優先的にスキャンしたい市場のリーダー銘柄
+        priority_tickers = ["AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "TSLA", "META", "AVGO", "COST", "NFLX", "AMD", "PLTR", "SMCI"]
+        
+        logger.info(f"全 {len(all_tickers)} 銘柄から、売買代金に基づき有力銘柄を選別中...")
+        
+        try:
+            # 売買代金（株価 × 出来高）を算出するため、直近のデータをバッチ取得（1銘柄ずつ取得するより100倍以上高速）
+            liquidity_scores = []
+            batch_size = 1000
+            for i in range(0, len(all_tickers), batch_size):
+                batch = all_tickers[i:i+batch_size]
+                # 最小限の期間(2d)で価格と出来高を一括ダウンロード
+                temp_data = yf.download(batch, period="2d", interval="1d", group_by="ticker", progress=False)
+                
+                for ticker in batch:
+                    if ticker in temp_data.columns.get_level_values(0):
+                        t_df = temp_data[ticker].dropna()
+                        if not t_df.empty:
+                            # 直近の売買代金をスコアとする
+                            score = t_df["Close"].iloc[-1] * t_df["Volume"].iloc[-1]
+                            # 優先銘柄には巨大なスコアを与えてトップに固定
+                            if ticker in priority_tickers: score += 1e18 
+                            liquidity_scores.append({"Ticker": ticker, "Liquidity": score})
+            
+            liq_df = pd.DataFrame(liquidity_scores)
+            df = df.merge(liq_df, on="Ticker", how="inner")
+            # 売買代金の大きい順にソート
+            df = df.sort_values("Liquidity", ascending=False)
+            
+        except Exception as e:
+            logger.warning(f"流動性による選別中にエラーが発生しました。現在の順序で続行します: {e}")
+
+        # 解析対象を上位500銘柄に限定（API制限を回避しつつ、質の高い銘柄に絞る）
+        logger.info(f"分析対象として売買代金上位 {min(500, len(df))} 銘柄を抽出しました。")
+        return df.head(500)
 
     def _parallel_feature_engineering(self, all_data: Dict, macro_df: pd.DataFrame) -> Dict:
-        # 財務データは逐次取得（またはDBキャッシュから）
+        """財務データとテクニカル指標の統合（進捗表示付き）"""
         logger.info(f"財務データとテクニカル指標の統合を開始... (対象: {len(all_data)} 銘柄)")
         results = []
-        for s, d in all_data.items():
+        total = len(all_data)
+        
+        for i, (s, d) in enumerate(all_data.items()):
+            # 100銘柄ごとに進捗をログ出力してフリーズしていないか確認可能にする
+            if i % 100 == 0 and i > 0:
+                logger.info(f"特徴量生成進捗: {i}/{total} 銘柄完了... (現在: {s})")
+            
+            # 財務データの取得（キャッシュがあれば高速、なければAPI経由で低速）
             f_data = self.db.fetch_fundamentals(s)
-            results.append(self._feature_worker(s, d, f_data, macro_df))
-            # Rate Limit対策: 銘柄数が多い場合のAPI負荷軽減
-            if len(all_data) > 20:
-                time.sleep(0.2)
+            res = self._feature_worker(s, d, f_data, macro_df)
+            if res:
+                results.append(res)
+            
+            # Rate Limit対策: 大量銘柄を処理する場合のAPI負荷軽減
+            # APIエラーを回避するため、待機時間は維持しつつ少し短縮
+            if total > 20:
+                time.sleep(0.05) 
 
-        return {r[0]: r[1] for r in results if r is not None}
+        processed_data = {r[0]: r[1] for r in results if r is not None}
+        logger.info(f"統合完了。有効銘柄数: {len(processed_data)}")
+        return processed_data
 
     def _feature_worker(self, symbol, df, fundamentals=None, macro_df=None):
         if len(df) < 100: return None
