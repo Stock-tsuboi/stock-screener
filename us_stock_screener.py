@@ -230,31 +230,46 @@ class DatabaseManager:
         return macro_df
 
     def fetch_fundamentals(self, ticker: str) -> Dict:
-        """財務データと決算予定の取得（API負荷軽減のためキャッシュ推奨）"""
+        """財務データと決算予定の取得（DuckDBによるキャッシュ実装）"""
+        with self._get_connection() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS fundamentals (
+                    ticker TEXT PRIMARY KEY,
+                    trailingPE DOUBLE, priceToBook DOUBLE, returnOnEquity DOUBLE,
+                    revenueGrowth DOUBLE, earningsGrowth DOUBLE, operatingMargins DOUBLE,
+                    debtToEquity DOUBLE, days_to_earnings INTEGER, updated_at TIMESTAMP
+                )
+            """)
+            # 30日以内のキャッシュがあればそれを利用する
+            cached = conn.execute(
+                "SELECT * FROM fundamentals WHERE ticker = ? AND updated_at > CURRENT_TIMESTAMP - INTERVAL 30 DAY", 
+                [ticker]
+            ).fetchone()
+            
+            if cached:
+                return {
+                    "trailingPE": cached[1], "priceToBook": cached[2], "returnOnEquity": cached[3],
+                    "revenueGrowth": cached[4], "earningsGrowth": cached[5], "operatingMargins": cached[6],
+                    "debtToEquity": cached[7], "days_to_earnings": cached[8]
+                }
+
+        # キャッシュがない、または古い場合はAPIから新規取得
         try:
             t = yf.Ticker(ticker)
-            # infoの取得は失敗しやすいため、try-exceptを個別に適用
-            try:
-                info = t.info
-            except Exception:
-                info = {}
-
-            # 決算日
+            # infoとcalendarの取得（ここでレートリミットが発生しやすい）
+            info = t.info if hasattr(t, 'info') else {}
             calendar = t.calendar
-            days_to_earnings = 30 # デフォルト値
+            days_to_earnings = 30
             if calendar is not None:
                 next_event_date = None
                 if isinstance(calendar, pd.DataFrame) and not calendar.empty:
                     next_event_date = calendar.iloc[0, 0]
-                elif isinstance(calendar, dict):
-                    ed = calendar.get('Earnings Date')
-                    if ed and isinstance(ed, list) and len(ed) > 0:
-                        next_event_date = ed[0]
-                
+                elif isinstance(calendar, dict) and calendar.get('Earnings Date'):
+                    next_event_date = calendar['Earnings Date'][0]
                 if isinstance(next_event_date, (pd.Timestamp, datetime)):
                     days_to_earnings = (next_event_date.date() - datetime.now().date()).days
             
-            return {
+            f_data = {
                 "trailingPE": info.get("trailingPE") or 0,
                 "priceToBook": info.get("priceToBook") or 0,
                 "returnOnEquity": info.get("returnOnEquity") or 0,
@@ -264,8 +279,18 @@ class DatabaseManager:
                 "debtToEquity": info.get("debtToEquity") or 0,
                 "days_to_earnings": days_to_earnings
             }
+            
+            # DBに保存（キャッシュ更新）
+            with self._get_connection() as conn:
+                conn.execute("""
+                    INSERT OR REPLACE INTO fundamentals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                """, [ticker] + list(f_data.values()))
+            return f_data
         except Exception as e:
-            logger.warning(f"Fundamental data processing failed for {ticker}: {e}")
+            if "Too Many Requests" in str(e) or "429" in str(e):
+                logger.warning(f"Rate limit exceeded for {ticker}. Skipping API call.")
+            else:
+                logger.warning(f"Fundamental data processing failed for {ticker}: {e}")
             return {}
 
     def get_market_regime(self) -> bool:
