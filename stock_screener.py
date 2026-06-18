@@ -59,8 +59,8 @@ class Config:
     LINE_USER_ID = os.getenv("LINE_USER_ID") or "dummy"
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
     RETRAIN_DAYS = 7
-    THRESHOLD_STRICT = 0.48  # 地合いが悪い時
-    THRESHOLD_NORMAL = 0.42  # 標準（ログの0.44に合わせて少し緩和）
+    THRESHOLD_STRICT = 0.45  # 地合いが悪い時
+    THRESHOLD_NORMAL = 0.40  # 標準（AIの精度向上に伴い、より広めに拾う）
     TRAILING_STOP_ATR_MULT = 2.5  # ATRの何倍下落したらトレールストップを発動するか（推奨: 2.0-3.0）
     
     PORTFOLIO_SIZE = 30000    # 運用予算（S株/少額運用 3万円）
@@ -82,10 +82,10 @@ class FeatureFactory:
     """
     
     FEATURE_COLS = [
-        "SMA5", "SMA25", "SMA75", "Bias5", "Bias25", "Bias75",
+        "SMA5", "SMA25", "SMA75", "SMA200", "Bias5", "Bias25", "Bias75", "Bias200",
         "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2", "VolRatio",
         "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10", "RSI", "MACD_Hist", "Momentum_Change",
-        "ret1", "ret3", "ret5", "ret20", "atr_ratio",
+        "ret1", "ret3", "ret5", "ret20", "atr_ratio", "Stage2_Score",
         "VolVCP",
         "Days_To_Earnings", "Macro_VXJ", "Macro_JPY" # 新規追加
     ] # AIが判断に使用する項目のリスト
@@ -99,10 +99,16 @@ class FeatureFactory:
         df = df.copy()
         close = df["Close"]
         
-        # 移動平均と乖離率
-        for n in [5, 25, 75]:
+        # 移動平均と乖離率 (長期トレンド確認用に200日を追加)
+        for n in [5, 25, 75, 200]:
             df[f"SMA{n}"] = close.rolling(n).mean()
             df[f"Bias{n}"] = (close - df[f"SMA{n}"]) / df[f"SMA{n}"].replace(0, np.nan)
+
+        # 上昇トレンドの土台（Stage2）スコアリング
+        # 200日線が上向き、かつ価格がその上にあり、短期>中期>長期の順に並んでいるか
+        df["is_long_uptrend"] = (close > df["SMA200"]) & (df["SMA200"] > df["SMA200"].shift(1))
+        df["is_alignment"] = (df["SMA25"] > df["SMA75"]) & (df["SMA75"] > df["SMA200"])
+        df["Stage2_Score"] = (df["is_long_uptrend"].astype(int) + df["is_alignment"].astype(int))
 
         # ボリンジャーバンド
         # screening_ai.py の計算式に合わせる
@@ -192,7 +198,7 @@ class FeatureFactory:
         
         # 指標が計算できていない初期の行（SMA75などがNaNの期間）を削除してから、残りを0埋め
         # 新しい特徴量もNaNになりうるので、dropnaのsubsetに追加
-        return df.dropna(subset=["SMA75", "Slope20", "Days_To_Earnings", "Macro_VXJ", "Macro_JPY"]).fillna(0).replace([np.inf, -np.inf], 0)
+        return df.dropna(subset=["SMA200", "Slope20", "Days_To_Earnings", "Macro_VXJ", "Macro_JPY"]).fillna(0).replace([np.inf, -np.inf], 0)
 
     @staticmethod
     def add_target_label(df: pd.DataFrame) -> pd.DataFrame:
@@ -210,19 +216,22 @@ class FeatureFactory:
         future_min = df["Low"].shift(-1).rolling(window=indexer, min_periods=5).min()
         future_drawdown = future_min / df["Close"] - 1
 
+        # 20日（約1ヶ月）先の持続性も確認
+        future_20d_gain = df["Close"].shift(-20) / df["Close"] - 1
+
         # 仕込み時の条件（現在が静かであること）
         # 1. 急騰予兆パターン: 出来高が平均的で価格が安定
-        is_precursor = (df["VolRatio"] < 1.2) & (df["ret5"].between(-0.05, 0.02))
+        is_precursor = (df["VolRatio"] < 1.2) & (df["ret5"].between(-0.04, 0.02)) & (df["Stage2_Score"] >= 1)
         
         # 2. トレンド継続パターン: すでに動き出しているが、過熱しすぎていない
-        is_trend = (df["VolRatio"].between(1.2, 2.0)) & (df["ret5"].between(0.02, 0.08)) & (df["Bias25"] < 0.10)
+        is_trend = (df["VolRatio"].between(1.1, 2.0)) & (df["ret5"].between(0.01, 0.08)) & (df["Stage2_Score"] == 2)
         
         # 未来のパフォーマンス条件
         # A. 期間内最高値が5%以上上昇（利確チャンス）
         will_breakout = (future_gain >= 0.05)
-        # B. 5日後の終値が3%以上上昇（上昇の持続性）
-        future_close_gain = df["Close"].shift(-5) / df["Close"] - 1
-        will_hold = (future_close_gain >= 0.03)
+        # B. 20日後も価格が維持または上昇している（長期持続性）
+        will_sustain = (future_20d_gain >= 0.05)
+        
         # C. 【改善】逆行リスクをATRの1.5倍までに緩和（一律2.5%は厳しすぎた）
         is_clean_move = (future_drawdown > -(df["atr_ratio"] * 1.5).fillna(0.025))
 
@@ -230,7 +239,7 @@ class FeatureFactory:
         is_setup = is_precursor | is_trend
 
         # 両方の条件を満たすものを「質の高い上昇」として学習させる
-        df["Target"] = np.where(future_gain.notna(), (is_setup & will_breakout & will_hold & is_clean_move).astype(int), np.nan)
+        df["Target"] = np.where(future_20d_gain.notna(), (is_setup & will_breakout & will_sustain & is_clean_move).astype(int), np.nan)
         return df
 
 # =========================================================
@@ -694,14 +703,21 @@ class StockScreener:
         res_df["RiskWidth"] = (res_df["atr_ratio"] * 2.0).clip(lower=0.03) # 最低3%は確保
         
         # Reward (想定利益): AIの勝率に基づき、最低5%〜最大15%程度の利幅を期待
-        res_df["RewardTarget"] = (0.05 + (res_df["prob"] * 0.10) + (res_df["SlopeScore"] * 0.05)).clip(lower=0.05)
+        res_df["RewardTarget"] = (0.05 + (res_df["prob"] * 0.12) + (res_df["SlopeScore"] * 0.05)).clip(lower=0.05)
 
         # 本来の期待値公式: (P_win * Reward) - (P_loss * Risk)
         res_df["EV_Raw"] = (res_df["prob"] * res_df["RewardTarget"]) - ((1.0 - res_df["prob"]) * res_df["RiskWidth"])
 
-        # 戦略的重み：出来高が静かなほど「仕込み」としての価値を高める（SilenceScore）
-        res_df["SilenceScore"] = (2.0 - res_df["VolRatio"]).clip(0.5, 1.5) # 出来高が低いほどEVをブースト
-        res_df["EV"] = res_df["EV_Raw"] * res_df["SilenceScore"]
+        # 【改善】出来高確認スコア：1.2倍（わずかな変化）をピークに設定し、初動を最速で捉える
+        res_df["VolExpansionScore"] = (1.5 - (res_df["VolRatio"] - 1.2).abs()).clip(0.8, 1.5)
+        
+        # 加速度ボーナス：下落が止まった、あるいは上昇が加速した瞬間に加点
+        res_df["AccelBonus"] = np.where(res_df["SlopeAccel"] > 0, 1.1, 1.0)
+        
+        # 長期トレンドボーナス：Stage2（土台ができている）であれば評価を上乗せ
+        res_df["SustainabilityBonus"] = 1.0 + (res_df["Stage2_Score"] * 0.1)
+        
+        res_df["EV"] = res_df["EV_Raw"] * res_df["VolExpansionScore"] * res_df["AccelBonus"] * res_df["SustainabilityBonus"]
         
         max_prob = res_df['prob'].max()
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {max_prob:.3f})")
@@ -719,22 +735,19 @@ class StockScreener:
             (res_df["ret1"] < -0.05)                             # 5%以上の急落
         )
 
-        # 基本条件の定義（確率以外）
-        # Bias25を -0.12 (12%下) まで許可し、低値からの上抜け候補を拾えるようにする
-        cond_tech = (res_df["VolVCP"] < 1.15) & (res_df["Bias25"].between(-0.12, 0.05))
-        cond_slope = res_df["Slope20"] > -0.005 # 下落トレンドを排除
-        cond_ret = res_df["ret10"].between(-0.07, 0.12) # 上昇中の銘柄も許容するため上限を緩和
-        cond_vol = res_df["VolRatio"] < 1.8 # 出来高が活発な銘柄も許容
+        # 基本条件：出来高が極端に細りすぎているものは除外（流動性リスク回避）
+        cond_tech = (res_df["VolRatio"] > 0.4) & (res_df["VolVCP"] < 1.3) & (res_df["Bias25"].between(-0.15, 0.08))
+        cond_slope = res_df["Slope20"] > -0.01
         # 確率閾値の適用
         cond_prob = (res_df["prob"] >= threshold)
         
-        logger.info(f"【条件別ヒット数】 AI確率({threshold:.2f}以上): {cond_prob.sum()}, 傾き: {cond_slope.sum()}, 安定性: {cond_ret.sum()}, 出来高: {cond_vol.sum()}")
+        logger.info(f"【条件別ヒット数】 AI確率({threshold:.2f}以上): {cond_prob.sum()}, 出来高/テクニカル: {(cond_tech & cond_slope).sum()}")
 
         # 売りシグナルフラグを付与
         res_df["is_sell_signal"] = cond_sell & (res_df["Slope10"] < 0.05)
 
         # 厳選候補からは、売りシグナルが出ているものを除外する
-        filtered = res_df[cond_prob & cond_tech & cond_slope & cond_ret & cond_vol & ~cond_sell].sort_values("EV", ascending=False)
+        filtered = res_df[cond_prob & cond_tech & cond_slope & ~cond_sell].sort_values("EV", ascending=False)
 
         if not filtered.empty:
             filtered["is_potential"] = False
