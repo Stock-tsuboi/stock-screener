@@ -59,8 +59,8 @@ class Config:
     LINE_USER_ID = os.getenv("LINE_USER_ID") or "dummy"
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
     RETRAIN_DAYS = 7
-    THRESHOLD_STRICT = 0.45  # 地合いが悪い時
-    THRESHOLD_NORMAL = 0.40  # 標準（AIの精度向上に伴い、より広めに拾う）
+    THRESHOLD_STRICT = 0.40  # 地合いが悪い時
+    THRESHOLD_NORMAL = 0.35  # 標準（ログの0.357に合わせて緩和）
     TRAILING_STOP_ATR_MULT = 2.5  # ATRの何倍下落したらトレールストップを発動するか（推奨: 2.0-3.0）
     
     PORTFOLIO_SIZE = 30000    # 運用予算（S株/少額運用 3万円）
@@ -221,10 +221,10 @@ class FeatureFactory:
 
         # 仕込み時の条件（現在が静かであること）
         # 1. 急騰予兆パターン: 出来高が平均的で価格が安定
-        is_precursor = (df["VolRatio"] < 1.2) & (df["ret5"].between(-0.04, 0.02)) & (df["Stage2_Score"] >= 1)
+        is_precursor = (df["VolRatio"] < 1.3) & (df["ret5"].between(-0.06, 0.03)) & (df["Stage2_Score"] >= 1)
         
         # 2. トレンド継続パターン: すでに動き出しているが、過熱しすぎていない
-        is_trend = (df["VolRatio"].between(1.1, 2.0)) & (df["ret5"].between(0.01, 0.08)) & (df["Stage2_Score"] == 2)
+        is_trend = (df["VolRatio"].between(1.0, 2.2)) & (df["ret5"].between(0.01, 0.10)) & (df["Stage2_Score"] >= 1)
         
         # 未来のパフォーマンス条件
         # A. 期間内最高値が5%以上上昇（利確チャンス）
@@ -702,22 +702,28 @@ class StockScreener:
         # Risk (想定損失): ATR(14)の2倍を標準的な損切り幅として定義
         res_df["RiskWidth"] = (res_df["atr_ratio"] * 2.0).clip(lower=0.03) # 最低3%は確保
         
-        # Reward (想定利益): AIの勝率に基づき、最低5%〜最大15%程度の利幅を期待
-        res_df["RewardTarget"] = (0.05 + (res_df["prob"] * 0.12) + (res_df["SlopeScore"] * 0.05)).clip(lower=0.05)
+        # Reward (想定利益): 確率が低い銘柄には、より大きなリワードがないと期待値がプラスにならないよう調整
+        # 確率(prob)が低い銘柄は RewardTarget が小さくなるため、EV計算で厳しく判定される
+        res_df["RewardTarget"] = (0.04 + (res_df["prob"] * 0.14) + (res_df["SlopeScore"] * 0.05)).clip(lower=0.05)
 
         # 本来の期待値公式: (P_win * Reward) - (P_loss * Risk)
         res_df["EV_Raw"] = (res_df["prob"] * res_df["RewardTarget"]) - ((1.0 - res_df["prob"]) * res_df["RiskWidth"])
 
-        # 【改善】出来高確認スコア：1.2倍（わずかな変化）をピークに設定し、初動を最速で捉える
-        res_df["VolExpansionScore"] = (1.5 - (res_df["VolRatio"] - 1.2).abs()).clip(0.8, 1.5)
+        # 【改善】出来高確認スコア：1.2倍付近をピークにしつつ、下限を0.8->0.9に底上げして過度な除外を防止
+        res_df["VolExpansionScore"] = (1.5 - (res_df["VolRatio"] - 1.2).abs()).clip(0.9, 1.5)
         
-        # 加速度ボーナス：下落が止まった、あるいは上昇が加速した瞬間に加点
-        res_df["AccelBonus"] = np.where(res_df["SlopeAccel"] > 0, 1.1, 1.0)
+        # 加速度ボーナス：確率が低い銘柄(0.4未満)の場合、加速度がマイナスなら評価を大幅に下げる
+        res_df["AccelBonus"] = np.where(res_df["SlopeAccel"] > 0, 1.1, np.where(res_df["prob"] < 0.4, 0.7, 1.0))
         
         # 長期トレンドボーナス：Stage2（土台ができている）であれば評価を上乗せ
         res_df["SustainabilityBonus"] = 1.0 + (res_df["Stage2_Score"] * 0.1)
         
         res_df["EV"] = res_df["EV_Raw"] * res_df["VolExpansionScore"] * res_df["AccelBonus"] * res_df["SustainabilityBonus"]
+
+        # ログの状況（最大確率が閾値以下）に対応するため、閾値を市場の最高値に合わせる動的調整
+        adjusted_threshold = min(threshold, max_prob * 0.95) if max_prob > 0.3 else threshold
+        if adjusted_threshold < threshold:
+            logger.info(f"市場全体の確率が低いため、閾値を {threshold:.3f} -> {adjusted_threshold:.3f} に調整しました。")
         
         max_prob = res_df['prob'].max()
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {max_prob:.3f})")
@@ -736,12 +742,12 @@ class StockScreener:
         )
 
         # 基本条件：出来高が極端に細りすぎているものは除外（流動性リスク回避）
-        cond_tech = (res_df["VolRatio"] > 0.4) & (res_df["VolVCP"] < 1.3) & (res_df["Bias25"].between(-0.15, 0.08))
+        cond_tech = (res_df["VolRatio"] > 0.3) & (res_df["VolVCP"] < 1.4) & (res_df["Bias25"].between(-0.18, 0.10))
         cond_slope = res_df["Slope20"] > -0.01
         # 確率閾値の適用
-        cond_prob = (res_df["prob"] >= threshold)
+        cond_prob = (res_df["prob"] >= adjusted_threshold)
         
-        logger.info(f"【条件別ヒット数】 AI確率({threshold:.2f}以上): {cond_prob.sum()}, 出来高/テクニカル: {(cond_tech & cond_slope).sum()}")
+        logger.info(f"【条件別ヒット数】 AI確率({adjusted_threshold:.2f}以上): {cond_prob.sum()}, テクニカル合致: {(cond_tech & cond_slope).sum()}")
 
         # 売りシグナルフラグを付与
         res_df["is_sell_signal"] = cond_sell & (res_df["Slope10"] < 0.05)
