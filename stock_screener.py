@@ -549,9 +549,9 @@ class StockScreener:
             # 財務データは銘柄ごとに取得（キャッシュがないため逐次）
             f_data = self.db.fetch_fundamentals(s)
             results.append(self._feature_worker(s, d, f_data, macro_df))
-            # APIレート制限対策: 銘柄数が多い場合の負荷軽減
-            if len(all_data) > 50: # 50銘柄以上なら少し待つ
-                time.sleep(0.1)
+            # APIレート制限対策: 3700銘柄近くあるため、待機時間を増やして安全に取得
+            if len(all_data) > 20:
+                time.sleep(0.2)
 
         processed_data = {r[0]: r[1] for r in results if r is not None}
         logger.info(f"財務データとテクニカル指標の統合が完了しました。処理済み銘柄数: {len(processed_data)}")
@@ -687,7 +687,7 @@ class StockScreener:
         proba = self.model.predict_proba(features[self.factory.FEATURE_COLS])
         if proba.shape[1] < 2:
             logger.error("AIモデルの学習データに正解（Target=1）が含まれていなかったため、推論をスキップします。")
-            return pd.DataFrame(), pd.DataFrame()
+            return pd.DataFrame(), pd.DataFrame(), 0.0
             
         probs = proba[:, 1]
         
@@ -720,13 +720,14 @@ class StockScreener:
         
         res_df["EV"] = res_df["EV_Raw"] * res_df["VolExpansionScore"] * res_df["AccelBonus"] * res_df["SustainabilityBonus"]
 
+        max_prob = res_df['prob'].max()
+
         # ログの状況（最大確率が閾値以下）に対応するため、閾値を市場の最高値に合わせる動的調整
         adjusted_threshold = min(threshold, max_prob * 0.95) if max_prob > 0.3 else threshold
         if adjusted_threshold < threshold:
             logger.info(f"市場全体の確率が低いため、閾値を {threshold:.3f} -> {adjusted_threshold:.3f} に調整しました。")
         
-        max_prob = res_df['prob'].max()
-        logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {max_prob:.3f})")
+        logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {max_prob:.3f}, 動的閾値: {adjusted_threshold:.3f})")
 
         # 【プロ視点】売り・警戒銘柄の検知ロジック (除外判定に使うため先に定義)
         # 1. RSIが75以上で反落開始 (買われすぎからの調整)
@@ -742,7 +743,7 @@ class StockScreener:
         )
 
         # 基本条件：出来高が極端に細りすぎているものは除外（流動性リスク回避）
-        cond_tech = (res_df["VolRatio"] > 0.3) & (res_df["VolVCP"] < 1.4) & (res_df["Bias25"].between(-0.18, 0.10))
+        cond_tech = (res_df["VolRatio"] > 0.25) & (res_df["VolVCP"] < 1.5) & (res_df["Bias25"].between(-0.20, 0.12))
         cond_slope = res_df["Slope20"] > -0.01
         # 確率閾値の適用
         cond_prob = (res_df["prob"] >= adjusted_threshold)
