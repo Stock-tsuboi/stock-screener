@@ -284,17 +284,26 @@ class DatabaseManager:
         """
         logger.info("マクロデータの更新中...")
         dfs = []
-        for name, ticker in Config.MACRO_TICKERS_JP.items():
-            # 過去2年間のデータを取得
-            data = yf.download(ticker, period="2y", progress=False, timeout=10)
-            if data.empty:
-                logger.warning(f"マクロデータ取得失敗: {ticker} はデータがありませんでした。")
+        
+        tickers = {
+            "VXJ": ["^JNIV", "^VIX"], # 日経VIがダメなら米国VIXを試す
+            "JPY": ["JPY=X"]
+        }
+
+        for name, ticker_list in tickers.items():
+            d = pd.Series()
+            for ticker in ticker_list:
+                data = yf.download(ticker, period="2y", progress=False, timeout=10)
+                if not data.empty:
+                    d = data["Close"]
+                    if isinstance(d, pd.DataFrame):
+                        d = d.iloc[:, 0]
+                    break # 取得できたら次の項目へ
+                else:
+                    logger.warning(f"マクロデータ取得失敗: {ticker} はデータがありませんでした。")
+
+            if d.empty:
                 continue
-            
-            # Close列を抽出。yfinanceがDataFrameを返す場合があるため対応
-            d = data["Close"]
-            if isinstance(d, pd.DataFrame):
-                d = d.iloc[:, 0]
             
             # FeatureFactoryが期待する名称に合わせる (例: VXJ -> Macro_VXJ)
             d.name = f"Macro_{name}"
