@@ -753,8 +753,9 @@ class StockScreener:
         # 売りシグナルフラグを付与
         res_df["is_sell_signal"] = cond_sell & (res_df["Slope10"] < 0.05)
 
-        # 厳選候補からは、売りシグナルが出ているものを除外する
-        filtered = res_df[cond_prob & cond_tech & cond_slope & ~cond_sell].sort_values("EV", ascending=False)
+        # 【改善】AIが非常に高い確率を出している場合、Slope条件を緩和して「下げ止まりからの反発」を拾う
+        cond_slope_flexible = (res_df["Slope20"] > -0.015) if max_prob > 0.35 else cond_slope
+        filtered = res_df[cond_prob & cond_tech & cond_slope_flexible & ~cond_sell].sort_values("EV", ascending=False)
 
         if not filtered.empty:
             filtered["is_potential"] = False
@@ -769,9 +770,9 @@ class StockScreener:
             # 確率が高い上位銘柄を抽出（ここでも最低限のテクニカルと売りサインなしを確認）
             potential_candidates = res_df[cond_tech & ~cond_sell].sort_values("prob", ascending=False).head(3).copy()
             
+            # 【重要】救済であっても期待値がマイナスのものは推奨しない（資産を守る）
             if not potential_candidates.empty:
-                # 期待値が一定基準を満たすもののみに絞り込み（緩和せず -0.05 を維持）
-                potential_candidates = potential_candidates[potential_candidates["EV"] > -0.05]
+                potential_candidates = potential_candidates[potential_candidates["EV"] >= 0.0]
 
             if not potential_candidates.empty:
                 # 各銘柄の除外理由を特定
