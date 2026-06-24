@@ -291,7 +291,7 @@ class DatabaseManager:
         }
 
         for name, ticker_list in tickers.items():
-            d = pd.Series()
+            d = pd.Series(dtype='float64')
             for ticker in ticker_list:
                 data = yf.download(ticker, period="2y", progress=False, timeout=10)
                 if not data.empty:
@@ -552,19 +552,66 @@ class StockScreener:
         return df[df["市場"].isin(Config.TARGET_MARKETS)][["コード", "銘柄名", "市場"]].dropna()
 
     def _parallel_feature_engineering(self, all_data: Dict, macro_df: pd.DataFrame) -> Dict:
-        logger.info(f"財務データとテクニカル指標の統合を開始... (対象: {len(all_data)} 銘柄)")
+        """【高速化版】決算日データを事前に一括取得してマージします"""
+        logger.info(f"特徴量生成と財務・マクロ指標の統合を開始... (対象: {len(all_data)} 銘柄)")
+        
+        ticker_list = list(all_data.keys())
+        earnings_cache = self._fetch_all_fundamentals_batch(ticker_list)
+        
         results = []
         for s, d in all_data.items():
-            # 財務データは銘柄ごとに取得（キャッシュがないため逐次）
-            f_data = self.db.fetch_fundamentals(s)
-            results.append(self._feature_worker(s, d, f_data, macro_df))
-            # APIレート制限対策: 3700銘柄近くあるため、待機時間を増やして安全に取得
-            if len(all_data) > 20:
-                time.sleep(0.2)
+            f_data = earnings_cache.get(s, {"days_to_earnings": 30})
+            
+            worker_res = self._feature_worker(s, d, f_data, macro_df)
+            if worker_res is not None:
+                results.append(worker_res)
 
         processed_data = {r[0]: r[1] for r in results if r is not None}
-        logger.info(f"財務データとテクニカル指標の統合が完了しました。処理済み銘柄数: {len(processed_data)}")
+        logger.info(f"指標の統合が完了しました。処理済み銘柄数: {len(processed_data)}")
         return processed_data
+
+    def _fetch_all_fundamentals_batch(self, tickers: List[str]) -> Dict[str, Dict]:
+        """yfinanceの制限を回避しつつ、複数銘柄の決算スケジュールを100件ずつ一括取得するメソッド"""
+        logger.info("決算スケジュールのバッチ取得を開始します...")
+        earnings_map = {}
+        
+        batch_size = 100
+        for i in range(0, len(tickers), batch_size):
+            batch = tickers[i:i+batch_size]
+            
+            try:
+                yf_tickers = yf.Tickers(" ".join(batch))
+                for ticker_name in batch:
+                    try:
+                        t = yf_tickers.tickers[ticker_name]
+                        calendar = t.calendar
+                        days_to_earnings = 30
+                        
+                        if calendar is not None:
+                            next_event_date = None
+                            if isinstance(calendar, pd.DataFrame) and not calendar.empty:
+                                next_event_date = calendar.iloc[0, 0]
+                            elif isinstance(calendar, dict):
+                                ed = calendar.get('Earnings Date')
+                                if ed and isinstance(ed, list) and len(ed) > 0:
+                                    next_event_date = ed[0]
+                            
+                            if isinstance(next_event_date, (pd.Timestamp, datetime)):
+                                days_to_earnings = (next_event_date.date() - datetime.now().date()).days
+                        
+                        earnings_map[ticker_name] = {"days_to_earnings": days_to_earnings}
+                    except Exception:
+                        earnings_map[ticker_name] = {"days_to_earnings": 30}
+                        
+                time.sleep(0.5)
+                logger.info(f"決算データ取得進捗: {min(i + batch_size, len(tickers))}/{len(tickers)}")
+                
+            except Exception as e:
+                logger.error(f"決算バッチ {i} の取得中にエラーが発生しました: {e}")
+                for ticker_name in batch:
+                    earnings_map[ticker_name] = {"days_to_earnings": 30}
+                    
+        return earnings_map
 
     def _feature_worker(self, symbol, df, fundamentals: Dict = None, macro_df: pd.DataFrame = None):
         """個別の銘柄の特徴量計算ワーカー関数"""
@@ -712,13 +759,12 @@ class StockScreener:
         res_df["RiskWidth"] = (res_df["atr_ratio"] * 2.0).clip(lower=0.03) # 最低3%は確保
         
         # Reward (想定利益): 確率が低い銘柄には、より大きなリワードがないと期待値がプラスにならないよう調整
-        # 確率(prob)が低い銘柄は RewardTarget が小さくなるため、EV計算で厳しく判定される
         res_df["RewardTarget"] = (0.04 + (res_df["prob"] * 0.14) + (res_df["SlopeScore"] * 0.05)).clip(lower=0.05)
 
         # 本来の期待値公式: (P_win * Reward) - (P_loss * Risk)
         res_df["EV_Raw"] = (res_df["prob"] * res_df["RewardTarget"]) - ((1.0 - res_df["prob"]) * res_df["RiskWidth"])
 
-        # 【改善】出来高確認スコア：1.2倍付近をピークにしつつ、下限を0.8->0.9に底上げして過度な除外を防止
+        # 出来高確認スコア：1.2倍付近をピークにしつつ、下限を0.9に底上げして過度な除外を防止
         res_df["VolExpansionScore"] = (1.5 - (res_df["VolRatio"] - 1.2).abs()).clip(0.9, 1.5)
         
         # 加速度ボーナス：確率が低い銘柄(0.4未満)の場合、加速度がマイナスなら評価を大幅に下げる
@@ -738,23 +784,18 @@ class StockScreener:
         
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {max_prob:.3f}, 動的閾値: {adjusted_threshold:.3f})")
 
-        # 【プロ視点】売り・警戒銘柄の検知ロジック (除外判定に使うため先に定義)
-        # 1. RSIが75以上で反落開始 (買われすぎからの調整)
-        # 2. MACDヒストグラムが負 (勢いの低下)
-        # 3. すでに25日線より上にいたものが、そこを3%以上割り込んだ場合
-        # 4. 急激な陰線
+        # 売り・警戒銘柄の検知ロジック
         cond_sell = (
             ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)) |  # 超買われすぎからの反落
             (res_df["MACD_Hist"] < 0) |                         # デッドクロス（勢いの低下）
-            (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2) |   # ボリンジャーバンド標準偏差の20%を超える明確な勢い低下
-            ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)) | # 明確な下抜け
+            (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2) |   # 勢いの明確な低下
+            ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)) | # 25日線下抜け
             (res_df["ret1"] < -0.05)                             # 5%以上の急落
         )
 
         # 基本条件：出来高が極端に細りすぎているものは除外（流動性リスク回避）
         cond_tech = (res_df["VolRatio"] > 0.25) & (res_df["VolVCP"] < 1.5) & (res_df["Bias25"].between(-0.20, 0.12))
         cond_slope = res_df["Slope20"] > -0.01
-        # 確率閾値の適用
         cond_prob = (res_df["prob"] >= adjusted_threshold)
         
         logger.info(f"【条件別ヒット数】 AI確率({adjusted_threshold:.2f}以上): {cond_prob.sum()}, テクニカル合致: {(cond_tech & cond_slope).sum()}")
@@ -762,7 +803,7 @@ class StockScreener:
         # 売りシグナルフラグを付与
         res_df["is_sell_signal"] = cond_sell & (res_df["Slope10"] < 0.05)
 
-        # 【改善】AIが非常に高い確率を出している場合、Slope条件を緩和して「下げ止まりからの反発」を拾う
+        # AIが非常に高い確率を出している場合、Slope条件を緩和して「下げ止まりからの反発」を拾う
         cond_slope_flexible = (res_df["Slope20"] > -0.015) if max_prob > 0.35 else cond_slope
         filtered = res_df[cond_prob & cond_tech & cond_slope_flexible & ~cond_sell].sort_values("EV", ascending=False)
 
@@ -774,43 +815,25 @@ class StockScreener:
                 "急騰予兆", "トレンド継続"
             )
 
-        # 厳選フィルタで0件の場合の救済ロジック修正
+        # 厳選フィルタで0件の場合の救済ロジック
         if filtered.empty and not res_df.empty:
-            # 確率が高い上位銘柄を抽出（ここでも最低限のテクニカルと売りサインなしを確認）
-            potential_candidates = res_df[cond_tech & ~cond_sell].sort_values("prob", ascending=False).head(3).copy()
+            logger.info("厳選条件に合致する買い銘柄が0件のため、条件を緩和して潜在候補（Potential）を抽出します。")
             
-            # 【重要】救済であっても期待値がマイナスのものは推奨しない（資産を守る）
-            if not potential_candidates.empty:
-                potential_candidates = potential_candidates[potential_candidates["EV"] >= 0.0]
-
-            if not potential_candidates.empty:
-                # 各銘柄の除外理由を特定
-                summary_reasons = []
-                for idx, row in potential_candidates.iterrows():
-                    r = []
-                    if row["prob"] < threshold: r.append("確率不足")
-                    if row["Slope20"] <= -0.005: r.append("トレンド弱")
-                    if not (-0.07 <= row["ret10"] <= 0.08): r.append("不安定")
-                    if row["VolRatio"] >= 1.2: r.append("出来高過多")
-                    
-                    reason_text = "、".join(r) if r else "基準未達"
-                    potential_candidates.at[idx, "potential_reason"] = reason_text
-                    summary_reasons.append(reason_text)
-
-                # 全体的な傾向としての理由
-                main_reason = " / ".join(list(set(summary_reasons)))
-                potential_candidates["summary_reason"] = main_reason
-                potential_candidates["is_potential"] = True
-                potential_candidates["signal_type"] = "準候補"
-                
-                logger.info(f"厳選フィルタは0件ですが、高確率銘柄({len(potential_candidates)}件)を準候補として保持します。理由: {main_reason}")
-                filtered = potential_candidates
+            # 売りシグナルが出ておらず、最低限の流動性がある上位5銘柄
+            cond_potential = (~res_df["is_sell_signal"]) & (res_df["VolRatio"] > 0.1)
+            potential_df = res_df[cond_potential].sort_values("prob", ascending=False).head(5)
+            
+            if not potential_df.empty:
+                potential_df["is_potential"] = True
+                potential_df["signal_type"] = "潜在候補(要監視)"
+                filtered = potential_df
             else:
-                logger.info("救済対象となる高確率銘柄も期待値が低すぎるため、該当なしとします。")
+                filtered = pd.DataFrame()
 
-        logger.info(f"フィルタ最終通過: {len(filtered)} 銘柄")
+        # 売り結果のまとめ
+        sell_results = res_df[res_df["is_sell_signal"] == True].sort_values("ret1", ascending=True)
 
-        return filtered.head(5), res_df, max_prob
+        return filtered, sell_results, max_prob
 
     def _notify(self, results: Tuple[pd.DataFrame, pd.DataFrame], symbols_df: pd.DataFrame, is_market_good: bool, max_prob: float):
         """最終的なランキング結果を整形し、LINEへ送信します。"""
