@@ -359,11 +359,12 @@ class DatabaseManager:
             except Exception:
                 has_data = False
                 
-            # ==========================
-            # 【テスト】必ず20年取得
-            # ==========================
-            period_setting = "20y"
-            logger.info("【テスト】20年取得モード")
+            if has_data:
+                period_setting = "2y"
+                logger.info("データ取得モード：直近2年を再取得")
+            else:
+                period_setting = "20y"
+                logger.info("データ取得モード：初回20年取得")
             
             # 直近データ削除済みかどうか
             delete_done = False
