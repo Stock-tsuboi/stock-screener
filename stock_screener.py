@@ -363,17 +363,9 @@ class DatabaseManager:
             else:
                 period_setting = "20y"
                 logger.info("データ取得モード：初回20年取得")
-            # ==========================
-            # 直近2年を一度だけ削除
-            # （途中欠損・株式分割・配当修正対応）
-            # ==========================            
-            if has_data:
-                logger.info("DBの直近2年分を削除します...")
-                conn.execute("""
-                    DELETE FROM prices
-                    WHERE date >= CURRENT_DATE - INTERVAL 2 YEAR
-                """)
-                
+            # 直近データ削除済みかどうか
+            delete_done = False
+                        
             batch_size = 100
             for i in range(0, len(codes), batch_size):
                 batch_codes = codes[i:i+batch_size]
@@ -412,16 +404,18 @@ class DatabaseManager:
                     
                     if dfs_to_insert:
                         merged = pd.concat(dfs_to_insert)
-                    
-                        # ==========================================
-                        # 直近2年分は毎回入れ替える
-                        # （途中欠損・株式分割・配当調整を反映）
-                        # ==========================================
-                        if has_data:
+
+                        oldest_date = merged["date"].min()
+
+                        if has_data and not delete_done:
+                            logger.info(f"{oldest_date}以降のデータを削除します")
+                        
                             conn.execute("""
                                 DELETE FROM prices
-                                WHERE date >= CURRENT_DATE - INTERVAL 2 YEAR
-                            """)
+                                WHERE date >= ?
+                            """, [oldest_date])
+                        
+                            delete_done = True                    
                     
                         conn.register("tmp_df", merged)
                     
