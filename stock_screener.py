@@ -398,11 +398,21 @@ class DatabaseManager:
                             continue
                         
                         df_s = df[symbol].dropna().reset_index()
-                        if df_s.empty: continue
+                        if df_s.empty:
+                            continue
                         
-                        df_s.columns = ["date", "open", "high", "low", "close", "volume"]
+                        # 列名を小文字に統一
+                        df_s.columns = [str(c).lower().replace(" ", "_") for c in df_s.columns]
+                        
+                        # Adj Close がある場合は削除
+                        if "adj_close" in df_s.columns:
+                            df_s = df_s.drop(columns=["adj_close"])
+                        
                         df_s["code"] = code
-                        dfs_to_insert.append(df_s[["code", "date", "open", "high", "low", "close", "volume"]])
+                        
+                        dfs_to_insert.append(
+                            df_s[["code", "date", "open", "high", "low", "close", "volume"]]
+                        )
                     
                     if dfs_to_insert:
                         merged = pd.concat(dfs_to_insert)
