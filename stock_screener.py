@@ -360,16 +360,11 @@ class DatabaseManager:
                 has_data = False
                 
             # ==========================
-            # データ取得期間を決定
-            # 初回：20年
-            # 2回目以降：直近2年
+            # 【テスト】必ず20年取得
             # ==========================
-            if has_data:
-                period_setting = "2y"
-                logger.info("データ取得モード：直近2年を再取得")
-            else:
-                period_setting = "20y"
-                logger.info("データ取得モード：初回20年取得")
+            period_setting = "20y"
+            logger.info("【テスト】20年取得モード")
+            
             # 直近データ削除済みかどうか
             delete_done = False
                         
