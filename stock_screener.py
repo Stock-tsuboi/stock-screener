@@ -408,7 +408,15 @@ class DatabaseManager:
                         oldest_date = merged["date"].min()
 
                         if has_data and not delete_done:
-                            logger.info(f"{oldest_date}以降のデータを削除します")
+                            delete_count = conn.execute("""
+                                SELECT COUNT(*)
+                                FROM prices
+                                WHERE date >= ?
+                            """, [oldest_date]).fetchone()[0]
+                            
+                            logger.info(
+                                f"{oldest_date.date()}以降のデータを削除します（対象: {delete_count:,}件）"
+                            )
                         
                             conn.execute("""
                                 DELETE FROM prices
@@ -725,6 +733,8 @@ class StockScreener:
             # 学習データの準備を並列化
             results = Parallel(n_jobs=2)(delayed(train_worker)(s, d) for s, d in all_data.items())
             training_dfs = [r for r in results if r is not None]
+
+            logger.info(f"学習対象銘柄数: {len(training_dfs)}")
             
             if not training_dfs:
                 logger.error("学習に使用できる有効なデータがありませんでした。")
@@ -732,8 +742,14 @@ class StockScreener:
 
             # 全銘柄を日付順にソートすることで、TimeSeriesSplitが「過去から未来」を正しく分割できるようにする
             full_train = pd.concat(training_dfs).sort_index().dropna(subset=["Target"])
+
+            logger.info(f"Target作成後データ件数: {len(full_train):,}")
+            
             X = full_train[self.factory.FEATURE_COLS]
             y = full_train["Target"]
+
+            logger.info(f"特徴量作成後データ件数: {len(X):,}")
+            logger.info(f"特徴量数: {len(self.factory.FEATURE_COLS)}")
 
             logger.info(f"学習データの内訳 - Target=1 (上昇): {int(y.sum())}件")
             logger.info(f"学習データの内訳 - Target=0 (その他): {int((y == 0).sum())}件")
