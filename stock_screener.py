@@ -349,6 +349,13 @@ class DatabaseManager:
                 res = conn.execute("SELECT COUNT(*) FROM prices").fetchone()
                 has_data = res[0] > 0
                 logger.info(f"現在のDB内レコード数: {res[0]}件")
+                min_date, max_date = conn.execute("""
+                    SELECT MIN(date), MAX(date)
+                    FROM prices
+                """).fetchone()
+                
+                logger.info(f"DB保存期間: {min_date} ～ {max_date}")
+                
             except Exception:
                 has_data = False
                 
