@@ -351,11 +351,29 @@ class DatabaseManager:
                 logger.info(f"現在のDB内レコード数: {res[0]}件")
             except Exception:
                 has_data = False
-
-            # データがあれば直近5日分のみ、なければ1年分を取得
-            period_setting = "5d" if has_data else "1y"
-            logger.info(f"データ取得モード: {'差分(5d)' if has_data else 'フル(1y)'}")
-            
+                
+            # ==========================
+            # データ取得期間を決定
+            # 初回：20年
+            # 2回目以降：直近2年
+            # ==========================
+            if has_data:
+                period_setting = "2y"
+                logger.info("データ取得モード：直近2年を再取得")
+            else:
+                period_setting = "20y"
+                logger.info("データ取得モード：初回20年取得")
+            # ==========================
+            # 直近2年を一度だけ削除
+            # （途中欠損・株式分割・配当修正対応）
+            # ==========================            
+            if has_data:
+                logger.info("DBの直近2年分を削除します...")
+                conn.execute("""
+                    DELETE FROM prices
+                    WHERE date >= CURRENT_DATE - INTERVAL 2 YEAR
+                """)
+                
             batch_size = 100
             for i in range(0, len(codes), batch_size):
                 batch_codes = codes[i:i+batch_size]
@@ -394,13 +412,42 @@ class DatabaseManager:
                     
                     if dfs_to_insert:
                         merged = pd.concat(dfs_to_insert)
+                    
+                        # ==========================================
+                        # 直近2年分は毎回入れ替える
+                        # （途中欠損・株式分割・配当調整を反映）
+                        # ==========================================
+                        if has_data:
+                            conn.execute("""
+                                DELETE FROM prices
+                                WHERE date >= CURRENT_DATE - INTERVAL 2 YEAR
+                            """)
+                    
                         conn.register("tmp_df", merged)
+                    
                         conn.execute("""
-                            INSERT INTO prices (code, date, open, high, low, close, volume)
-                            SELECT code, date, open, high, low, close, volume FROM tmp_df
-                            ON CONFLICT DO NOTHING
+                            INSERT INTO prices (
+                                code,
+                                date,
+                                open,
+                                high,
+                                low,
+                                close,
+                                volume
+                            )
+                            SELECT
+                                code,
+                                date,
+                                open,
+                                high,
+                                low,
+                                close,
+                                volume
+                            FROM tmp_df
                         """)
+                    
                         conn.unregister("tmp_df")
+                    
                         total_processed_symbols += len(dfs_to_insert)
                     logger.debug(f"Batch {i}-{i+len(batch_codes)-1} processed. Inserted/updated {len(dfs_to_insert)} symbols.")
                     time.sleep(1)  # Yahoo APIのレートリミットを回避するための待機
