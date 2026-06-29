@@ -202,6 +202,8 @@ class FeatureFactory:
 
     @staticmethod
     def add_target_label(df: pd.DataFrame) -> pd.DataFrame:
+        
+        logger.info("★★ add_target_label 実行 ★★")
         """
         学習用：AIに「正解」を教えるためのラベルを作成します。
         「出来高が静かな状態（仕込み時）から5日以内に急騰したケース」のみを正解と定義します。
