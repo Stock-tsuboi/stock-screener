@@ -417,6 +417,13 @@ class DatabaseManager:
                     
                     if dfs_to_insert:
                         merged = pd.concat(dfs_to_insert)
+                        logger.info(
+                            f"period_setting={period_setting}"
+                        )
+                    
+                        logger.info(
+                            f"merged期間: {merged['date'].min()} ～ {merged['date'].max()}"
+                        )
 
                         oldest_date = merged["date"].min()
 
