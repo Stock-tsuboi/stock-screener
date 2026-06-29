@@ -87,6 +87,7 @@ class FeatureFactory:
         "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10", "RSI", "MACD_Hist", "Momentum_Change",
         "ret1", "ret3", "ret5", "ret20", "atr_ratio", "Stage2_Score",
         "VolVCP",
+        "RelativeStrength",
         "Days_To_Earnings", "Macro_VXJ", "Macro_JPY" # 新規追加
     ] # AIが判断に使用する項目のリスト
 
