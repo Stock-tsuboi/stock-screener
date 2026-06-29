@@ -230,7 +230,7 @@ class FeatureFactory:
         # A. 期間内最高値が5%以上上昇（利確チャンス）
         will_breakout = (future_gain >= 0.05)
         # B. 20日後も価格が維持または上昇している（長期持続性）
-        will_sustain = (future_20d_gain >= 0.05)
+        will_sustain = (future_20d_gain >= 0.02)
         
         # C. 【改善】逆行リスクをATRの1.5倍までに緩和（一律2.5%は厳しすぎた）
         is_clean_move = (future_drawdown > -(df["atr_ratio"] * 1.5).fillna(0.025))
