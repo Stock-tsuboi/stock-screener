@@ -58,7 +58,7 @@ class Config:
     LINE_ACCESS_TOKEN = os.getenv("LINE_BOT_TOKEN")
     LINE_USER_ID = os.getenv("LINE_USER_ID") or "dummy"
     TARGET_MARKETS = ["プライム", "スタンダード", "グロース"]
-    RETRAIN_DAYS = 7
+    RETRAIN_DAYS = 0
     THRESHOLD_STRICT = 0.40  # 地合いが悪い時
     THRESHOLD_NORMAL = 0.35  # 標準（ログの0.357に合わせて緩和）
     TRAILING_STOP_ATR_MULT = 2.5  # ATRの何倍下落したらトレールストップを発動するか（推奨: 2.0-3.0）
