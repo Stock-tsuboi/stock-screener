@@ -893,7 +893,13 @@ class StockScreener:
         cond_prob = (res_df["prob"] >= adjusted_threshold)
         
         logger.info(f"【条件別ヒット数】 AI確率({adjusted_threshold:.2f}以上): {cond_prob.sum()}, テクニカル合致: {(cond_tech & cond_slope).sum()}")
+       
+        # 売りシグナルフラグを付与
+        res_df["is_sell_signal"] = cond_sell & (res_df["Slope10"] < 0.05)
 
+        # AIが非常に高い確率を出している場合、Slope条件を緩和して「下げ止まりからの反発」を拾う
+        cond_slope_flexible = (res_df["Slope20"] > -0.015) if max_prob > 0.35 else cond_slope
+        
         # ===========================
         # デバッグ用（高確率銘柄の除外理由）
         # ===========================
@@ -916,11 +922,6 @@ class StockScreener:
                     f"EV={r['EV']:.3f}"
                 )
         
-        # 売りシグナルフラグを付与
-        res_df["is_sell_signal"] = cond_sell & (res_df["Slope10"] < 0.05)
-
-        # AIが非常に高い確率を出している場合、Slope条件を緩和して「下げ止まりからの反発」を拾う
-        cond_slope_flexible = (res_df["Slope20"] > -0.015) if max_prob > 0.35 else cond_slope
         filtered = res_df[cond_prob & cond_tech & cond_slope_flexible & ~cond_sell].sort_values("EV", ascending=False)
 
         if not filtered.empty:
