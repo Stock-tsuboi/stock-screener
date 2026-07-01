@@ -894,6 +894,28 @@ class StockScreener:
         
         logger.info(f"【条件別ヒット数】 AI確率({adjusted_threshold:.2f}以上): {cond_prob.sum()}, テクニカル合致: {(cond_tech & cond_slope).sum()}")
 
+        # ===========================
+        # デバッグ用（高確率銘柄の除外理由）
+        # ===========================
+        debug_df = res_df[cond_prob].copy()
+        
+        if not debug_df.empty:
+            debug_df["Tech_OK"] = cond_tech.loc[debug_df.index]
+            debug_df["Slope_OK"] = cond_slope_flexible.loc[debug_df.index]
+            debug_df["Sell_OK"] = (~cond_sell).loc[debug_df.index]
+        
+            logger.info("===== AI高確率銘柄 判定一覧 =====")
+        
+            for _, r in debug_df.sort_values("prob", ascending=False).iterrows():
+                logger.info(
+                    f"{r['symbol']} "
+                    f"Prob={r['prob']:.3f} "
+                    f"Tech={r['Tech_OK']} "
+                    f"Slope={r['Slope_OK']} "
+                    f"Sell={r['Sell_OK']} "
+                    f"EV={r['EV']:.3f}"
+                )
+        
         # 売りシグナルフラグを付与
         res_df["is_sell_signal"] = cond_sell & (res_df["Slope10"] < 0.05)
 
