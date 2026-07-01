@@ -891,7 +891,18 @@ class StockScreener:
         cond_tech = (res_df["VolRatio"] > 0.25) & (res_df["VolVCP"] < 1.5) & (res_df["Bias25"].between(-0.20, 0.12))
         cond_slope = res_df["Slope20"] > -0.01
         cond_prob = (res_df["prob"] >= adjusted_threshold)
-        
+
+        logger.info(f"adjusted_threshold = {adjusted_threshold:.6f}")
+        logger.info(f"cond_prob True件数 = {cond_prob.sum()}")
+
+        logger.info(
+            "\n" +
+            res_df[["symbol", "prob"]]
+                .sort_values("prob", ascending=False)
+                .head(10)
+                .to_string(index=False)
+        )
+
         logger.info(f"【条件別ヒット数】 AI確率({adjusted_threshold:.2f}以上): {cond_prob.sum()}, テクニカル合致: {(cond_tech & cond_slope).sum()}")
        
         # 売りシグナルフラグを付与
@@ -919,11 +930,12 @@ class StockScreener:
                 ].sort_values("prob", ascending=False).to_string(index=False)
             )
         
-        mask = cond_prob.values & cond_tech.values & cond_slope_flexible.values & (~cond_sell).values
-
-        logger.info(f"mask True件数 = {mask.sum()}")
-        
-        filtered = res_df[mask].sort_values("EV", ascending=False)
+        filtered = res_df[
+            cond_prob &
+            cond_tech &
+            cond_slope_flexible &
+            ~cond_sell
+        ].sort_values("EV", ascending=False)
 
         if not filtered.empty:
             filtered["is_potential"] = False
