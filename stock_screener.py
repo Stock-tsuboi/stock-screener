@@ -929,6 +929,13 @@ class StockScreener:
                     ["symbol", "prob", "Tech", "Slope", "Sell", "EV"]
                 ].sort_values("prob", ascending=False).to_string(index=False)
             )
+        # ===== この5行を追加 =====
+        logger.info(f"res_df.index = {res_df.index[:10].tolist()}")
+        logger.info(f"cond_prob.index = {cond_prob.index[:10].tolist()}")
+        logger.info(f"cond_tech.index = {cond_tech.index[:10].tolist()}")
+        logger.info(f"cond_slope.index = {cond_slope_flexible.index[:10].tolist()}")
+        logger.info(f"cond_sell.index = {cond_sell.index[:10].tolist()}")
+        # ========================
         
         filtered = res_df[
             cond_prob &
