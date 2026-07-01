@@ -901,26 +901,20 @@ class StockScreener:
         cond_slope_flexible = (res_df["Slope20"] > -0.015) if max_prob > 0.35 else cond_slope
         
         # ===========================
-        # デバッグ用（高確率銘柄の除外理由）
+        # デバッグ（最終条件）
         # ===========================
-        debug_df = res_df[cond_prob].copy()
+        mask = cond_prob & cond_tech & cond_slope_flexible & ~cond_sell
         
-        if not debug_df.empty:
-            debug_df["Tech_OK"] = cond_tech.loc[debug_df.index]
-            debug_df["Slope_OK"] = cond_slope_flexible.loc[debug_df.index]
-            debug_df["Sell_OK"] = (~cond_sell).loc[debug_df.index]
+        logger.info(f"最終条件成立件数: {mask.sum()}")
         
-            logger.info("===== AI高確率銘柄 判定一覧 =====")
-        
-            for _, r in debug_df.sort_values("prob", ascending=False).iterrows():
-                logger.info(
-                    f"{r['symbol']} "
-                    f"Prob={r['prob']:.3f} "
-                    f"Tech={r['Tech_OK']} "
-                    f"Slope={r['Slope_OK']} "
-                    f"Sell={r['Sell_OK']} "
-                    f"EV={r['EV']:.3f}"
-                )
+        if mask.any():
+            logger.info(
+                "\n" +
+                res_df.loc[
+                    mask,
+                    ["symbol", "prob", "EV"]
+                ].sort_values("prob", ascending=False).to_string(index=False)
+            )
         
         filtered = res_df[cond_prob & cond_tech & cond_slope_flexible & ~cond_sell].sort_values("EV", ascending=False)
 
