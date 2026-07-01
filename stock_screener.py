@@ -903,16 +903,19 @@ class StockScreener:
         # ===========================
         # デバッグ（最終条件）
         # ===========================
-        mask = cond_prob & cond_tech & cond_slope_flexible & ~cond_sell
+        high_prob = res_df[cond_prob].copy()
         
-        logger.info(f"最終条件成立件数: {mask.sum()}")
+        logger.info(f"AI高確率銘柄数: {len(high_prob)}")
         
-        if mask.any():
+        if not high_prob.empty:
+            high_prob["Tech"] = cond_tech.loc[high_prob.index]
+            high_prob["Slope"] = cond_slope_flexible.loc[high_prob.index]
+            high_prob["Sell"] = (~cond_sell).loc[high_prob.index]
+        
             logger.info(
                 "\n" +
-                res_df.loc[
-                    mask,
-                    ["symbol", "prob", "EV"]
+                high_prob[
+                    ["symbol", "prob", "Tech", "Slope", "Sell", "EV"]
                 ].sort_values("prob", ascending=False).to_string(index=False)
             )
         
