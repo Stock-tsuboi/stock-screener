@@ -919,7 +919,11 @@ class StockScreener:
                 ].sort_values("prob", ascending=False).to_string(index=False)
             )
         
-        filtered = res_df[cond_prob & cond_tech & cond_slope_flexible & ~cond_sell].sort_values("EV", ascending=False)
+        mask = cond_prob.values & cond_tech.values & cond_slope_flexible.values & (~cond_sell).values
+
+        logger.info(f"mask True件数 = {mask.sum()}")
+        
+        filtered = res_df[mask].sort_values("EV", ascending=False)
 
         if not filtered.empty:
             filtered["is_potential"] = False
