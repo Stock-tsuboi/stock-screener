@@ -936,8 +936,21 @@ class StockScreener:
             cond_slope_flexible &
             ~cond_sell
         ].sort_values("EV", ascending=False)
+        
+        logger.info(f"filtered件数 = {len(filtered)}")
 
+        logger.info(f"cond_prob = {cond_prob.sum()}")
+        logger.info(f"cond_tech = {cond_tech.sum()}")
+        logger.info(f"cond_slope_flexible = {cond_slope_flexible.sum()}")
+        logger.info(f"cond_sell = {(~cond_sell).sum()}")
+        
         if not filtered.empty:
+            logger.info(
+                "\n" +
+                filtered[
+                    ["symbol", "prob", "EV"]
+                ].to_string(index=False)
+            )
             filtered["is_potential"] = False
             # 銘柄タイプの判定
             filtered["signal_type"] = np.where(
