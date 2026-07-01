@@ -132,6 +132,11 @@ class FeatureFactory:
         vol_short = close.pct_change().rolling(10).std()
         vol_long = close.pct_change().rolling(60).std()
         df["VolVCP"] = vol_short / (vol_long + 1e-9)
+        # Relative Strength（過去約3か月の強さ）
+        # 値が大きいほど最近の株価が強い
+        df["RelativeStrength"] = (
+            close / close.rolling(63).mean()
+        ).replace([np.inf, -np.inf], np.nan)
 
         # RSI (14日間)
         delta = close.diff()
@@ -199,7 +204,16 @@ class FeatureFactory:
         
         # 指標が計算できていない初期の行（SMA75などがNaNの期間）を削除してから、残りを0埋め
         # 新しい特徴量もNaNになりうるので、dropnaのsubsetに追加
-        return df.dropna(subset=["SMA200", "Slope20", "Days_To_Earnings", "Macro_VXJ", "Macro_JPY"]).fillna(0).replace([np.inf, -np.inf], 0)
+        return df.dropna(
+            subset=[
+                "SMA200",
+                "Slope20",
+                "RelativeStrength",
+                "Days_To_Earnings",
+                "Macro_VXJ",
+                "Macro_JPY"
+            ]
+        ).fillna(0).replace([np.inf, -np.inf], 0)
 
     @staticmethod
     def add_target_label(df: pd.DataFrame) -> pd.DataFrame:
