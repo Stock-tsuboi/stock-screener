@@ -936,6 +936,19 @@ class StockScreener:
         logger.info(f"cond_slope.index = {cond_slope_flexible.index[:10].tolist()}")
         logger.info(f"cond_sell.index = {cond_sell.index[:10].tolist()}")
         # ========================
+        logger.info(
+            "\n" +
+            pd.DataFrame({
+                "symbol": res_df["symbol"],
+                "prob": cond_prob,
+                "tech": cond_tech,
+                "slope": cond_slope_flexible,
+                "sell": ~cond_sell,
+                "all": cond_prob & cond_tech & cond_slope_flexible & ~cond_sell
+            })
+            .query("prob")
+            .to_string(index=False)
+        )
         
         filtered = res_df[
             cond_prob &
