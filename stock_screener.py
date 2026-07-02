@@ -888,20 +888,26 @@ class StockScreener:
         )
 
         # ===== 売り条件の内訳デバッグ =====
+        debug_sell = pd.DataFrame({
+            "symbol": res_df["symbol"],
+            "RSI": ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)),
+            "MACD1": (res_df["MACD_Hist"] < 0),
+            "MACD2": (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2),
+            "SMA25": ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)),
+            "DROP": (res_df["ret1"] < -0.05),
+            "SELL": cond_sell
+        })
+        
         logger.info(
             "\n" +
-            pd.DataFrame({
-                "symbol": res_df["symbol"],
-                "RSI": ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)),
-                "MACD1": (res_df["MACD_Hist"] < 0),
-                "MACD2": (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2),
-                "SMA25": ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)),
-                "DROP": (res_df["ret1"] < -0.05),
-                "SELL": cond_sell
-            })
-            .query("SELL")
-            .head(30)
-            .to_string(index=False)
+            debug_sell[
+                debug_sell["symbol"].isin([
+                    "6866.T",
+                    "6145.T",
+                    "5201.T",
+                    "4063.T"
+                ])
+            ].to_string(index=False)
         )
         # =============================
 
