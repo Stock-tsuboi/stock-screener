@@ -878,14 +878,25 @@ class StockScreener:
         
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {max_prob:.3f}, 動的閾値: {adjusted_threshold:.3f})")
 
-        # 売り・警戒銘柄の検知ロジック
-        cond_sell = (
-            ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)) |  # 超買われすぎからの反落
-            (res_df["MACD_Hist"] < 0) |                         # デッドクロス（勢いの低下）
-            (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2) |   # 勢いの明確な低下
-            ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)) | # 25日線下抜け
-            (res_df["ret1"] < -0.05)                             # 5%以上の急落
+        # =====================================================
+        # 売り・警戒銘柄の検知ロジック（スコア方式）
+        # =====================================================
+        
+        sell_score = (
+            ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)).astype(int)
+            + (res_df["MACD_Hist"] < 0).astype(int)
+            + (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2).astype(int)
+            + (
+                (
+                    (res_df["Close"] < res_df["SMA25"] * 0.97)
+                    & (res_df["ret1"] < -0.01)
+                ).astype(int)
+            )
+            + (res_df["ret1"] < -0.05).astype(int)
         )
+        
+        # 悪条件が2つ以上重なった場合のみ売り判定
+        cond_sell = sell_score >= 2
 
         # ===== 売り条件の内訳デバッグ =====
         debug_sell = pd.DataFrame({
