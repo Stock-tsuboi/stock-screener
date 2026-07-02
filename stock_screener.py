@@ -879,23 +879,27 @@ class StockScreener:
         logger.info(f"推論完了: {len(res_df)} 銘柄を評価中... (最大確率: {max_prob:.3f}, 動的閾値: {adjusted_threshold:.3f})")
 
         # =====================================================
-        # 売り・警戒銘柄の検知ロジック（スコア方式）
+        # 売り・警戒銘柄の検知ロジック（改善版）
         # =====================================================
         
+        # MACDは2項目を別々に数えず、「強い悪化」のみを1項目として評価
         sell_score = (
             ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)).astype(int)
-            + (res_df["MACD_Hist"] < 0).astype(int)
+        
+            # MACDは重複加点しない
             + (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2).astype(int)
+        
             + (
                 (
                     (res_df["Close"] < res_df["SMA25"] * 0.97)
                     & (res_df["ret1"] < -0.01)
                 ).astype(int)
             )
+        
             + (res_df["ret1"] < -0.05).astype(int)
         )
         
-        # 悪条件が2つ以上重なった場合のみ売り判定
+        # 売り判定は悪条件が2つ以上
         cond_sell = sell_score >= 2
 
         # ===== 売り条件の内訳デバッグ =====
