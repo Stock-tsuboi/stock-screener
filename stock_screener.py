@@ -982,7 +982,7 @@ class StockScreener:
                 "prob": cond_prob,
                 "tech": cond_tech,
                 "slope": cond_slope_flexible,
-                "sell": ~cond_sell,
+                "buy_ok": ~cond_sell,
                 "all": cond_prob & cond_tech & cond_slope_flexible & ~cond_sell
             })
             .query("prob")
