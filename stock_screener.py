@@ -887,6 +887,24 @@ class StockScreener:
             (res_df["ret1"] < -0.05)                             # 5%以上の急落
         )
 
+        # ===== 売り条件の内訳デバッグ =====
+        logger.info(
+            "\n" +
+            pd.DataFrame({
+                "symbol": res_df["symbol"],
+                "RSI": ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)),
+                "MACD1": (res_df["MACD_Hist"] < 0),
+                "MACD2": (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2),
+                "SMA25": ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)),
+                "DROP": (res_df["ret1"] < -0.05),
+                "SELL": cond_sell
+            })
+            .query("SELL")
+            .head(30)
+            .to_string(index=False)
+        )
+        # =============================
+
         # 基本条件：出来高が極端に細りすぎているものは除外（流動性リスク回避）
         cond_tech = (res_df["VolRatio"] > 0.25) & (res_df["VolVCP"] < 1.5) & (res_df["Bias25"].between(-0.20, 0.12))
         cond_slope = res_df["Slope20"] > -0.01
