@@ -855,8 +855,42 @@ class StockScreener:
         # Reward (想定利益): 確率が低い銘柄には、より大きなリワードがないと期待値がプラスにならないよう調整
         res_df["RewardTarget"] = (0.04 + (res_df["prob"] * 0.14) + (res_df["SlopeScore"] * 0.05)).clip(lower=0.05)
 
+        # ★ここを追加
+        logger.info(
+            "\n" +
+            res_df[
+                [
+                    "symbol",
+                    "prob",
+                    "RewardTarget",
+                    "RiskWidth",
+                    "EV_Raw"
+                ]
+            ]
+            .sort_values("prob", ascending=False)
+            .head(10)
+            .to_string(index=False)
+        )
+
         # 本来の期待値公式: (P_win * Reward) - (P_loss * Risk)
         res_df["EV_Raw"] = (res_df["prob"] * res_df["RewardTarget"]) - ((1.0 - res_df["prob"]) * res_df["RiskWidth"])
+
+        # ←ここに追加
+        logger.info(
+            "\n" +
+            res_df[
+                [
+                    "symbol",
+                    "prob",
+                    "RewardTarget",
+                    "RiskWidth",
+                    "EV_Raw"
+                ]
+            ]
+            .sort_values("prob", ascending=False)
+            .head(10)
+            .to_string(index=False)
+        )
 
         # 出来高確認スコア：1.2倍付近をピークにしつつ、下限を0.9に底上げして過度な除外を防止
         res_df["VolExpansionScore"] = (1.5 - (res_df["VolRatio"] - 1.2).abs()).clip(0.9, 1.5)
