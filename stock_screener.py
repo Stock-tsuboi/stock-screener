@@ -255,8 +255,19 @@ class FeatureFactory:
         # いずれかのセットアップ条件を満たし、かつ未来で上昇したものを正解とする
         is_setup = is_precursor | is_trend
 
+        logger.info(
+            f"Target候補:"
+            f" setup={is_setup.sum()},"
+            f" breakout={will_breakout.sum()},"
+            f" sustain={will_sustain.sum()},"
+            f" clean={is_clean_move.sum()}"
+        )        
+
         # 両方の条件を満たすものを「質の高い上昇」として学習させる
         df["Target"] = np.where(future_20d_gain.notna(), (is_setup & will_breakout & will_sustain & is_clean_move).astype(int), np.nan)
+
+        logger.info(f"Target=1 件数: {int(df['Target'].fillna(0).sum())}")
+        
         return df
 
 # =========================================================
