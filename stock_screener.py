@@ -850,10 +850,10 @@ class StockScreener:
         
         # --- リスクリワード中心の期待値(EV)計算 ---
         # Risk (想定損失): ATR(14)の2倍を標準的な損切り幅として定義
-        res_df["RiskWidth"] = (res_df["atr_ratio"] * 2.0).clip(lower=0.03) # 最低3%は確保
+        res_df["RiskWidth"] = (res_df["atr_ratio"] * 1.5).clip(lower=0.025) # 最低3%は確保
         
         # Reward (想定利益): 確率が低い銘柄には、より大きなリワードがないと期待値がプラスにならないよう調整
-        res_df["RewardTarget"] = (0.04 + (res_df["prob"] * 0.14) + (res_df["SlopeScore"] * 0.05)).clip(lower=0.05)
+        res_df["RewardTarget"] = (0.06 + (res_df["prob"] * 0.18) + (res_df["SlopeScore"] * 0.05)).clip(lower=0.08)
 
         # 本来の期待値公式: (P_win * Reward) - (P_loss * Risk)
         res_df["EV_Raw"] = (res_df["prob"] * res_df["RewardTarget"]) - ((1.0 - res_df["prob"]) * res_df["RiskWidth"])
