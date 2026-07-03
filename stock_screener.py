@@ -849,22 +849,60 @@ class StockScreener:
         res_df["SlopeScore"] = res_df["Slope10"].clip(-0.01, 0.01) * 100
         
         # --- リスクリワード中心の期待値(EV)計算 ---
-        # Risk (想定損失): ATR(14)の2倍を標準的な損切り幅として定義
-        res_df["RiskWidth"] = (res_df["atr_ratio"] * 1.5).clip(lower=0.025) # 最低3%は確保
         
-        # Reward (想定利益): 確率が低い銘柄には、より大きなリワードがないと期待値がプラスにならないよう調整
-        res_df["RewardTarget"] = (0.06 + (res_df["prob"] * 0.18) + (res_df["SlopeScore"] * 0.05)).clip(lower=0.08)
-
-        # 本来の期待値公式: (P_win * Reward) - (P_loss * Risk)
-        res_df["EV_Raw"] = (res_df["prob"] * res_df["RewardTarget"]) - ((1.0 - res_df["prob"]) * res_df["RiskWidth"])
-
-        # ===== EVデバッグ =====
+        # Risk (想定損失)
+        # ATRが低すぎる銘柄でも最低3%、
+        # ATRが高い銘柄はそのままリスクとして反映
+        res_df["RiskWidth"] = (
+            res_df["atr_ratio"] * 1.5
+        ).clip(lower=0.03)
+        
+        # --------------------------------------------------
+        # RewardTarget 改良版
+        # AI確率だけではなく
+        # ・Bias25（反発余地）
+        # ・Slope10（勢い）
+        # を加味する
+        # --------------------------------------------------
+        
+        bias_bonus = (
+            res_df["Bias25"]
+            .clip(-0.20, 0)
+            .abs()
+            * 0.30
+        )
+        
+        slope_bonus = (
+            res_df["SlopeScore"]
+            .clip(-0.5, 1.0)
+            * 0.05
+        )
+        
+        res_df["RewardTarget"] = (
+            0.08
+            + res_df["prob"] * 0.10
+            + bias_bonus
+            + slope_bonus
+        ).clip(
+            lower=0.08,
+            upper=0.25
+        )
+        
+        # 本来の期待値公式
+        res_df["EV_Raw"] = (
+            (res_df["prob"] * res_df["RewardTarget"])
+            - ((1.0 - res_df["prob"]) * res_df["RiskWidth"])
+        )
+        
+        # デバッグ
         logger.info(
             "\n" +
             res_df[
                 [
                     "symbol",
                     "prob",
+                    "Bias25",
+                    "SlopeScore",
                     "RewardTarget",
                     "RiskWidth",
                     "EV_Raw"
@@ -874,7 +912,6 @@ class StockScreener:
             .head(10)
             .to_string(index=False)
         )
-        # =====================
         
         # 出来高確認スコア：1.2倍付近をピークにしつつ、下限を0.9に底上げして過度な除外を防止
         res_df["VolExpansionScore"] = (1.5 - (res_df["VolRatio"] - 1.2).abs()).clip(0.9, 1.5)
