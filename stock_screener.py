@@ -886,8 +886,14 @@ class StockScreener:
         sell_score = (
             ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)).astype(int)
         
-            # MACDは重複加点しない
-            + (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2).astype(int)
+            # MACDが弱く、さらに20日トレンドも下降している場合のみ加点
+            + (
+                (
+                    (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2)
+                    &
+                    (res_df["Slope20"] < -0.01)
+                ).astype(int)
+            )
         
             + (
                 (
@@ -907,7 +913,11 @@ class StockScreener:
             "symbol": res_df["symbol"],
             "RSI": ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)),
             "MACD1": (res_df["MACD_Hist"] < 0),
-            "MACD2": (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2),
+            "MACD2": (
+                (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2)
+                &
+                (res_df["Slope20"] < -0.01)
+            ),
             "SMA25": ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)),
             "DROP": (res_df["ret1"] < -0.05),
             "SELL": cond_sell
