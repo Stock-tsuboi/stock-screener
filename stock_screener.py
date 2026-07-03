@@ -887,6 +887,26 @@ class StockScreener:
         
         res_df["EV"] = res_df["EV_Raw"] * res_df["VolExpansionScore"] * res_df["AccelBonus"] * res_df["SustainabilityBonus"]
 
+        # ===== EV内訳デバッグ =====
+        logger.info(
+            "\n" +
+            res_df[
+                [
+                    "symbol",
+                    "prob",
+                    "EV_Raw",
+                    "VolExpansionScore",
+                    "AccelBonus",
+                    "SustainabilityBonus",
+                    "EV"
+                ]
+            ]
+            .sort_values("prob", ascending=False)
+            .head(10)
+            .to_string(index=False)
+        )
+        # =========================
+        
         max_prob = res_df['prob'].max()
 
         # ログの状況（最大確率が閾値以下）に対応するため、閾値を市場の最高値に合わせる動的調整
