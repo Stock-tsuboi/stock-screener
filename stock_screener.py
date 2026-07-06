@@ -218,7 +218,6 @@ class FeatureFactory:
     @staticmethod
     def add_target_label(df: pd.DataFrame) -> pd.DataFrame:
         
-        logger.info("★★ add_target_label 実行 ★★")
         """
         学習用：AIに「正解」を教えるためのラベルを作成します。
         「出来高が静かな状態（仕込み時）から5日以内に急騰したケース」のみを正解と定義します。
@@ -255,20 +254,22 @@ class FeatureFactory:
         # いずれかのセットアップ条件を満たし、かつ未来で上昇したものを正解とする
         is_setup = is_precursor | is_trend
 
-        logger.info(
-            f"Target候補:"
-            f" setup={is_setup.sum()},"
-            f" breakout={will_breakout.sum()},"
-            f" sustain={will_sustain.sum()},"
-            f" clean={is_clean_move.sum()}"
-        )        
-
         # 両方の条件を満たすものを「質の高い上昇」として学習させる
-        df["Target"] = np.where(future_20d_gain.notna(), (is_setup & will_breakout & will_sustain & is_clean_move).astype(int), np.nan)
-
-        logger.info(f"Target=1 件数: {int(df['Target'].fillna(0).sum())}")
+        df["Target"] = np.where(
+            future_20d_gain.notna(),
+            (is_setup & will_breakout & will_sustain & is_clean_move).astype(int),
+            np.nan
+        )
         
-        return df
+        stats = {
+            "setup": int(is_setup.sum()),
+            "breakout": int(will_breakout.sum()),
+            "sustain": int(will_sustain.sum()),
+            "clean": int(is_clean_move.sum()),
+            "target": int(df["Target"].fillna(0).sum())
+        }
+        
+        return df, stats
 
 # =========================================================
 # Data Management
@@ -742,13 +743,13 @@ class StockScreener:
             logger.debug(f"Preparing training features for {symbol}")
             # 学習時は財務データとマクロデータは利用しない（またはデフォルト値）
             feat_df = self.factory.calculate_metrics(df, fundamentals=None, macro_df=None)
-            feat_df = self.factory.add_target_label(feat_df)
+            feat_df, stats = self.factory.add_target_label(feat_df)
             # 特徴量計算後の有効データが少ない銘柄は、学習の質を下げるため除外
             if len(feat_df) < 30:
                 return None
             # 学習に必要なカラムのみを抽出してメモリを節約
             cols = self.factory.FEATURE_COLS + ["Target"]
-            return feat_df.iloc[:-5][cols]
+            return feat_df.iloc[:-5][cols], stats
 
         # モデルの読み込みと整合性チェック
         need_training = False
@@ -779,10 +780,40 @@ class StockScreener:
             logger.info("モデルを新規学習します...")
             
             # 学習データの準備を並列化
-            results = Parallel(n_jobs=1)(delayed(train_worker)(s, d) for s, d in all_data.items())
-            training_dfs = [r for r in results if r is not None]
-
+            results = Parallel(n_jobs=2)(delayed(train_worker)(s, d) for s, d in all_data.items())
+            training_dfs = []
+            
+            total_stats = {
+                "setup": 0,
+                "breakout": 0,
+                "sustain": 0,
+                "clean": 0,
+                "target": 0
+            }
+            
+            for r in results:
+                if r is None:
+                    continue
+            
+                df_train, stats = r
+                training_dfs.append(df_train)
+            
+                total_stats["setup"] += stats["setup"]
+                total_stats["breakout"] += stats["breakout"]
+                total_stats["sustain"] += stats["sustain"]
+                total_stats["clean"] += stats["clean"]
+                total_stats["target"] += stats["target"]
             logger.info(f"学習対象銘柄数: {len(training_dfs)}")
+
+            logger.info(
+                "Target候補集計: "
+                f"setup={total_stats['setup']:,}, "
+                f"breakout={total_stats['breakout']:,}, "
+                f"sustain={total_stats['sustain']:,}, "
+                f"clean={total_stats['clean']:,}"
+            )
+
+            logger.info(f"Target=1 件数: {total_stats['target']:,}")
             
             if not training_dfs:
                 logger.error("学習に使用できる有効なデータがありませんでした。")
@@ -799,9 +830,7 @@ class StockScreener:
             logger.info(f"特徴量作成後データ件数: {len(X):,}")
             logger.info(f"特徴量数: {len(self.factory.FEATURE_COLS)}")
 
-            logger.info(f"学習データの内訳 - Target=1 (上昇): {int(y.sum())}件")
-            logger.info(f"学習データの内訳 - Target=0 (その他): {int((y == 0).sum())}件")
-            
+           
             logger.info(f"AIモデルの学習を開始します (データ件数: {len(X)})...")
             base_model = RandomForestClassifier(
                 n_estimators=300,
