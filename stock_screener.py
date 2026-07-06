@@ -779,7 +779,7 @@ class StockScreener:
             logger.info("モデルを新規学習します...")
             
             # 学習データの準備を並列化
-            results = Parallel(n_jobs=2)(delayed(train_worker)(s, d) for s, d in all_data.items())
+            results = Parallel(n_jobs=1)(delayed(train_worker)(s, d) for s, d in all_data.items())
             training_dfs = [r for r in results if r is not None]
 
             logger.info(f"学習対象銘柄数: {len(training_dfs)}")
