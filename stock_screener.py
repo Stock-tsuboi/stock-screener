@@ -453,14 +453,7 @@ class DatabaseManager:
                     
                     if dfs_to_insert:
                         merged = pd.concat(dfs_to_insert)
-                        logger.info(
-                            f"period_setting={period_setting}"
-                        )
-                    
-                        logger.info(
-                            f"merged期間: {merged['date'].min()} ～ {merged['date'].max()}"
-                        )
-
+                        
                         oldest_date = merged["date"].min()
 
                         if has_data and not delete_done:
@@ -709,7 +702,10 @@ class StockScreener:
                         earnings_map[ticker_name] = {"days_to_earnings": 30}
                         
                 time.sleep(0.5)
-                logger.info(f"決算データ取得進捗: {min(i + batch_size, len(tickers))}/{len(tickers)}")
+                if (i + batch_size) % 500 == 0 or (i + batch_size) >= len(tickers):
+                    logger.info(
+                        f"決算データ取得進捗: {min(i + batch_size, len(tickers))}/{len(tickers)}"
+                    )
                 
             except Exception as e:
                 logger.error(f"決算バッチ {i} の取得中にエラーが発生しました: {e}")
@@ -942,7 +938,7 @@ class StockScreener:
         )
         
         # デバッグ
-        logger.info(
+        logger.debug(
             "\n" +
             res_df[
                 [
@@ -972,7 +968,7 @@ class StockScreener:
         res_df["EV"] = res_df["EV_Raw"] * res_df["VolExpansionScore"] * res_df["AccelBonus"] * res_df["SustainabilityBonus"]
 
         # ===== EV内訳デバッグ =====
-        logger.info(
+        logger.debug(
             "\n" +
             res_df[
                 [
@@ -1063,10 +1059,10 @@ class StockScreener:
         cond_slope = res_df["Slope20"] > -0.01
         cond_prob = (res_df["prob"] >= adjusted_threshold)
 
-        logger.info(f"adjusted_threshold = {adjusted_threshold:.6f}")
-        logger.info(f"cond_prob True件数 = {cond_prob.sum()}")
+        logger.debug(f"adjusted_threshold = {adjusted_threshold:.6f}")
+        logger.debug(f"cond_prob True件数 = {cond_prob.sum()}")
 
-        logger.info(
+        logger.debug(
             "\n" +
             res_df[["symbol", "prob"]]
                 .sort_values("prob", ascending=False)
@@ -1088,38 +1084,7 @@ class StockScreener:
         high_prob = res_df[cond_prob].copy()
         
         logger.info(f"AI高確率銘柄数: {len(high_prob)}")
-        
-        if not high_prob.empty:
-            high_prob["Tech"] = cond_tech.loc[high_prob.index]
-            high_prob["Slope"] = cond_slope_flexible.loc[high_prob.index]
-            high_prob["Sell"] = (~cond_sell).loc[high_prob.index]
-        
-            logger.info(
-                "\n" +
-                high_prob[
-                    ["symbol", "prob", "Tech", "Slope", "Sell", "EV"]
-                ].sort_values("prob", ascending=False).to_string(index=False)
-            )
-        # ===== この5行を追加 =====
-        logger.info(f"res_df.index = {res_df.index[:10].tolist()}")
-        logger.info(f"cond_prob.index = {cond_prob.index[:10].tolist()}")
-        logger.info(f"cond_tech.index = {cond_tech.index[:10].tolist()}")
-        logger.info(f"cond_slope.index = {cond_slope_flexible.index[:10].tolist()}")
-        logger.info(f"cond_sell.index = {cond_sell.index[:10].tolist()}")
-        # ========================
-        logger.info(
-            "\n" +
-            pd.DataFrame({
-                "symbol": res_df["symbol"],
-                "prob": cond_prob,
-                "tech": cond_tech,
-                "slope": cond_slope_flexible,
-                "buy_ok": ~cond_sell,
-                "all": cond_prob & cond_tech & cond_slope_flexible & ~cond_sell
-            })
-            .query("prob")
-            .to_string(index=False)
-        )
+
         
         filtered = res_df[
             cond_prob &
@@ -1129,18 +1094,15 @@ class StockScreener:
         ].sort_values("EV", ascending=False)
         
         logger.info(f"filtered件数 = {len(filtered)}")
-
-        logger.info(f"cond_prob = {cond_prob.sum()}")
-        logger.info(f"cond_tech = {cond_tech.sum()}")
-        logger.info(f"cond_slope_flexible = {cond_slope_flexible.sum()}")
-        logger.info(f"cond_sell = {(~cond_sell).sum()}")
-        
+       
         if not filtered.empty:
             logger.info(
                 "\n" +
                 filtered[
                     ["symbol", "prob", "EV"]
-                ].to_string(index=False)
+                ]
+                .head(5)
+                .to_string(index=False)
             )
             filtered["is_potential"] = False
             # 銘柄タイプの判定
@@ -1192,7 +1154,7 @@ class StockScreener:
                 msg.append(f"（{buy_results['summary_reason'].iloc[0]}のため厳選除外）")
 
         if not buy_results.empty:
-            for i, (_, row) in enumerate(buy_results.iterrows(), 1):
+            for i, (_, row) in enumerate(buy_results.head(5).iterrows(), 1):
                 name = name_map.get(row['symbol'], "不明")
 
                 # ポジションサイジングの計算
