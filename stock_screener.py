@@ -254,18 +254,25 @@ class FeatureFactory:
         # いずれかのセットアップ条件を満たし、かつ未来で上昇したものを正解とする
         is_setup = is_precursor | is_trend
 
+        # ★ここから追加
+        setup_ok = is_setup
+        breakout_ok = setup_ok & will_breakout
+        sustain_ok = breakout_ok & will_sustain
+        clean_ok = sustain_ok & is_clean_move
+        # ★ここまで追加
+
         # 両方の条件を満たすものを「質の高い上昇」として学習させる
         df["Target"] = np.where(
             future_20d_gain.notna(),
-            (is_setup & will_breakout & will_sustain & is_clean_move).astype(int),
+            clean_ok.astype(int),
             np.nan
         )
         
         stats = {
-            "setup": int(is_setup.sum()),
-            "breakout": int(will_breakout.sum()),
-            "sustain": int(will_sustain.sum()),
-            "clean": int(is_clean_move.sum()),
+            "setup": int(setup_ok.sum()),
+            "breakout": int(breakout_ok.sum()),
+            "sustain": int(sustain_ok.sum()),
+            "clean": int(clean_ok.sum()),
             "target": int(df["Target"].fillna(0).sum())
         }
         
@@ -806,14 +813,14 @@ class StockScreener:
             logger.info(f"学習対象銘柄数: {len(training_dfs)}")
 
             logger.info(
-                "Target候補集計: "
-                f"setup={total_stats['setup']:,}, "
-                f"breakout={total_stats['breakout']:,}, "
-                f"sustain={total_stats['sustain']:,}, "
-                f"clean={total_stats['clean']:,}"
+                "Target絞り込み: "
+                f"setup={total_stats['setup']:,}"
+                f" → breakout={total_stats['breakout']:,}"
+                f" → sustain={total_stats['sustain']:,}"
+                f" → clean={total_stats['clean']:,}"
             )
-
-            logger.info(f"Target=1 件数: {total_stats['target']:,}")
+            
+            logger.info(f"最終Target=1: {total_stats['target']:,}")
             
             if not training_dfs:
                 logger.error("学習に使用できる有効なデータがありませんでした。")
