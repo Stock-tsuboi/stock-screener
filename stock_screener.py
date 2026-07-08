@@ -244,7 +244,7 @@ class FeatureFactory:
         )
         
         # 2. トレンド継続パターン: すでに動き出しているが、過熱しすぎていない
-        is_trend = (df["VolRatio"].between(1.0, 2.2)) & (df["ret5"].between(0.01, 0.05)) & (df["Stage2_Score"] >= 1)
+        is_trend = (df["VolRatio"].between(1.2, 2.2)) & (df["ret5"].between(0.015, 0.04)) & (df["Slope20"] > 0) & (df["Stage2_Score"] >= 2)
         
         # 未来のパフォーマンス条件
         # A. 期間内最高値が5%以上上昇（利確チャンス）
