@@ -227,6 +227,11 @@ class FeatureFactory:
         indexer = pd.api.indexers.FixedForwardWindowIndexer(window_size=5)
         future_max = df["High"].shift(-1).rolling(window=indexer, min_periods=5).max()
         future_gain = future_max / df["Close"] - 1
+
+        # ★★★ここを追加★★★
+        future_close5 = df["Close"].shift(-5)
+        future_close_gain = future_close5 / df["Close"] - 1
+        # ★★★★★★★★★★
         
         # 未来の最大ドローダウン（明日から5日間の安値）
         future_min = df["Low"].shift(-1).rolling(window=indexer, min_periods=5).min()
@@ -247,8 +252,12 @@ class FeatureFactory:
         is_trend = (df["VolRatio"].between(1.2, 2.2)) & (df["ret5"].between(0.015, 0.04)) & (df["Slope20"] > 0) & (df["Stage2_Score"] >= 2)
         
         # 未来のパフォーマンス条件
-        # A. 期間内最高値が5%以上上昇（利確チャンス）
-        will_breakout = (future_gain >= 0.05)
+        # A. 期間内最高値が5%以上上昇し、5日後も3%以上維持
+        will_breakout = (
+            (future_gain >= 0.05)
+            &
+            (future_close_gain >= 0.03)
+        )
         # B. 20日後も価格が維持または上昇している（長期持続性）
         will_sustain = (future_20d_gain >= 0.02)
         
