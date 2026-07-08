@@ -243,10 +243,9 @@ class FeatureFactory:
         # 仕込み時の条件（現在が静かであること）
         # 1. 急騰予兆パターン: 出来高が平均的で価格が安定
         is_precursor = (
-            (df["VolRatio"].between(0.8, 1.4))
-            & (df["ret5"].between(-0.03, 0.03))
-            & (df["RSI"] < 65)
-            & (df["Slope10"] > 0)
+            (df["VolRatio"].between(0.8, 1.5))
+            & (df["ret5"].between(-0.04, 0.04))
+            & (df["RSI"] < 70)
             & (df["Stage2_Score"] >= 1)
         )
         
