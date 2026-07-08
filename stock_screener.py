@@ -1103,7 +1103,8 @@ class StockScreener:
             cond_prob &
             cond_tech &
             cond_slope_flexible &
-            ~cond_sell
+            ~cond_sell &
+            (res_df["EV"] > 0)
         ].sort_values("EV", ascending=False)
         
         logger.info(f"filtered件数 = {len(filtered)}")
