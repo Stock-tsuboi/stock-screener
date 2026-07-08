@@ -1109,11 +1109,31 @@ class StockScreener:
                 .to_string(index=False)
             )
             filtered["is_potential"] = False
-            # 銘柄タイプの判定
-            filtered["signal_type"] = np.where(
-                (filtered["VolRatio"] < 1.2) & (filtered["ret5"] < 0.02),
-                "急騰予兆", "トレンド継続"
-            )
+            # -------------------------------
+            # AI評価に合わせた銘柄タイプ判定
+            # -------------------------------
+            filtered["signal_type"] = "トレンド継続"
+            
+            # AIが非常に強気
+            filtered.loc[
+                (filtered["prob"] >= 0.42) &
+                (filtered["EV"] >= 0.04),
+                "signal_type"
+            ] = "★★本命"
+            
+            # AI高評価
+            filtered.loc[
+                (filtered["prob"] >= 0.40) &
+                (filtered["EV"] >= 0.02),
+                "signal_type"
+            ] = "★有力"
+            
+            # ブレイクアウト初動
+            filtered.loc[
+                (filtered["VolRatio"] < 1.2) &
+                (filtered["ret5"] < 0.02),
+                "signal_type"
+            ] = "急騰予兆"
 
         # 厳選フィルタで0件の場合の救済ロジック
         if filtered.empty and not res_df.empty:
