@@ -255,9 +255,9 @@ class FeatureFactory:
         # 未来のパフォーマンス条件
         # A. 期間内最高値が5%以上上昇し、5日後も3%以上維持
         will_breakout = (
-            (future_gain >= 0.07)
+            (future_gain >= 0.06)
             &
-            (future_close_gain >= 0.05)
+            (future_close_gain >= 0.04)
         )
         # B. 20日後も価格が維持または上昇している（長期持続性）
         will_sustain = (future_20d_gain >= 0.02)
