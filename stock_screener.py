@@ -937,7 +937,7 @@ class StockScreener:
         
         res_df["RewardTarget"] = (
             0.08
-            + res_df["prob"] * 0.10
+            + res_df["prob"] * 0.15
             + bias_bonus
             + slope_bonus
         ).clip(
