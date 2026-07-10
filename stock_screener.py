@@ -1159,7 +1159,7 @@ class StockScreener:
                 potential_df["signal_type"] = "潜在候補(要監視)"
                 filtered = potential_df
             else:
-                filtered = pd.DataFrame()　
+                filtered = pd.DataFrame()
 
         # 売り結果のまとめ
         sell_results = res_df[res_df["is_sell_signal"] == True].sort_values("ret1", ascending=True)
