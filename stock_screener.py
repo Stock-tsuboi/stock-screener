@@ -214,7 +214,7 @@ class FeatureFactory:
         
         # 指標が計算できていない初期の行（SMA75などがNaNの期間）を削除してから、残りを0埋め
         # 新しい特徴量もNaNになりうるので、dropnaのsubsetに追加
-        return df.dropna(
+        df = df.dropna(
             subset=[
                 "SMA200",
                 "Slope20",
@@ -223,7 +223,9 @@ class FeatureFactory:
                 "Macro_VXJ",
                 "Macro_JPY"
             ]
-        ).fillna(0).replace([np.inf, -np.inf], 0)
+        )
+        
+        return df.fillna(0).replace([np.inf, -np.inf], 0)
 
     @staticmethod
     def add_target_label(df: pd.DataFrame) -> pd.DataFrame:
@@ -260,7 +262,13 @@ class FeatureFactory:
         )
         
         # 2. トレンド継続パターン: すでに動き出しているが、過熱しすぎていない
-        is_trend = (df["VolRatio"].between(1.0, 2.2)) & (df["ret5"].between(0.01, 0.05)) & (df["Stage2_Score"] >= 1)
+        is_trend = (
+            (df["VolRatio"].between(0.9, 2.0))
+            & (df["ret5"].between(0.005, 0.04))
+            & (df["RSI"] < 75)
+            & (df["Stage2_Score"] >= 1)
+            & (df["Slope10"] > -0.002)
+        )
         
         # 未来のパフォーマンス条件
         # A. 期間内最高値が5%以上上昇し、5日後も3%以上維持
@@ -501,7 +509,7 @@ class DatabaseManager:
                         conn.register("tmp_df", merged)
                     
                         conn.execute("""
-                            INSERT INTO prices (
+                            INSERT OR REPLACE INTO prices (
                                 code,
                                 date,
                                 open,
@@ -769,7 +777,11 @@ class StockScreener:
             if len(df) < 120: return None # 過去データが少ない銘柄は学習から除外
             logger.debug(f"Preparing training features for {symbol}")
             # 学習時は財務データとマクロデータは利用しない（またはデフォルト値）
-            feat_df = self.factory.calculate_metrics(df, fundamentals=None, macro_df=None)
+            feat_df = self.factory.calculate_metrics(
+                df,
+                fundamentals={"days_to_earnings": 30},
+                macro_df=None
+            )
             feat_df, stats = self.factory.add_target_label(feat_df)
             # 特徴量計算後の有効データが少ない銘柄は、学習の質を下げるため除外
             if len(feat_df) < 30:
@@ -946,12 +958,14 @@ class StockScreener:
         )
         
         res_df["RewardTarget"] = (
-            0.08
-            + res_df["prob"] * 0.15
+            0.07
+            + res_df["prob"] * 0.12
             + bias_bonus
             + slope_bonus
+            + (res_df["Stage2_Score"] * 0.015)
+            + ((res_df["RS20"] - 1.0).clip(-0.10, 0.20) * 0.05)
         ).clip(
-            lower=0.08,
+            lower=0.07,
             upper=0.25
         )
         
@@ -1079,7 +1093,11 @@ class StockScreener:
         # =============================
 
         # 基本条件：出来高が極端に細りすぎているものは除外（流動性リスク回避）
-        cond_tech = (res_df["VolRatio"] > 0.25) & (res_df["VolVCP"] < 1.5) & (res_df["Bias25"].between(-0.20, 0.12))
+        cond_tech = (
+            (res_df["VolRatio"] > 0.25)
+            & (res_df["VolVCP"] < 1.8)
+            & (res_df["Bias25"].between(-0.25, 0.15))
+        )
         cond_slope = res_df["Slope20"] > -0.01
         cond_prob = (res_df["prob"] >= adjusted_threshold)
 
