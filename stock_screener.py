@@ -285,10 +285,22 @@ class FeatureFactory:
         )
         
         # C. 【改善】逆行リスクをATRの1.5倍までに緩和（一律2.5%は厳しすぎた）
-        is_clean_move = (future_drawdown > -(df["atr_ratio"] * 1.5).fillna(0.025))
+        is_clean_move = (
+            future_drawdown >
+            -(
+                (df["atr_ratio"] * 2.0)
+                .clip(lower=0.03, upper=0.10)
+            )
+        )
 
         # いずれかのセットアップ条件を満たし、かつ未来で上昇したものを正解とする
-        is_setup = is_precursor | is_trend
+        is_setup = (
+            (is_precursor | is_trend)
+            &
+            (df["Slope20"] > -0.003)
+            &
+            (df["SMA25"] > df["SMA75"] * 0.97)
+        )
 
         # ★ここから追加
         setup_ok = is_setup
