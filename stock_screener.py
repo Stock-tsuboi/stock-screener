@@ -88,6 +88,7 @@ class FeatureFactory:
         "ret1", "ret3", "ret5", "ret20", "atr_ratio", "Stage2_Score",
         "VolVCP",
         "RelativeStrength",
+        "RS20",
         "Days_To_Earnings", "Macro_VXJ", "Macro_JPY" # 新規追加
     ] # AIが判断に使用する項目のリスト
 
@@ -136,6 +137,10 @@ class FeatureFactory:
         # 値が大きいほど最近の株価が強い
         df["RelativeStrength"] = (
             close / close.rolling(63).mean()
+        ).replace([np.inf, -np.inf], np.nan)
+
+        df["RS20"] = (
+            close / close.shift(20)
         ).replace([np.inf, -np.inf], np.nan)
 
         # RSI (14日間)
