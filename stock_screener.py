@@ -278,7 +278,11 @@ class FeatureFactory:
             (future_close_gain >= 0.035)
         )
         # B. 20日後も価格が維持または上昇している（長期持続性）
-        will_sustain = (future_20d_gain >= 0.02)
+        will_sustain = (
+            (future_20d_gain >= 0.02)
+            &
+            (future_close_gain >= 0.03)
+        )
         
         # C. 【改善】逆行リスクをATRの1.5倍までに緩和（一律2.5%は厳しすぎた）
         is_clean_move = (future_drawdown > -(df["atr_ratio"] * 1.5).fillna(0.025))
@@ -788,7 +792,13 @@ class StockScreener:
                 return None
             # 学習に必要なカラムのみを抽出してメモリを節約
             cols = self.factory.FEATURE_COLS + ["Target"]
-            return feat_df.iloc[:-5][cols], stats
+            
+            train_df = feat_df.iloc[:-5][cols]
+            
+            # Targetが存在しない行は学習対象から除外
+            train_df = train_df.dropna(subset=["Target"])
+            
+            return train_df, stats
 
         # モデルの読み込みと整合性チェック
         need_training = False
@@ -872,12 +882,15 @@ class StockScreener:
            
             logger.info(f"AIモデルの学習を開始します (データ件数: {len(X)})...")
             base_model = RandomForestClassifier(
-                n_estimators=300,
-                max_depth=12,
-                min_samples_leaf=5,
+                n_estimators=500,
+                max_depth=10,
+                min_samples_leaf=8,
+                min_samples_split=20,
+                max_features="sqrt",
+                bootstrap=True,
                 n_jobs=-1,
                 random_state=42,
-                class_weight="balanced"
+                class_weight="balanced_subsample"
             )
             self.model = CalibratedClassifierCV(
                 estimator=base_model,
