@@ -89,6 +89,7 @@ class FeatureFactory:
         "VolVCP",
         "RelativeStrength",
         "RS20",
+        "GapRate",
         "Days_To_Earnings", "Macro_VXJ", "Macro_JPY" # 新規追加
     ] # AIが判断に使用する項目のリスト
 
@@ -141,6 +142,10 @@ class FeatureFactory:
 
         df["RS20"] = (
             close / close.shift(20)
+        ).replace([np.inf, -np.inf], np.nan)
+
+        df["GapRate"] = (
+            df["Open"] / df["Close"].shift(1) - 1
         ).replace([np.inf, -np.inf], np.nan)
 
         # RSI (14日間)
