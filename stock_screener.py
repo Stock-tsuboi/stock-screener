@@ -249,8 +249,8 @@ class FeatureFactory:
         future_min = df["Low"].shift(-1).rolling(window=indexer, min_periods=5).min()
         future_drawdown = future_min / df["Close"] - 1
 
-        # 20日（約1ヶ月）先の持続性も確認
-        future_20d_gain = df["Close"].shift(-20) / df["Close"] - 1
+        # 10日先の持続性を確認（初動重視）
+        future_10d_gain = df["Close"].shift(-10) / df["Close"] - 1
 
         # 仕込み時の条件（現在が静かであること）
         # 1. 急騰予兆パターン: 出来高が平均的で価格が安定
@@ -279,7 +279,7 @@ class FeatureFactory:
         )
         # B. 20日後も価格が維持または上昇している（長期持続性）
         will_sustain = (
-            (future_20d_gain >= 0.02)
+            (future_10d_gain >= 0.02)
             &
             (future_close_gain >= 0.03)
         )
@@ -311,7 +311,7 @@ class FeatureFactory:
 
         # 両方の条件を満たすものを「質の高い上昇」として学習させる
         df["Target"] = np.where(
-            future_20d_gain.notna(),
+            future_10d_gain.notna(),
             clean_ok.astype(int),
             np.nan
         )
