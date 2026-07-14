@@ -312,7 +312,7 @@ class FeatureFactory:
         # 両方の条件を満たすものを「質の高い上昇」として学習させる
         df["Target"] = np.where(
             future_10d_gain.notna(),
-            clean_ok.astype(int),
+            breakout_ok.astype(int),
             np.nan
         )
         
