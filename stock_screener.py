@@ -279,9 +279,9 @@ class FeatureFactory:
         )
         # B. 20日後も価格が維持または上昇している（長期持続性）
         will_sustain = (
-            (future_10d_gain >= 0.02)
+            (future_10d_gain >= 0.01)
             &
-            (future_close_gain >= 0.03)
+            (future_close_gain >= 0.02)
         )
         
         # C. 【改善】逆行リスクをATRの1.5倍までに緩和（一律2.5%は厳しすぎた）
