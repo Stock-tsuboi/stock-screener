@@ -284,11 +284,11 @@ class FeatureFactory:
             (future_close_gain >= 0.02)
         )
         
-        # C. 【改善】逆行リスクをATRの1.5倍までに緩和（一律2.5%は厳しすぎた）
+        # C. 逆行リスクをATRの2.5倍まで許容
         is_clean_move = (
             future_drawdown >
             -(
-                (df["atr_ratio"] * 2.0)
+                (df["atr_ratio"] * 2.5)
                 .clip(lower=0.03, upper=0.10)
             )
         )
