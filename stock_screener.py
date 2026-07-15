@@ -297,9 +297,9 @@ class FeatureFactory:
         is_setup = (
             (is_precursor | is_trend)
             &
-            (df["Slope20"] > -0.003)
+            (df["Slope20"] > -0.001)
             &
-            (df["SMA25"] > df["SMA75"] * 0.97)
+            (df["SMA25"] <= df["SMA75"] * 1.01)
         )
 
         # ★ここから追加
