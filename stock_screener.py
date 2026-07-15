@@ -84,13 +84,15 @@ class FeatureFactory:
     FEATURE_COLS = [
         "SMA5", "SMA25", "SMA75", "SMA200", "Bias5", "Bias25", "Bias75", "Bias200",
         "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2", "VolRatio",
-        "Bull", "BigBull", "BigBear", "Slope10", "Slope20", "SlopeAccel", "ret10", "RSI", "MACD_Hist", "Momentum_Change",
+        "Bull", "BigBull", "BigBear",
+        "Slope10", "Slope20", "SlopeAccel", "SlopeCross",
+        "ret10", "RSI", "MACD_Hist", "Momentum_Change",
         "ret1", "ret3", "ret5", "ret20", "atr_ratio", "Stage2_Score",
         "VolVCP",
         "RelativeStrength",
         "RS20",
         "GapRate",
-        "Days_To_Earnings", "Macro_VXJ", "Macro_JPY" # 新規追加
+        "Days_To_Earnings", "Macro_VXJ", "Macro_JPY"
     ] # AIが判断に使用する項目のリスト
 
     @staticmethod
@@ -171,6 +173,9 @@ class FeatureFactory:
         df["Slope10"] = close.rolling(10).apply(calc_slope, raw=False)
         df["Slope20"] = close.rolling(20).apply(calc_slope, raw=False)
         df["SlopeAccel"] = df["Slope10"].diff()
+
+        # ★追加（初動検知用）
+        df["SlopeCross"] = df["Slope10"] - df["Slope20"]
 
         # ATR比率
         tr = pd.concat([
