@@ -249,6 +249,20 @@ class FeatureFactory:
         future_close5 = df["Close"].shift(-5)
         future_close_gain = future_close5 / df["Close"] - 1
         # ★★★★★★★★★★
+
+        # 未来5日間の平均出来高
+        future_volume = (
+            df["Volume"]
+            .shift(-1)
+            .rolling(window=indexer, min_periods=5)
+            .mean()
+        )
+        
+        # 現在の25日平均出来高に対する倍率
+        future_vol_ratio = (
+            future_volume
+            / df["Volume"].rolling(25).mean()
+        )
         
         # 未来の最大ドローダウン（明日から5日間の安値）
         future_min = df["Low"].shift(-1).rolling(window=indexer, min_periods=5).min()
@@ -258,12 +272,31 @@ class FeatureFactory:
         future_10d_gain = df["Close"].shift(-10) / df["Close"] - 1
 
         # 仕込み時の条件（現在が静かであること）
-        # 1. 急騰予兆パターン: 出来高が平均的で価格が安定
+        # 1. 急騰予兆パターン（初動検知版）
         is_precursor = (
-            (df["VolRatio"].between(0.8, 1.5))
-            & (df["ret5"].between(-0.04, 0.04))
-            & (df["RSI"] < 70)
+            # 出来高はまだ爆発していない
+            (df["VolRatio"].between(0.7, 1.3))
+        
+            # まだ大きく上昇していない
+            & (df["ret5"].between(-0.02, 0.03))
+        
+            # VCP（ボラ収縮）
+            & (df["VolVCP"] < 0.80)
+        
+            # RSIは中立
+            & (df["RSI"].between(45, 65))
+        
+            # 長期トレンドは崩れていない
             & (df["Stage2_Score"] >= 1)
+        
+            # 20日線は下げ止まり
+            & (df["Slope20"] > -0.002)
+        
+            # 10日線が20日線を追い抜き始める
+            & (df["SlopeCross"] > -0.001)
+        
+            # 25日線付近でエネルギーを溜めている
+            & (df["Bias25"].between(-0.04, 0.03))
         )
         
         # 2. トレンド継続パターン: すでに動き出しているが、過熱しすぎていない
@@ -276,12 +309,21 @@ class FeatureFactory:
         )
         
         # 未来のパフォーマンス条件
-        # A. 期間内最高値が4%以上上昇し、5日後も2.5%以上維持
+        # A. 初動ブレイクアウト判定
         will_breakout = (
-            (future_gain >= 0.040)
-            &
-            (future_close_gain >= 0.025)
+            # 高値は5%以上伸びる
+            (future_gain >= 0.05)
+        
+            # 5日後も3%以上維持
+            & (future_close_gain >= 0.03)
+        
+            # 一気に吹きすぎない
+            & (future_gain <= 0.20)
+
+            # 出来高が増加している
+            & (future_vol_ratio >= 1.30)
         )
+
         # B. 20日後も価格が維持または上昇している（長期持続性）
         will_sustain = (
             (future_10d_gain >= 0.01)
@@ -314,10 +356,10 @@ class FeatureFactory:
         clean_ok = sustain_ok & is_clean_move
         # ★ここまで追加
 
-        # 両方の条件を満たすものを「質の高い上昇」として学習させる
+        # 両方の条件を満たすものを「質の高い初動」のみ学習させる
         df["Target"] = np.where(
             future_10d_gain.notna(),
-            breakout_ok.astype(int),
+            clean_ok.astype(int),
             np.nan
         )
         
