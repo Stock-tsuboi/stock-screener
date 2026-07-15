@@ -249,21 +249,7 @@ class FeatureFactory:
         future_close5 = df["Close"].shift(-5)
         future_close_gain = future_close5 / df["Close"] - 1
         # ★★★★★★★★★★
-
-        # 未来5日間の平均出来高
-        future_volume = (
-            df["Volume"]
-            .shift(-1)
-            .rolling(window=indexer, min_periods=5)
-            .mean()
-        )
-        
-        # 現在の25日平均出来高に対する倍率
-        future_vol_ratio = (
-            future_volume
-            / df["Volume"].rolling(25).mean()
-        )
-        
+       
         # 未来の最大ドローダウン（明日から5日間の安値）
         future_min = df["Low"].shift(-1).rolling(window=indexer, min_periods=5).min()
         future_drawdown = future_min / df["Close"] - 1
@@ -311,17 +297,14 @@ class FeatureFactory:
         # 未来のパフォーマンス条件
         # A. 初動ブレイクアウト判定
         will_breakout = (
-            # 高値は5%以上伸びる
-            (future_gain >= 0.05)
+            # 高値が4%以上伸びる
+            (future_gain >= 0.04)
         
             # 5日後も3%以上維持
             & (future_close_gain >= 0.03)
         
-            # 一気に吹きすぎない
+            # 一気に吹き過ぎていない
             & (future_gain <= 0.20)
-
-            # 出来高が増加している
-            & (future_vol_ratio >= 1.30)
         )
 
         # B. 20日後も価格が維持または上昇している（長期持続性）
