@@ -555,26 +555,34 @@ class DatabaseManager:
                         conn.register("tmp_df", merged)
                     
                         conn.execute("""
-                            INSERT OR REPLACE INTO prices (
-                                code,
-                                date,
-                                open,
-                                high,
-                                low,
-                                close,
-                                volume
-                            )
-                            SELECT
-                                code,
-                                date,
-                                open,
-                                high,
-                                low,
-                                close,
-                                volume
-                            FROM tmp_df
-                        """)
-                    
+                        INSERT INTO prices (
+                            code,
+                            date,
+                            open,
+                            high,
+                            low,
+                            close,
+                            volume
+                        )
+                        SELECT
+                            code,
+                            date,
+                            open,
+                            high,
+                            low,
+                            close,
+                            volume
+                        FROM tmp_df
+                        
+                        ON CONFLICT(code,date)
+                        DO UPDATE SET
+                        
+                            open=excluded.open,
+                            high=excluded.high,
+                            low=excluded.low,
+                            close=excluded.close,
+                            volume=excluded.volume
+                        """)                    
                         conn.unregister("tmp_df")
                     
                         total_processed_symbols += len(dfs_to_insert)
