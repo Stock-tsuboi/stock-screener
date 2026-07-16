@@ -925,9 +925,9 @@ class StockScreener:
             logger.info(f"AIモデルの学習を開始します (データ件数: {len(X)})...")
             base_model = RandomForestClassifier(
                 n_estimators=500,
-                max_depth=10,
-                min_samples_leaf=8,
-                min_samples_split=20,
+                max_depth=15,
+                min_samples_leaf=3,
+                min_samples_split=10,
                 max_features="sqrt",
                 bootstrap=True,
                 n_jobs=-1,
