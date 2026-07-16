@@ -297,14 +297,14 @@ class FeatureFactory:
         # 未来のパフォーマンス条件
         # A. 初動ブレイクアウト判定
         will_breakout = (
-            # 高値が4%以上伸びる
+            # 5営業日以内に4%以上上昇
             (future_gain >= 0.04)
         
-            # 5日後も3%以上維持
-            & (future_close_gain >= 0.03)
+            # 5日後も2%以上維持
+            & (future_close_gain >= 0.02)
         
-            # 一気に吹き過ぎていない
-            & (future_gain <= 0.20)
+            # 急騰し過ぎは除外
+            & (future_gain <= 0.15)
         )
 
         # B. 20日後も価格が維持または上昇している（長期持続性）
