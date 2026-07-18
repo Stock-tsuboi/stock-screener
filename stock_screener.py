@@ -950,6 +950,22 @@ class StockScreener:
             self.model.fit(X, y)
 
             # ★ここから追加
+            
+            rf = self.model.calibrated_classifiers_[0].estimator
+            
+            importance = (
+                pd.Series(
+                    rf.feature_importances_,
+                    index=self.factory.FEATURE_COLS
+                )
+                .sort_values(ascending=False)
+            )
+            
+            logger.info(
+                "特徴量TOP10\n%s",
+                importance.head(10)
+            )
+            
             train_proba = self.model.predict_proba(X)[:, 1]
             
             logger.info(
