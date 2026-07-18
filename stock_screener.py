@@ -298,10 +298,10 @@ class FeatureFactory:
         # A. 初動ブレイクアウト判定
         will_breakout = (
             # 5営業日以内に4%以上上昇
-            (future_gain >= 0.04)
+            (future_gain >= 0.03)
         
             # 5日後も2%以上維持
-            & (future_close_gain >= 0.02)
+            & (future_close_gain >= 0.01)
         
             # 急騰し過ぎは除外
             & (future_gain <= 0.15)
@@ -342,7 +342,7 @@ class FeatureFactory:
         # 両方の条件を満たすものを「質の高い初動」のみ学習させる
         df["Target"] = np.where(
             future_10d_gain.notna(),
-            sustain_ok.astype(int),
+            clean_ok.astype(int),
             np.nan
         )
         
