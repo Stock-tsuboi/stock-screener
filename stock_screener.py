@@ -940,7 +940,7 @@ class StockScreener:
                 bootstrap=True,
                 n_jobs=-1,
                 random_state=42,
-                class_weight="balanced_subsample"
+                class_weight="balanced"
             )
             self.model = CalibratedClassifierCV(
                 estimator=base_model,
