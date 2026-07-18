@@ -958,6 +958,10 @@ class StockScreener:
                 f"95%={np.percentile(train_proba, 95):.3f}, "
                 f"99%={np.percentile(train_proba, 99):.3f}"
             )
+
+            logger.info(
+                f"学習データ 高確率件数(0.5以上): {(train_proba >= 0.5).sum():,}"
+            )
             # ★ここまで追加
             
             joblib.dump(self.model, Config.MODEL_PATH)
