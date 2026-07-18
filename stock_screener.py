@@ -345,6 +345,22 @@ class FeatureFactory:
             clean_ok.astype(int),
             np.nan
         )
+
+        # ===== breakoutの内訳を確認 =====
+        breakout_gain = (future_gain >= 0.03).sum()
+        
+        breakout_hold = (
+            (future_gain >= 0.03)
+            &
+            (future_close_gain >= 0.01)
+        ).sum()
+        
+        logger.info(
+            f"Breakout内訳: "
+            f"future_gain>=3%={breakout_gain:,} "
+            f"→ close維持={breakout_hold:,}"
+        )
+        # ============================
         
         stats = {
             "setup": int(setup_ok.sum()),
