@@ -342,7 +342,7 @@ class FeatureFactory:
         # 両方の条件を満たすものを「質の高い初動」のみ学習させる
         df["Target"] = np.where(
             future_10d_gain.notna(),
-            clean_ok.astype(int),
+            sustain_ok.astype(int),
             np.nan
         )
         
