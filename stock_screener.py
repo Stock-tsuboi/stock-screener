@@ -367,7 +367,7 @@ class FeatureFactory:
             "breakout": int(breakout_ok.sum()),
             "sustain": int(sustain_ok.sum()),
             "clean": int(clean_ok.sum()),
-            "target": int(df["Target"].fillna(0).sum())
+            "target": int(df["Target"].fillna(0).sum()),
 
              # 追加
             "breakout_gain": int((future_gain >= 0.03).sum()),
