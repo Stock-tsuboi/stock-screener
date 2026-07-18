@@ -913,7 +913,7 @@ class StockScreener:
                 "breakout": 0,
                 "sustain": 0,
                 "clean": 0,
-                "target": 0
+                "target": 0,
                 "breakout_gain": 0,
                 "breakout_hold": 0
             }
