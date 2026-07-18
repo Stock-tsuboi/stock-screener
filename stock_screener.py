@@ -368,6 +368,16 @@ class FeatureFactory:
             "sustain": int(sustain_ok.sum()),
             "clean": int(clean_ok.sum()),
             "target": int(df["Target"].fillna(0).sum())
+
+             # 追加
+            "breakout_gain": int((future_gain >= 0.03).sum()),
+            "breakout_hold": int(
+                (
+                    (future_gain >= 0.03)
+                    &
+                    (future_close_gain >= 0.01)
+                ).sum()
+            )
         }
         
         return df, stats
@@ -904,6 +914,8 @@ class StockScreener:
                 "sustain": 0,
                 "clean": 0,
                 "target": 0
+                "breakout_gain": 0,
+                "breakout_hold": 0
             }
             
             for r in results:
@@ -918,6 +930,8 @@ class StockScreener:
                 total_stats["sustain"] += stats["sustain"]
                 total_stats["clean"] += stats["clean"]
                 total_stats["target"] += stats["target"]
+                total_stats["breakout_gain"] += stats["breakout_gain"]
+                total_stats["breakout_hold"] += stats["breakout_hold"]
             logger.info(f"学習対象銘柄数: {len(training_dfs)}")
 
             logger.info(
@@ -929,6 +943,11 @@ class StockScreener:
             )
             
             logger.info(f"最終Target=1: {total_stats['target']:,}")
+            logger.info(
+                f"Breakout内訳: "
+                f"future_gain>=3%={total_stats['breakout_gain']:,} "
+                f"→ close維持={total_stats['breakout_hold']:,}"
+            )
             
             if not training_dfs:
                 logger.error("学習に使用できる有効なデータがありませんでした。")
