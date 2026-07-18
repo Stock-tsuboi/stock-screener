@@ -948,6 +948,18 @@ class StockScreener:
                 cv=TimeSeriesSplit(n_splits=3) # 時系列を考慮し、検証回数を増やして精度向上
             )
             self.model.fit(X, y)
+
+            # ★ここから追加
+            train_proba = self.model.predict_proba(X)[:, 1]
+            
+            logger.info(
+                f"学習データ確率: "
+                f"max={train_proba.max():.3f}, "
+                f"95%={np.percentile(train_proba, 95):.3f}, "
+                f"99%={np.percentile(train_proba, 99):.3f}"
+            )
+            # ★ここまで追加
+            
             joblib.dump(self.model, Config.MODEL_PATH)
             logger.info("モデルの学習と保存が完了しました。")
         else:
