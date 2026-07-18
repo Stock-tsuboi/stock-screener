@@ -933,14 +933,14 @@ class StockScreener:
             logger.info(f"AIモデルの学習を開始します (データ件数: {len(X)})...")
             base_model = RandomForestClassifier(
                 n_estimators=500,
-                max_depth=15,
+                max_depth=None,
                 min_samples_leaf=3,
                 min_samples_split=10,
                 max_features="sqrt",
                 bootstrap=True,
                 n_jobs=-1,
                 random_state=42,
-                class_weight="balanced"
+                class_weight="balanced_subsample"
             )
             self.model = CalibratedClassifierCV(
                 estimator=base_model,
