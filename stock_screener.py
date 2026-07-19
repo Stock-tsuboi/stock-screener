@@ -1260,34 +1260,29 @@ class StockScreener:
         # 売り判定は悪条件が2つ以上
         cond_sell = sell_score >= 2
 
-        # ===== 売り条件の内訳デバッグ =====
-        debug_sell = pd.DataFrame({
-            "symbol": res_df["symbol"],
-            "RSI": ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)),
-            "MACD1": (res_df["MACD_Hist"] < 0),
-            "MACD2": (
-                (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2)
-                &
-                (res_df["Slope20"] < -0.01)
-            ),
-            "SMA25": ((res_df["Close"] < res_df["SMA25"] * 0.97) & (res_df["ret1"] < -0.01)),
-            "DROP": (res_df["ret1"] < -0.05),
-            "SELL": cond_sell
-        })
-        
-        logger.info(
-            "\n" +
-            debug_sell[
-                debug_sell["symbol"].isin([
-                    "6866.T",
-                    "6145.T",
-                    "5201.T",
-                    "4063.T"
-                ])
-            ].to_string(index=False)
-        )
+        # ===== 売り条件の内訳デバッグ（SELL判定がついた銘柄のみ表示） =====
+        if logger.isEnabledFor(logging.DEBUG):
+            debug_sell = pd.DataFrame({
+                "symbol": res_df["symbol"],
+                "RSI": ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)),
+                "MACD1": (res_df["MACD_Hist"] < 0),
+                "MACD2": (
+                    (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2)
+                    &
+                    (res_df["Slope20"] < -0.01)
+                ),
+                "SMA25": (
+                    (res_df["Close"] < res_df["SMA25"] * 0.97)
+                    & (res_df["ret1"] < -0.01)
+                ),
+                "DROP": (res_df["ret1"] < -0.05),
+                "SELL": cond_sell
+            })
+            sell_df = debug_sell[debug_sell["SELL"]]
+            if not sell_df.empty:
+                logger.debug("\n%s", sell_df.to_string(index=False))
         # =============================
-
+        
         # 基本条件：出来高が極端に細りすぎているものは除外（流動性リスク回避）
         cond_tech = (
             (res_df["VolRatio"] > 0.25)
