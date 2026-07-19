@@ -1171,23 +1171,23 @@ class StockScreener:
         )
         
         # デバッグ
-        logger.debug(
-            "\n" +
-            res_df[
-                [
-                    "symbol",
-                    "prob",
-                    "Bias25",
-                    "SlopeScore",
-                    "RewardTarget",
-                    "RiskWidth",
-                    "EV_Raw"
+        if logger.isEnabledFor(logging.DEBUG):
+            debug_df = (
+                res_df[
+                    [
+                        "symbol",
+                        "prob",
+                        "Bias25",
+                        "SlopeScore",
+                        "RewardTarget",
+                        "RiskWidth",
+                        "EV_Raw"
+                    ]
                 ]
-            ]
-            .sort_values("prob", ascending=False)
-            .head(10)
-            .to_string(index=False)
-        )
+                .sort_values("prob", ascending=False)
+                .head(10)
+            )
+            logger.debug("\n%s", debug_df.to_string(index=False))
         
         # 出来高確認スコア：1.2倍付近をピークにしつつ、下限を0.9に底上げして過度な除外を防止
         res_df["VolExpansionScore"] = (1.5 - (res_df["VolRatio"] - 1.2).abs()).clip(0.9, 1.5)
@@ -1201,23 +1201,24 @@ class StockScreener:
         res_df["EV"] = res_df["EV_Raw"] * res_df["VolExpansionScore"] * res_df["AccelBonus"] * res_df["SustainabilityBonus"]
 
         # ===== EV内訳デバッグ =====
-        logger.debug(
-            "\n" +
-            res_df[
-                [
-                    "symbol",
-                    "prob",
-                    "EV_Raw",
-                    "VolExpansionScore",
-                    "AccelBonus",
-                    "SustainabilityBonus",
-                    "EV"
+        if logger.isEnabledFor(logging.DEBUG):
+            debug_df = (
+                res_df[
+                    [
+                        "symbol",
+                        "prob",
+                        "EV_Raw",
+                        "VolExpansionScore",
+                        "AccelBonus",
+                        "SustainabilityBonus",
+                        "EV"
+                    ]
                 ]
-            ]
-            .sort_values("prob", ascending=False)
-            .head(10)
-            .to_string(index=False)
-        )
+                .sort_values("prob", ascending=False)
+                .head(10)
+            )
+            logger.debug("\n%s", debug_df.to_string(index=False))
+            
         # =========================
         
         max_prob = res_df['prob'].max()
@@ -1299,13 +1300,13 @@ class StockScreener:
         logger.debug(f"adjusted_threshold = {adjusted_threshold:.6f}")
         logger.debug(f"cond_prob True件数 = {cond_prob.sum()}")
 
-        logger.debug(
-            "\n" +
-            res_df[["symbol", "prob"]]
+        if logger.isEnabledFor(logging.DEBUG):
+            debug_df = (
+                res_df[["symbol", "prob"]]
                 .sort_values("prob", ascending=False)
                 .head(10)
-                .to_string(index=False)
-        )
+            )
+            logger.debug("\n%s", debug_df.to_string(index=False))
 
         logger.info(f"【条件別ヒット数】 AI確率({adjusted_threshold:.2f}以上): {cond_prob.sum()}, テクニカル合致: {(cond_tech & cond_slope).sum()}")
        
