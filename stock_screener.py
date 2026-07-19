@@ -796,13 +796,15 @@ class StockScreener:
         ticker_list = list(all_data.keys())
         earnings_cache = self._fetch_all_fundamentals_batch(ticker_list)
         
-        results = []
-        for s, d in all_data.items():
-            f_data = earnings_cache.get(s, {"days_to_earnings": 30})
-            
-            worker_res = self._feature_worker(s, d, f_data, macro_df)
-            if worker_res is not None:
-                results.append(worker_res)
+        # 銘柄ごとの特徴量計算は互いに独立しているため、joblibで並列実行する
+        # （train_worker側の学習処理と同様のパターン）
+        results = Parallel(n_jobs=-1)(
+            delayed(self._feature_worker)(
+                s, d, earnings_cache.get(s, {"days_to_earnings": 30}), macro_df,
+            )
+            for s, d in all_data.items()
+        )
+        results = [r for r in results if r is not None]
 
         processed_data = {r[0]: r[1] for r in results if r is not None}
         logger.info(f"指標の統合が完了しました。処理済み銘柄数: {len(processed_data)}")
@@ -912,31 +914,60 @@ class StockScreener:
 
         # モデルの読み込みと整合性チェック
         need_training = False
+        reason = ""
+        
         if not os.path.exists(Config.MODEL_PATH):
             need_training = True
-        elif (datetime.now() - datetime.fromtimestamp(os.path.getmtime(Config.MODEL_PATH))).days >= Config.RETRAIN_DAYS:
-            need_training = True
+            reason = "モデルファイルが存在しません"
+            
         else:
             try:
                 self.model = joblib.load(Config.MODEL_PATH)
-                # 学習時の特徴量リストを取得して比較
+                # 保存から一定期間経過したら再学習
+                if (
+                    datetime.now()
+                    - datetime.fromtimestamp(os.path.getmtime(Config.MODEL_PATH))
+                ).days >= Config.RETRAIN_DAYS:
+                    need_training = True
+                    reason = (
+                        f"モデル有効期限切れ "
+                        f"({Config.RETRAIN_DAYS}日)"
+                    )
+        
                 trained_features = []
+        
                 if hasattr(self.model, "feature_names_in_"):
                     trained_features = list(self.model.feature_names_in_)
+        
                 elif hasattr(self.model, "calibrated_classifiers_"):
                     est = self.model.calibrated_classifiers_[0].estimator
                     if hasattr(est, "feature_names_in_"):
                         trained_features = list(est.feature_names_in_)
-                
+        
                 if trained_features and trained_features != self.factory.FEATURE_COLS:
-                    logger.warning(f"特徴量構成の変更を検知しました（旧:{len(trained_features)}種 -> 新:{len(self.factory.FEATURE_COLS)}種）。再学習を強制します。")
                     need_training = True
+                    reason = (
+                        f"特徴量変更 "
+                        f"({len(trained_features)}→"
+                        f"{len(self.factory.FEATURE_COLS)})"
+                    )
+                
+                    logger.warning(
+                        f"特徴量構成の変更を検知しました"
+                        f"（旧:{len(trained_features)}種 -> 新:{len(self.factory.FEATURE_COLS)}種）"
+                    )
+        
             except Exception as e:
-                logger.warning(f"モデルチェック中にエラーが発生しました: {e}。再学習を実行します。")
+                logger.warning(
+                    f"モデルチェック中にエラーが発生しました: {e}"
+                )
                 need_training = True
+                reason = "モデル読込失敗"
 
         if need_training:
-            logger.info("モデルを新規学習します...")
+            logger.info(
+                f"モデルを新規学習します。理由: {reason}"
+            )
             
             # 学習データの準備を並列化
             results = Parallel(n_jobs=2)(delayed(train_worker)(s, d) for s, d in all_data.items())
