@@ -860,15 +860,21 @@ class StockScreener:
             return None
         
         now_jst = datetime.now(timezone.utc) + timedelta(hours=9)
-        
+
+        # 呼び出し元(all_data)の元データを書き換えないよう、
+        # このワーカー内で使うdfは明示的にコピーしてから加工する
+        df = df.copy()     
         
         # 9:00〜9:15の間は価格が極めて不安定（寄り付きノイズ）なため、当日データが含まれている場合は除外
         if now_jst.hour == 9 and now_jst.minute < 15:
             if df.index[-1].date() == now_jst.date():
                 df = df.iloc[:-1]
-        # 9:15以降の9時台は、始値を暫定的な終値として扱うことで、寄り付き後の勢いを反映させる
-        elif now_jst.hour == 9 and now_jst.minute >= 15 and df.index[-1].date() == now_jst.date():
-            df.iloc[-1, df.columns.get_loc("Close")] = df.iloc[-1, df.columns.get_loc("Open")]
+                # 必要本数を満たすか再確認
+                if len(df) < 80:
+                    return None
+        # 9:15以降もCloseの書き換えは行わない
+        # （OpenをCloseに代入するとOHLCの整合性が崩れるため削除。
+        #   当日の行はそのまま生データとして計算に使う）
         
         feat_df = self.factory.calculate_metrics(df, fundamentals, macro_df)
         if len(feat_df) < 10:
