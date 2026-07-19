@@ -285,6 +285,8 @@ class FeatureFactory:
             & (df["Bias25"].between(-0.06, 0.05))
         )
         
+        logger.info(f"is_precursor={int(is_precursor.sum()):,}")
+        
         # 2. トレンド継続パターン: すでに動き出しているが、過熱しすぎていない
         is_trend = (
             (df["VolRatio"].between(0.9, 2.0))
@@ -293,6 +295,8 @@ class FeatureFactory:
             & (df["Stage2_Score"] >= 1)
             & (df["Slope10"] > -0.002)
         )
+
+        logger.info(f"is_trend={int(is_trend.sum()):,}")
         
         # 未来のパフォーマンス条件
         # A. 初動ブレイクアウト判定
@@ -331,6 +335,8 @@ class FeatureFactory:
             &
             (df["SMA25"] <= df["SMA75"] * 1.01)
         )
+
+        logger.info(f"is_setup={int(is_setup.sum()):,}")
 
         # ★ここから追加
         setup_ok = is_setup
@@ -508,6 +514,8 @@ class DatabaseManager:
             
             # 直近データ削除済みかどうか
             delete_done = False
+            
+            # ※ delete_done フラグは廃止（バッチ単位でスコープするため不要）
                         
             batch_size = 100
             for i in range(0, len(codes), batch_size):
@@ -559,59 +567,79 @@ class DatabaseManager:
                         merged = pd.concat(dfs_to_insert)
                         
                         oldest_date = merged["date"].min()
+                        # このバッチで実際に取得できた銘柄コードのみを削除・更新対象にする
+                        # （他バッチの成否に依存させないため）
+                        batch_codes_fetched = merged["code"].unique().tolist()
 
-                        if has_data and not delete_done:
-                            delete_count = conn.execute("""
-                                SELECT COUNT(*)
-                                FROM prices
-                                WHERE date >= ?
-                            """, [oldest_date]).fetchone()[0]
+                        # DELETEとINSERTを1つのトランザクションにまとめ、
+                        # 途中で例外が発生しても「削除だけ実行されて挿入されない」
+                        # 中途半端な状態がDBに残らないようにする
+                        conn.execute("BEGIN TRANSACTION")
+                        try:
+                            if has_data:
+                                delete_count = conn.execute("""
+                                    SELECT COUNT(*)
+                                    FROM prices
+                                    WHERE code IN ? AND date >= ?
+                                """, [batch_codes_fetched, oldest_date]).fetchone()[0]
                             
-                            logger.info(
-                                f"{oldest_date.date()}以降のデータを削除します（対象: {delete_count:,}件）"
-                            )
+                                logger.info(
+                                    f"{oldest_date.date()}以降のデータを削除します"
+                                    f"（対象銘柄:{len(batch_codes_fetched)}件, 対象レコード:{delete_count:,}件）"
+                                )
                         
+                                conn.execute("""
+                                    DELETE FROM prices
+                                    WHERE code IN ? AND date >= ?
+                                """, [batch_codes_fetched, oldest_date])
+                                # delete_done は不要になったため削除                   
+                    
+                            conn.register("tmp_df", merged)
+                    
                             conn.execute("""
-                                DELETE FROM prices
-                                WHERE date >= ?
-                            """, [oldest_date])
+                            INSERT INTO prices (
+                                code,
+                                date,
+                                open,
+                                high,
+                                low,
+                                close,
+                                volume
+                            )
+                            SELECT
+                                code,
+                                date,
+                                open,
+                                high,
+                                low,
+                                close,
+                                volume
+                            FROM tmp_df
                         
-                            delete_done = True                    
-                    
-                        conn.register("tmp_df", merged)
-                    
-                        conn.execute("""
-                        INSERT INTO prices (
-                            code,
-                            date,
-                            open,
-                            high,
-                            low,
-                            close,
-                            volume
-                        )
-                        SELECT
-                            code,
-                            date,
-                            open,
-                            high,
-                            low,
-                            close,
-                            volume
-                        FROM tmp_df
+                            ON CONFLICT(code,date)
+                            DO UPDATE SET
                         
-                        ON CONFLICT(code,date)
-                        DO UPDATE SET
+                                open=excluded.open,
+                                high=excluded.high,
+                                low=excluded.low,
+                                close=excluded.close,
+                                volume=excluded.volume
+                            """)                    
+                            conn.unregister("tmp_df")
+                            # ★ここまで成功して初めて確定させる
+                            conn.execute("COMMIT")                    
+                            total_processed_symbols += len(dfs_to_insert)
                         
-                            open=excluded.open,
-                            high=excluded.high,
-                            low=excluded.low,
-                            close=excluded.close,
-                            volume=excluded.volume
-                        """)                    
-                        conn.unregister("tmp_df")
-                    
-                        total_processed_symbols += len(dfs_to_insert)
+                        except Exception as e:
+                            # DELETEのみ成功しINSERTが失敗した場合でも、ここで巻き戻す
+                            conn.execute("ROLLBACK")
+                            logger.error(
+                                f"Batch {i} のDELETE/INSERT処理に失敗したため、"
+                                f"このバッチの変更を取り消しました: {e}"
+                            )
+                            failed_codes.extend([f"{c}.T" for c in batch_codes])
+                            continue  # ← 次のバッチへ
+
                     logger.debug(f"Batch {i}-{i+len(batch_codes)-1} processed. Inserted/updated {len(dfs_to_insert)} symbols.")
                     time.sleep(1)  # Yahoo APIのレートリミットを回避するための待機
                 except Exception as e:
