@@ -66,6 +66,23 @@ class Config:
     PORTFOLIO_SIZE = 30000    # 運用予算（S株/少額運用 3万円）
     RISK_PER_TRADE = 0.05     # 1トレードの許容損失（資金の5%：3万円なら1500円まで）
     MAX_HOLDING_DAYS = 10     # タイムストップ（10日間動かなければ撤退）
+    PORTFOLIO_SIZE = 30000
+    RISK_PER_TRADE = 0.05
+    MAX_HOLDING_DAYS = 10
+
+    # ===== Target Label =====
+    PRECURSOR_VOL_MIN = 0.7
+    PRECURSOR_VOL_MAX = 1.6
+
+    PRECURSOR_RET5_MIN = -0.03
+    PRECURSOR_RET5_MAX = 0.05
+
+    PRECURSOR_VOLVCP_MAX = 0.95
+
+    PRECURSOR_RSI_MIN = 40
+    PRECURSOR_RSI_MAX = 70
+
+    PRECURSOR_STAGE2_SCORE_MIN = 1
     
     # 財務・マクロ・イベント用設定
     MACRO_TICKERS_JP = {"VXJ": "^JNIV", "JPY": "JPY=X"} # 日経平均ボラティリティ・インデックス, USD/JPY
@@ -261,19 +278,34 @@ class FeatureFactory:
         # 1. 急騰予兆パターン（初動検知版）
         is_precursor = (
             # 出来高はまだ平均付近
-            (df["VolRatio"].between(0.7, 1.6))
+            (
+                df["VolRatio"].between(
+                    Config.PRECURSOR_VOL_MIN,
+                    Config.PRECURSOR_VOL_MAX
+                )
+            )
         
             # 上昇前のもみ合いを許容
-            & (df["ret5"].between(-0.03, 0.05))
+            & (
+                df["ret5"].between(
+                    Config.PRECURSOR_RET5_MIN,
+                    Config.PRECURSOR_RET5_MAX
+                )
+            )
         
             # ボラ収縮（少し緩和）
-            & (df["VolVCP"] < 0.95)
+            & (df["VolVCP"] < Config.PRECURSOR_VOLVCP_MAX)
         
             # RSIは少し広げる
-            & (df["RSI"].between(40, 70))
+            & (
+                df["RSI"].between(
+                    Config.PRECURSOR_RSI_MIN,
+                    Config.PRECURSOR_RSI_MAX
+                )
+            )
         
             # ステージ2以上
-            & (df["Stage2_Score"] >= 1)
+            & (df["Stage2_Score"] >= Config.PRECURSOR_STAGE2_SCORE_MIN)
         
             # 20日線は横ばい以上
             & (df["Slope20"] > -0.003)
@@ -292,7 +324,7 @@ class FeatureFactory:
             (df["VolRatio"].between(0.9, 2.0))
             & (df["ret5"].between(0.005, 0.04))
             & (df["RSI"] < 75)
-            & (df["Stage2_Score"] >= 1)
+            & (df["Stage2_Score"] >= Config.PRECURSOR_STAGE2_SCORE_MIN)
             & (df["Slope10"] > -0.002)
         )
 
