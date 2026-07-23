@@ -83,6 +83,23 @@ class Config:
     PRECURSOR_RSI_MAX = 70
 
     PRECURSOR_STAGE2_SCORE_MIN = 1
+
+    PRECURSOR_SLOPE20_MIN = -0.003
+    PRECURSOR_SLOPECROSS_MIN = -0.003
+
+    PRECURSOR_BIAS25_MIN = -0.06
+    PRECURSOR_BIAS25_MAX = 0.05
+
+    TREND_VOL_MIN = 0.9
+    TREND_VOL_MAX = 2.0
+    TREND_RET5_MIN = 0.005
+    TREND_RET5_MAX = 0.04
+    TREND_RSI_MAX = 75
+    TREND_SLOPE10_MIN = -0.002
+
+    BREAKOUT_GAIN_MIN = 0.03
+    BREAKOUT_CLOSE_GAIN_MIN = 0.01
+    BREAKOUT_GAIN_MAX = 0.15
     
     # 財務・マクロ・イベント用設定
     MACRO_TICKERS_JP = {"VXJ": "^JNIV", "JPY": "JPY=X"} # 日経平均ボラティリティ・インデックス, USD/JPY
@@ -308,24 +325,39 @@ class FeatureFactory:
             & (df["Stage2_Score"] >= Config.PRECURSOR_STAGE2_SCORE_MIN)
         
             # 20日線は横ばい以上
-            & (df["Slope20"] > -0.003)
+            & (df["Slope20"] > Config.PRECURSOR_SLOPE20_MIN)
         
             # ゴールデンクロス直前も許容
-            & (df["SlopeCross"] > -0.003)
+            & (df["SlopeCross"] > Config.PRECURSOR_SLOPECROSS_MIN)
         
             # 25日線付近
-            & (df["Bias25"].between(-0.06, 0.05))
+            & (
+                df["Bias25"].between(
+                    Config.PRECURSOR_BIAS25_MIN,
+                    Config.PRECURSOR_BIAS25_MAX
+                )
+            )
         )
         
         logger.info(f"is_precursor={int(is_precursor.sum()):,}")
         
         # 2. トレンド継続パターン: すでに動き出しているが、過熱しすぎていない
         is_trend = (
-            (df["VolRatio"].between(0.9, 2.0))
-            & (df["ret5"].between(0.005, 0.04))
-            & (df["RSI"] < 75)
+            (
+                df["VolRatio"].between(
+                    Config.TREND_VOL_MIN,
+                    Config.TREND_VOL_MAX
+                )
+            )
+            & (
+                df["ret5"].between(
+                    Config.TREND_RET5_MIN,
+                    Config.TREND_RET5_MAX
+                )
+            )
+            & (df["RSI"] < Config.TREND_RSI_MAX)
             & (df["Stage2_Score"] >= Config.PRECURSOR_STAGE2_SCORE_MIN)
-            & (df["Slope10"] > -0.002)
+            & (df["Slope10"] > Config.TREND_SLOPE10_MIN)
         )
 
         logger.info(f"is_trend={int(is_trend.sum()):,}")
@@ -333,14 +365,14 @@ class FeatureFactory:
         # 未来のパフォーマンス条件
         # A. 初動ブレイクアウト判定
         will_breakout = (
-            # 5営業日以内に4%以上上昇
-            (future_gain >= 0.03)
+            # 5営業日以内に3%以上上昇
+            (future_gain >= Config.BREAKOUT_GAIN_MIN)
         
-            # 5日後も2%以上維持
-            & (future_close_gain >= 0.01)
+            # 5日後も1%以上維持
+            & (future_close_gain >= Config.BREAKOUT_CLOSE_GAIN_MIN)
         
             # 急騰し過ぎは除外
-            & (future_gain <= 0.15)
+            & (future_gain <= Config.BREAKOUT_GAIN_MAX)
         )
 
         # B. 20日後も価格が維持または上昇している（長期持続性）
@@ -385,12 +417,14 @@ class FeatureFactory:
         )
 
         # ===== breakoutの内訳を確認 =====
-        breakout_gain = (future_gain >= 0.03).sum()
+        breakout_gain = (
+            future_gain >= Config.BREAKOUT_GAIN_MIN
+        ).sum()
         
         breakout_hold = (
-            (future_gain >= 0.03)
+            (future_gain >= Config.BREAKOUT_GAIN_MIN)
             &
-            (future_close_gain >= 0.01)
+            (future_close_gain >= Config.BREAKOUT_CLOSE_GAIN_MIN)
         ).sum()
         
         logger.info(
@@ -408,12 +442,15 @@ class FeatureFactory:
             "target": int(df["Target"].fillna(0).sum()),
 
              # 追加
-            "breakout_gain": int((future_gain >= 0.03).sum()),
+            "breakout_gain": int(
+                (future_gain >= Config.BREAKOUT_GAIN_MIN).sum()
+            ),
+            
             "breakout_hold": int(
                 (
-                    (future_gain >= 0.03)
+                    (future_gain >= Config.BREAKOUT_GAIN_MIN)
                     &
-                    (future_close_gain >= 0.01)
+                    (future_close_gain >= Config.BREAKOUT_CLOSE_GAIN_MIN)
                 ).sum()
             )
         }
