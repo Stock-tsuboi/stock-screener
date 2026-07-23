@@ -100,6 +100,13 @@ class Config:
     BREAKOUT_GAIN_MIN = 0.03
     BREAKOUT_CLOSE_GAIN_MIN = 0.01
     BREAKOUT_GAIN_MAX = 0.15
+
+    SUSTAIN_10D_GAIN_MIN = 0.01
+    SUSTAIN_CLOSE_GAIN_MIN = 0.02
+
+    CLEAN_MOVE_ATR_MULT = 2.0
+    CLEAN_MOVE_DRAWDOWN_MIN = 0.03
+    CLEAN_MOVE_DRAWDOWN_MAX = 0.10
     
     # 財務・マクロ・イベント用設定
     MACRO_TICKERS_JP = {"VXJ": "^JNIV", "JPY": "JPY=X"} # 日経平均ボラティリティ・インデックス, USD/JPY
@@ -161,7 +168,10 @@ class FeatureFactory:
         df["BB_LOW2"] = df["SMA25"] - 2 * std25
 
         # 出来高とリターン
-        df["VolRatio"] = df["Volume"] / df["Volume"].rolling(25).mean().replace(0, np.nan)
+        df["VolRatio"] = (
+            df["Volume"] /
+            df["Volume"].rolling(25).mean().replace(0, np.nan)
+        )
         for n in [1, 3, 5, 10, 20]:
             df[f"ret{n}"] = close.pct_change(n)
 
@@ -377,17 +387,18 @@ class FeatureFactory:
 
         # B. 20日後も価格が維持または上昇している（長期持続性）
         will_sustain = (
-            (future_10d_gain >= 0.01)
+            (future_10d_gain >= Config.SUSTAIN_10D_GAIN_MIN)
             &
-            (future_close_gain >= 0.02)
+            (future_close_gain >= Config.SUSTAIN_CLOSE_GAIN_MIN)
         )
         
         # C. 逆行リスクをATRの2.5倍まで許容
         is_clean_move = (
-            future_drawdown >
-            -(
-                (df["atr_ratio"] * 2.5)
-                .clip(lower=0.03, upper=0.10)
+            future_drawdown > -(
+                df["atr_ratio"] * Config.CLEAN_MOVE_ATR_MULT
+            ).clip(
+                lower=Config.CLEAN_MOVE_DRAWDOWN_MIN,
+                upper=Config.CLEAN_MOVE_DRAWDOWN_MAX
             )
         )
 
