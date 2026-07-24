@@ -230,22 +230,22 @@ class FeatureFactory:
             df["Volume"] /
             df["Volume"].rolling(Config.VOLRATIO_PERIOD).mean().replace(0, np.nan)
         )
-        for n in [1, 3, 5, 10, 20]:
+        for n in Config.RETURN_PERIODS:
             df[f"ret{n}"] = close.pct_change(n)
 
         # ボラティリティの収束 (VCP: Volatility Contraction Pattern)
         # 短期のボラティリティが長期に対して低下しているか（＝エネルギーが溜まっているか）
-        vol_short = close.pct_change().rolling(10).std()
-        vol_long = close.pct_change().rolling(60).std()
+        vol_short = close.pct_change().rolling(Config.VCP_SHORT).std()
+        vol_long = close.pct_change().rolling(Config.VCP_LONG).std()
         df["VolVCP"] = vol_short / (vol_long + 1e-9)
         # Relative Strength（過去約3か月の強さ）
         # 値が大きいほど最近の株価が強い
         df["RelativeStrength"] = (
-            close / close.rolling(63).mean()
+            close / close.rolling(Config.RS_PERIOD).mean()
         ).replace([np.inf, -np.inf], np.nan)
 
         df["RS20"] = (
-            close / close.shift(20)
+            close / close.shift(Config.RS20_PERIOD)
         ).replace([np.inf, -np.inf], np.nan)
 
         df["GapRate"] = (
@@ -254,15 +254,15 @@ class FeatureFactory:
 
         # RSI (14日間)
         delta = close.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        gain = (delta.where(delta > 0, 0)).rolling(window=Config.RSI_PERIOD).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=Config.RSI_PERIOD).mean()
         rs = gain / (loss + 1e-9)
         df["RSI"] = 100 - (100 / (1 + rs))
 
         # MACD (12, 26, 9)
-        ema12 = close.ewm(span=12, adjust=False).mean()
-        ema26 = close.ewm(span=26, adjust=False).mean()
-        df["MACD_Hist"] = (ema12 - ema26) - (ema12 - ema26).ewm(span=9, adjust=False).mean()
+        ema12 = close.ewm(span=Config.MACD_FAST, adjust=False).mean()
+        ema26 = close.ewm(span=Config.MACD_SLOW, adjust=False).mean()
+        df["MACD_Hist"] = (ema12 - ema26) - (ema12 - ema26).ewm(span=Config.MACD_SIGNAL, adjust=False).mean()
 
         # スロープ (線形回帰によるトレンド検知)
         def calc_slope(series):
@@ -272,8 +272,8 @@ class FeatureFactory:
             slope = np.polyfit(x, y, 1)[0]
             return slope / (y[-1] + 1e-9) # 価格で割って正規化（％表記）
 
-        df["Slope10"] = close.rolling(10).apply(calc_slope, raw=False)
-        df["Slope20"] = close.rolling(20).apply(calc_slope, raw=False)
+        df["Slope10"] = close.rolling(Config.SLOPE_SHORT).apply(calc_slope, raw=False)
+        df["Slope20"] = close.rolling(Config.SLOPE_LONG).apply(calc_slope, raw=False)
         df["SlopeAccel"] = df["Slope10"].diff()
 
         # ★追加（初動検知用）
@@ -285,7 +285,7 @@ class FeatureFactory:
             (df["High"] - close.shift()).abs(),
             (df["Low"] - close.shift()).abs()
         ], axis=1).max(axis=1)
-        atr = tr.rolling(14).mean()
+        atr = tr.rolling(Config.ATR_PERIOD).mean()
         df["atr_ratio"] = atr / close.replace(0, np.nan)
 
         # 市場連動性（β）の簡易代用として日経平均の移動平均乖離などを入れるのが理想ですが
@@ -294,27 +294,27 @@ class FeatureFactory:
 
         # ローソク足
         df["Bull"] = (close > df["Open"]).astype(int)
-        df["BigBull"] = ((close - df["Open"]) / df["Open"].replace(0, np.nan) > 0.03).astype(int)
-        df["BigBear"] = ((df["Open"] - close) / df["Open"].replace(0, np.nan) > 0.03).astype(int)
+        df["BigBull"] = ((close - df["Open"]) / df["Open"].replace(0, np.nan) > Config.BIG_CANDLE_THRESHOLD).astype(int)
+        df["BigBear"] = ((df["Open"] - close) / df["Open"].replace(0, np.nan) > Config.BIG_CANDLE_THRESHOLD).astype(int)
         
         # 財務データの統合 (決算発表日までの日数)
         if fundamentals:
-            df["Days_To_Earnings"] = fundamentals.get("days_to_earnings", 30)
+            df["Days_To_Earnings"] = fundamentals.get("days_to_earnings", Config.DEFAULT_DAYS_TO_EARNINGS)
         else:
             # 学習時など、財務データがない場合はデフォルト値
-            df["Days_To_Earnings"] = 30
+            df["Days_To_Earnings"] = Config.DEFAULT_DAYS_TO_EARNINGS
 
         # マクロデータの統合
         if macro_df is not None and not macro_df.empty:
             df = df.join(macro_df, how="left").ffill()
         
         # カラムが存在しない、または取得失敗時のデフォルト値補完
-        if "Macro_VXJ" not in df.columns: df["Macro_VXJ"] = 20
-        if "Macro_JPY" not in df.columns: df["Macro_JPY"] = 150
+        if "Macro_VXJ" not in df.columns: df["Macro_VXJ"] = Config.DEFAULT_MACRO_VXJ
+        if "Macro_JPY" not in df.columns: df["Macro_JPY"] = Config.DEFAULT_MACRO_JPY
         
         # 個別銘柄の期間中にマクロデータが欠落している場合を埋める
-        df["Macro_VXJ"] = df["Macro_VXJ"].fillna(20)
-        df["Macro_JPY"] = df["Macro_JPY"].fillna(150)
+        df["Macro_VXJ"] = df["Macro_VXJ"].fillna(Config.DEFAULT_MACRO_VXJ)
+        df["Macro_JPY"] = df["Macro_JPY"].fillna(Config.DEFAULT_MACRO_JPY)
 
         # 無限大をNaNに変換
         df = df.replace([np.inf, -np.inf], np.nan)
@@ -322,14 +322,7 @@ class FeatureFactory:
         # 指標が計算できていない初期の行（SMA75などがNaNの期間）を削除してから、残りを0埋め
         # 新しい特徴量もNaNになりうるので、dropnaのsubsetに追加
         df = df.dropna(
-            subset=[
-                "SMA200",
-                "Slope20",
-                "RelativeStrength",
-                "Days_To_Earnings",
-                "Macro_VXJ",
-                "Macro_JPY"
-            ]
+            subset=Config.FEATURE_REQUIRED_COLS
         )
         
         return df.fillna(0).replace([np.inf, -np.inf], 0)
