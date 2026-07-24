@@ -112,6 +112,63 @@ class Config:
     MACRO_TICKERS_JP = {"VXJ": "^JNIV", "JPY": "JPY=X"} # 日経平均ボラティリティ・インデックス, USD/JPY
     FUNDAMENTAL_COLS = ["days_to_earnings"] # 現時点では決算日までの日数のみ
 
+    # ===== Feature Engineering =====
+
+    # 移動平均
+    MA_PERIODS = [5, 25, 75, 200]
+    
+    # ボリンジャーバンド
+    BB_PERIOD = 25
+    BB_STD1 = 1
+    BB_STD2 = 2
+    
+    # 出来高
+    VOLRATIO_PERIOD = 25
+    
+    # リターン
+    RETURN_PERIODS = [1, 3, 5, 10, 20]
+    
+    # VCP
+    VCP_SHORT = 10
+    VCP_LONG = 60
+    
+    # Relative Strength
+    RS_PERIOD = 63
+    RS20_PERIOD = 20
+    
+    # RSI
+    RSI_PERIOD = 14
+    
+    # MACD
+    MACD_FAST = 12
+    MACD_SLOW = 26
+    MACD_SIGNAL = 9
+    
+    # Slope
+    SLOPE_SHORT = 10
+    SLOPE_LONG = 20
+    
+    # ATR
+    ATR_PERIOD = 14
+    
+    # ローソク足
+    BIG_CANDLE_THRESHOLD = 0.03
+    
+    # デフォルト値
+    DEFAULT_DAYS_TO_EARNINGS = 30
+    DEFAULT_MACRO_VXJ = 20
+    DEFAULT_MACRO_JPY = 150
+    
+    # 特徴量生成に必要な列
+    FEATURE_REQUIRED_COLS = [
+        "SMA200",
+        "Slope20",
+        "RelativeStrength",
+        "Days_To_Earnings",
+        "Macro_VXJ",
+        "Macro_JPY",
+    ]
+
 
 # =========================================================
 # Feature Engineering (Unified)
@@ -146,7 +203,7 @@ class FeatureFactory:
         close = df["Close"]
         
         # 移動平均と乖離率 (長期トレンド確認用に200日を追加)
-        for n in [5, 25, 75, 200]:
+        for n in Config.MA_PERIODS:
             df[f"SMA{n}"] = close.rolling(n).mean()
             df[f"Bias{n}"] = (close - df[f"SMA{n}"]) / df[f"SMA{n}"].replace(0, np.nan)
 
@@ -159,18 +216,19 @@ class FeatureFactory:
         # ボリンジャーバンド
         # screening_ai.py の計算式に合わせる
         df["BB_MID"] = df["SMA25"]
-        df["BB_STD"] = close.rolling(25).std()
+        df["BB_STD"] = close.rolling(Config.BB_PERIOD).std()
         std25 = df["BB_STD"]
 
-        df["BB_UP1"] = df["SMA25"] + std25
-        df["BB_LOW1"] = df["SMA25"] - std25
-        df["BB_UP2"] = df["SMA25"] + 2 * std25
-        df["BB_LOW2"] = df["SMA25"] - 2 * std25
+        df["BB_UP1"] = df["SMA25"] + Config.BB_STD1 * std25
+        df["BB_LOW1"] = df["SMA25"] - Config.BB_STD1 * std25
+        
+        df["BB_UP2"] = df["SMA25"] + Config.BB_STD2 * std25
+        df["BB_LOW2"] = df["SMA25"] - Config.BB_STD2 * std25
 
         # 出来高とリターン
         df["VolRatio"] = (
             df["Volume"] /
-            df["Volume"].rolling(25).mean().replace(0, np.nan)
+            df["Volume"].rolling(Config.VOLRATIO_PERIOD).mean().replace(0, np.nan)
         )
         for n in [1, 3, 5, 10, 20]:
             df[f"ret{n}"] = close.pct_change(n)
