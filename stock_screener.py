@@ -202,6 +202,51 @@ class Config:
 
     STOPLOSS_ATR_MULT = 2.0
 
+    # ===== EVスコアリング =====
+
+    # ----- Risk -----
+    RISK_ATR_MULT = 1.5
+    RISK_WIDTH_MIN = 0.03
+
+    # ----- Reward -----
+    REWARD_BASE = 0.07
+    REWARD_PROB_WEIGHT = 0.12
+
+    # Biasボーナス
+    REWARD_BIAS_MIN = -0.20
+    REWARD_BIAS_MAX = 0.00
+    REWARD_BIAS_WEIGHT = 0.30
+
+    # Slopeボーナス
+    SLOPE_SCORE_MIN = -0.5
+    SLOPE_SCORE_MAX = 1.0
+    REWARD_SLOPE_WEIGHT = 0.05
+
+    # Stage2ボーナス
+    REWARD_STAGE2_WEIGHT = 0.015
+
+    # RS20ボーナス
+    RS20_BASE = 1.0
+    RS20_MIN = -0.10
+    RS20_MAX = 0.20
+    REWARD_RS20_WEIGHT = 0.05
+
+    # Reward上下限
+    REWARD_MIN = 0.07
+    REWARD_MAX = 0.25
+
+    # ----- EV補正 -----
+
+    VOL_EXPANSION_CENTER = 1.2
+    VOL_EXPANSION_PEAK = 1.5
+    VOL_EXPANSION_MIN = 0.9
+
+    ACCEL_BONUS_POSITIVE = 1.10
+    ACCEL_BONUS_NEGATIVE = 0.70
+    ACCEL_BONUS_NORMAL = 1.00
+
+    SUSTAINABILITY_STAGE2_WEIGHT = 0.10
+
 
 # =========================================================
 # Feature Engineering (Unified)
@@ -1292,8 +1337,10 @@ class StockScreener:
         # ATRが低すぎる銘柄でも最低3%、
         # ATRが高い銘柄はそのままリスクとして反映
         res_df["RiskWidth"] = (
-            res_df["atr_ratio"] * 1.5
-        ).clip(lower=0.03)
+            res_df["atr_ratio"] * Config.RISK_ATR_MULT
+        ).clip(
+            lower=Config.RISK_WIDTH_MIN
+        )
         
         # --------------------------------------------------
         # RewardTarget 改良版
@@ -1305,27 +1352,45 @@ class StockScreener:
         
         bias_bonus = (
             res_df["Bias25"]
-            .clip(-0.20, 0)
-            .abs()
-            * 0.30
+                .clip(
+                    Config.REWARD_BIAS_MIN,
+                    Config.REWARD_BIAS_MAX
+                )
+                .abs()
+                * Config.REWARD_BIAS_WEIGHT
         )
         
         slope_bonus = (
             res_df["SlopeScore"]
-            .clip(-0.5, 1.0)
-            * 0.05
+                .clip(
+                    Config.SLOPE_SCORE_MIN,
+                    Config.SLOPE_SCORE_MAX
+                )
+                * Config.REWARD_SLOPE_WEIGHT
         )
         
         res_df["RewardTarget"] = (
-            0.07
-            + res_df["prob"] * 0.12
+              Config.REWARD_BASE
+            + res_df["prob"] * Config.REWARD_PROB_WEIGHT
             + bias_bonus
             + slope_bonus
-            + (res_df["Stage2_Score"] * 0.015)
-            + ((res_df["RS20"] - 1.0).clip(-0.10, 0.20) * 0.05)
+            + (
+                res_df["Stage2_Score"]
+                * Config.REWARD_STAGE2_WEIGHT
+            )
+            + (
+                (
+                    res_df["RS20"]
+                    - Config.RS20_BASE
+                ).clip(
+                    Config.RS20_MIN,
+                    Config.RS20_MAX
+                )
+                * Config.REWARD_RS20_WEIGHT
+            )
         ).clip(
-            lower=0.07,
-            upper=0.25
+            lower=Config.REWARD_MIN,
+            upper=Config.REWARD_MAX
         )
         
         # 本来の期待値公式
@@ -1354,13 +1419,36 @@ class StockScreener:
             logger.debug("\n%s", debug_df.to_string(index=False))
         
         # 出来高確認スコア：1.2倍付近をピークにしつつ、下限を0.9に底上げして過度な除外を防止
-        res_df["VolExpansionScore"] = (1.5 - (res_df["VolRatio"] - 1.2).abs()).clip(0.9, 1.5)
+        res_df["VolExpansionScore"] = (
+            Config.VOL_EXPANSION_PEAK
+            - (
+                res_df["VolRatio"]
+                - Config.VOL_EXPANSION_CENTER
+            ).abs()
+        ).clip(
+            Config.VOL_EXPANSION_MIN,
+            Config.VOL_EXPANSION_PEAK
+        )
         
         # 加速度ボーナス：確率が低い銘柄(0.4未満)の場合、加速度がマイナスなら評価を大幅に下げる
-        res_df["AccelBonus"] = np.where(res_df["SlopeAccel"] > 0, 1.1, np.where(res_df["prob"] < 0.4, 0.7, 1.0))
+        res_df["AccelBonus"] = np.where(
+            res_df["SlopeAccel"] > 0,
+            Config.ACCEL_BONUS_POSITIVE,
+            np.where(
+                res_df["prob"] < Config.HIGH_PROB_RELAX,
+                Config.ACCEL_BONUS_NEGATIVE,
+                Config.ACCEL_BONUS_NORMAL
+            )
+        )
         
         # 長期トレンドボーナス：Stage2（土台ができている）であれば評価を上乗せ
-        res_df["SustainabilityBonus"] = 1.0 + (res_df["Stage2_Score"] * 0.1)
+        res_df["SustainabilityBonus"] = (
+            1.0
+            + (
+                res_df["Stage2_Score"]
+                * Config.SUSTAINABILITY_STAGE2_WEIGHT
+            )
+        )
         
         res_df["EV"] = res_df["EV_Raw"] * res_df["VolExpansionScore"] * res_df["AccelBonus"] * res_df["SustainabilityBonus"]
 
