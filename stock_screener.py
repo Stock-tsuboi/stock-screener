@@ -169,6 +169,39 @@ class Config:
         "Macro_JPY",
     ]
 
+    # ===== Inference / Ranking =====
+
+    DYNAMIC_THRESHOLD_TRIGGER = 0.30      # 最大確率がこれ以下なら動的閾値を使わない
+    DYNAMIC_THRESHOLD_RATIO = 0.95         # 最大確率×この倍率
+
+    TECH_VOLRATIO_MIN = 0.25              # 最低出来高倍率
+    TECH_VOLVCP_MAX = 1.80
+    TECH_BIAS25_MIN = -0.25
+    TECH_BIAS25_MAX = 0.15
+
+    SLOPE20_MIN = -0.01                   # 通常のSlope条件
+    SLOPE20_RELAXED = -0.015              # 高確率時の緩和条件
+    HIGH_PROB_RELAX = 0.35                # Slope緩和開始確率
+
+    EV_MIN = 0.00                         # ランキング対象最低EV
+
+    SIGNAL_HONMEI_PROB = 0.42
+    SIGNAL_HONMEI_EV = 0.04
+
+    SIGNAL_YURYOKU_PROB = 0.40
+    SIGNAL_YURYOKU_EV = 0.02
+
+    BREAKOUT_VOL_MAX = 1.20
+    BREAKOUT_RET5_MAX = 0.02
+
+    POTENTIAL_VOL_MIN = 0.10
+    POTENTIAL_TOP_N = 5
+
+    BUY_TOP_N = 5
+    DEBUG_TOP_N = 10
+
+    STOPLOSS_ATR_MULT = 2.0
+
 
 # =========================================================
 # Feature Engineering (Unified)
@@ -1194,7 +1227,7 @@ class StockScreener:
             
             logger.info(
                 "特徴量TOP10\n%s",
-                importance.head(10)
+                importance.head(Config.DEBUG_TOP_N)
             )
             
             train_proba = self.model.predict_proba(X)[:, 1]
@@ -1316,7 +1349,7 @@ class StockScreener:
                     ]
                 ]
                 .sort_values("prob", ascending=False)
-                .head(10)
+                .head(Config.DEBUG_TOP_N)
             )
             logger.debug("\n%s", debug_df.to_string(index=False))
         
@@ -1346,7 +1379,7 @@ class StockScreener:
                     ]
                 ]
                 .sort_values("prob", ascending=False)
-                .head(10)
+                .head(Config.DEBUG_TOP_N)
             )
             logger.debug("\n%s", debug_df.to_string(index=False))
             
@@ -1355,7 +1388,14 @@ class StockScreener:
         max_prob = res_df['prob'].max()
 
         # ログの状況（最大確率が閾値以下）に対応するため、閾値を市場の最高値に合わせる動的調整
-        adjusted_threshold = min(threshold, max_prob * 0.95) if max_prob > 0.3 else threshold
+        adjusted_threshold = (
+            min(
+                threshold,
+                max_prob * Config.DYNAMIC_THRESHOLD_RATIO
+            )
+            if max_prob > Config.DYNAMIC_THRESHOLD_TRIGGER
+            else threshold
+        )
         if adjusted_threshold < threshold:
             logger.info(f"市場全体の確率が低いため、閾値を {threshold:.3f} -> {adjusted_threshold:.3f} に調整しました。")
         
@@ -1416,11 +1456,13 @@ class StockScreener:
         
         # 基本条件：出来高が極端に細りすぎているものは除外（流動性リスク回避）
         cond_tech = (
-            (res_df["VolRatio"] > 0.25)
-            & (res_df["VolVCP"] < 1.8)
-            & (res_df["Bias25"].between(-0.25, 0.15))
+            (res_df["VolRatio"] > Config.TECH_VOLRATIO_MIN)
+            & (res_df["VolVCP"] < Config.TECH_VOLVCP_MAX)
+            & (res_df["Bias25"].between(Config.TECH_BIAS25_MIN,Config.TECH_BIAS25_MAX))
         )
-        cond_slope = res_df["Slope20"] > -0.01
+        cond_slope = (
+            res_df["Slope20"] > Config.SLOPE20_MIN
+        )
         cond_prob = (res_df["prob"] >= adjusted_threshold)
 
         logger.debug(f"adjusted_threshold = {adjusted_threshold:.6f}")
@@ -1430,7 +1472,7 @@ class StockScreener:
             debug_df = (
                 res_df[["symbol", "prob"]]
                 .sort_values("prob", ascending=False)
-                .head(10)
+                .head(Config.DEBUG_TOP_N)
             )
             logger.debug("\n%s", debug_df.to_string(index=False))
 
@@ -1440,7 +1482,7 @@ class StockScreener:
         res_df["is_sell_signal"] = cond_sell & (res_df["Slope10"] < 0.05)
 
         # AIが非常に高い確率を出している場合、Slope条件を緩和して「下げ止まりからの反発」を拾う
-        cond_slope_flexible = (res_df["Slope20"] > -0.015) if max_prob > 0.35 else cond_slope
+        cond_slope_flexible = (res_df["Slope20"] > Config.SLOPE20_RELAXED) if max_prob > Config.HIGH_PROB_RELAX else cond_slope
         
         # ===========================
         # デバッグ（最終条件）
@@ -1455,7 +1497,7 @@ class StockScreener:
             cond_tech &
             cond_slope_flexible &
             ~cond_sell &
-            (res_df["EV"] > 0)
+            (res_df["EV"] > Config.EV_MIN)
         ].sort_values("EV", ascending=False)
         
         logger.info(f"filtered件数 = {len(filtered)}")
@@ -1466,7 +1508,7 @@ class StockScreener:
                 filtered[
                     ["symbol", "prob", "EV"]
                 ]
-                .head(5)
+                .head(Config.POTENTIAL_TOP_N)
                 .to_string(index=False)
             )
             filtered["is_potential"] = False
@@ -1477,22 +1519,22 @@ class StockScreener:
             
             # AIが非常に強気
             filtered.loc[
-                (filtered["prob"] >= 0.42) &
-                (filtered["EV"] >= 0.04),
+                (filtered["prob"] >= Config.SIGNAL_HONMEI_PROB) &
+                (filtered["EV"] >= Config.SIGNAL_HONMEI_EV),
                 "signal_type"
             ] = "★★本命"
             
             # AI高評価
             filtered.loc[
-                (filtered["prob"] >= 0.40) &
-                (filtered["EV"] >= 0.02),
+                (filtered["prob"] >= Config.SIGNAL_YURYOKU_PROB) &
+                (filtered["EV"] >= Config.SIGNAL_YURYOKU_EV),
                 "signal_type"
             ] = "★有力"
             
             # ブレイクアウト初動
             filtered.loc[
-                (filtered["VolRatio"] < 1.2) &
-                (filtered["ret5"] < 0.02),
+                (filtered["VolRatio"] < Config.BREAKOUT_VOL_MAX) &
+                (filtered["ret5"] < Config.BREAKOUT_RET5_MAX),
                 "signal_type"
             ] = "急騰予兆"
 
@@ -1501,8 +1543,8 @@ class StockScreener:
             logger.info("厳選条件に合致する買い銘柄が0件のため、条件を緩和して潜在候補（Potential）を抽出します。")
             
             # 売りシグナルが出ておらず、最低限の流動性がある上位5銘柄
-            cond_potential = (~res_df["is_sell_signal"]) & (res_df["VolRatio"] > 0.1)
-            potential_df = res_df[cond_potential].sort_values("prob", ascending=False).head(5)
+            cond_potential = (~res_df["is_sell_signal"]) & (res_df["VolRatio"] > Config.POTENTIAL_VOL_MIN)
+            potential_df = res_df[cond_potential].sort_values("prob", ascending=False).head(Config.POTENTIAL_TOP_N)
             
             if not potential_df.empty:
                 potential_df["is_potential"] = True
@@ -1539,7 +1581,7 @@ class StockScreener:
                 msg.append(f"（{buy_results['summary_reason'].iloc[0]}のため厳選除外）")
 
         if not buy_results.empty:
-            for i, (_, row) in enumerate(buy_results.head(5).iterrows(), 1):
+            for i, (_, row) in enumerate(buy_results.head(Config.POTENTIAL_TOP_N).iterrows(), 1):
                 name = name_map.get(row['symbol'], "不明")
 
                 # ポジションサイジングの計算
@@ -1552,7 +1594,9 @@ class StockScreener:
                 recommended_units = max(1, int(min(risk_amount / stop_width, Config.PORTFOLIO_SIZE / row['Close'])))
 
                 # ATRに基づく損切り目安 (2 * ATR)
-                stop_loss_price = row['Close'] * (1 - row['atr_ratio'] * 2)
+                stop_loss_price = row["Close"] * (
+                    1 - row["atr_ratio"] * Config.STOPLOSS_ATR_MULT
+                )
                 sig_type = row.get("signal_type", "不明")
                 
                 msg.append(f"{i}位 【{sig_type}】\n  {row['symbol']} {name[:8]}\n  価格:{row['Close']:.1f} (損切:{stop_loss_price:.1f})\n  S株推奨:{recommended_units}株\n  確率:{row['prob']:.1%} EV:{row['EV']:.2f}")
