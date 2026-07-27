@@ -247,6 +247,13 @@ class Config:
 
     SUSTAINABILITY_STAGE2_WEIGHT = 0.10
 
+    # ===== ログ設定 =====
+    DEBUG_DELETE_LOG = False      # DuckDB削除ログ
+    DEBUG_BATCH_LOG = False       # バッチ処理ログ
+    DEBUG_FEATURE_LOG = False     # 特徴量生成ログ
+    DEBUG_AI_LOG = False          # AI推論詳細ログ
+    DEBUG_TARGET_LOG = False      # Target作成ログ
+
 
 # =========================================================
 # Feature Engineering (Unified)
@@ -792,10 +799,11 @@ class DatabaseManager:
                                     WHERE code IN ? AND date >= ?
                                 """, [batch_codes_fetched, oldest_date]).fetchone()[0]
                             
-                                logger.info(
-                                    f"{oldest_date.date()}以降のデータを削除します"
-                                    f"（対象銘柄:{len(batch_codes_fetched)}件, 対象レコード:{delete_count:,}件）"
-                                )
+                                if Config.DEBUG_DELETE_LOG:
+                                    logger.info(
+                                        f"{oldest_date.date()}以降のデータを削除します"
+                                        f"（対象銘柄:{len(batch_codes_fetched)}件, 対象レコード:{delete_count:,}件）"
+                                    )
                         
                                 conn.execute("""
                                     DELETE FROM prices
@@ -849,7 +857,11 @@ class DatabaseManager:
                             failed_codes.extend([f"{c}.T" for c in batch_codes])
                             continue  # ← 次のバッチへ
 
-                    logger.debug(f"Batch {i}-{i+len(batch_codes)-1} processed. Inserted/updated {len(dfs_to_insert)} symbols.")
+                    if Config.DEBUG_BATCH_LOG:
+                        logger.info(
+                            f"Batch {i}-{i+len(batch_codes)-1} processed. "
+                            f"Inserted/updated {len(dfs_to_insert)} symbols."
+                        )
                     time.sleep(1)  # Yahoo APIのレートリミットを回避するための待機
                 except Exception as e:
                     logger.error(f"Batch {i} download error: {e}")
@@ -1206,22 +1218,25 @@ class StockScreener:
                 total_stats["target"] += stats["target"]
                 total_stats["breakout_gain"] += stats["breakout_gain"]
                 total_stats["breakout_hold"] += stats["breakout_hold"]
-            logger.info(f"学習対象銘柄数: {len(training_dfs)}")
-
-            logger.info(
-                "Target絞り込み: "
-                f"setup={total_stats['setup']:,}"
-                f" → breakout={total_stats['breakout']:,}"
-                f" → sustain={total_stats['sustain']:,}"
-                f" → clean={total_stats['clean']:,}"
-            )
+            if Config.DEBUG_TARGET_LOG:
+                logger.info(f"学習対象銘柄数: {len(training_dfs)}")
+            if Config.DEBUG_TARGET_LOG:
+                logger.info(
+                    "Target絞り込み: "
+                    f"setup={total_stats['setup']:,}"
+                    f" → breakout={total_stats['breakout']:,}"
+                    f" → sustain={total_stats['sustain']:,}"
+                    f" → clean={total_stats['clean']:,}"
+                )
             
-            logger.info(f"最終Target=1: {total_stats['target']:,}")
-            logger.info(
-                f"Breakout内訳: "
-                f"future_gain>=3%={total_stats['breakout_gain']:,} "
-                f"→ close維持={total_stats['breakout_hold']:,}"
-            )
+            if Config.DEBUG_TARGET_LOG:
+                logger.info(f"最終Target=1: {total_stats['target']:,}")
+            if Config.DEBUG_TARGET_LOG:
+                logger.info(
+                    f"Breakout内訳: "
+                    f"future_gain>=3%={total_stats['breakout_gain']:,} "
+                    f"→ close維持={total_stats['breakout_hold']:,}"
+                )
             
             if not training_dfs:
                 logger.error("学習に使用できる有効なデータがありませんでした。")
@@ -1235,9 +1250,10 @@ class StockScreener:
             X = full_train[self.factory.FEATURE_COLS]
             y = full_train["Target"]
 
-            logger.info(f"特徴量作成後データ件数: {len(X):,}")
-            logger.info(f"特徴量数: {len(self.factory.FEATURE_COLS)}")
-
+            if Config.DEBUG_FEATURE_LOG:
+                logger.info(f"特徴量作成後データ件数: {len(full_train):,}")
+            if Config.DEBUG_FEATURE_LOG:
+                logger.info(f"特徴量数: {len(FeatureFactory.FEATURE_COLS)}")
            
             logger.info(f"AIモデルの学習を開始します (データ件数: {len(X)})...")
             base_model = RandomForestClassifier(
@@ -1270,10 +1286,11 @@ class StockScreener:
                 .sort_values(ascending=False)
             )
             
-            logger.info(
-                "特徴量TOP10\n%s",
-                importance.head(Config.DEBUG_TOP_N)
-            )
+            if Config.DEBUG_FEATURE_LOG:
+                logger.info(
+                    "特徴量TOP10\n%s",
+                    importance.head(Config.DEBUG_TOP_N)
+                )
             
             train_proba = self.model.predict_proba(X)[:, 1]
             
