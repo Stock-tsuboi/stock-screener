@@ -255,7 +255,7 @@ class Config:
     DEBUG_TARGET_LOG = False      # Target作成ログ
 
     # ===== AIデバッグ =====
-    DEBUG_TOP_FEATURES = False      # 上位銘柄の特徴量表示
+    DEBUG_TOP_FEATURES = True      # 上位銘柄の特徴量表示
     
     DEBUG_FEATURE_COLUMNS = [
         "symbol",
