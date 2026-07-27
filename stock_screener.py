@@ -254,6 +254,24 @@ class Config:
     DEBUG_AI_LOG = False          # AI推論詳細ログ
     DEBUG_TARGET_LOG = False      # Target作成ログ
 
+    # ===== AIデバッグ =====
+    DEBUG_TOP_FEATURES = False      # 上位銘柄の特徴量表示
+    
+    DEBUG_FEATURE_COLUMNS = [
+        "symbol",
+        "signal_type",
+        "prob",
+        "EV",
+        "Close",
+        "atr_ratio",
+        "Stage2_Score",
+        "VolRatio",
+        "RelativeStrength",
+        "Slope20",
+        "Bias200",
+        "ret5",
+    ]
+
 
 # =========================================================
 # Feature Engineering (Unified)
@@ -1606,6 +1624,17 @@ class StockScreener:
         ].sort_values("EV", ascending=False)
         
         logger.info(f"filtered件数 = {len(filtered)}")
+        if Config.DEBUG_TOP_FEATURES and not filtered.empty:
+
+            logger.info(
+                "\n===== TOP%d 特徴量 =====\n%s",
+                Config.POTENTIAL_TOP_N,
+                filtered[
+                    Config.DEBUG_FEATURE_COLUMNS
+                ]
+                .head(Config.POTENTIAL_TOP_N)
+                .to_string(index=False)
+            )
        
         if not filtered.empty:
             logger.info(
