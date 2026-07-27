@@ -1624,18 +1624,7 @@ class StockScreener:
         ].sort_values("EV", ascending=False)
         
         logger.info(f"filtered件数 = {len(filtered)}")
-        if Config.DEBUG_TOP_FEATURES and not filtered.empty:
-
-            logger.info(
-                "\n===== TOP%d 特徴量 =====\n%s",
-                Config.POTENTIAL_TOP_N,
-                filtered[
-                    Config.DEBUG_FEATURE_COLUMNS
-                ]
-                .head(Config.POTENTIAL_TOP_N)
-                .to_string(index=False)
-            )
-       
+               
         if not filtered.empty:
             logger.info(
                 "\n" +
@@ -1671,6 +1660,18 @@ class StockScreener:
                 (filtered["ret5"] < Config.BREAKOUT_RET5_MAX),
                 "signal_type"
             ] = "急騰予兆"
+
+            if Config.DEBUG_TOP_FEATURES:
+
+                logger.info(
+                    "\n===== TOP%d 特徴量 =====\n%s",
+                    Config.POTENTIAL_TOP_N,
+                    filtered[
+                        Config.DEBUG_FEATURE_COLUMNS
+                    ]
+                    .head(Config.POTENTIAL_TOP_N)
+                    .to_string(index=False)
+                )
 
         # 厳選フィルタで0件の場合の救済ロジック
         if filtered.empty and not res_df.empty:
