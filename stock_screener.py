@@ -1673,24 +1673,18 @@ class StockScreener:
 
             if Config.DEBUG_TOP_FEATURES:
 
+                debug_columns = (
+                    ["symbol", "signal_type", "prob", "EV"] + self.factory.FEATURE_COLS
+                    if Config.DEBUG_SHOW_ALL_FEATURES
+                    else Config.DEBUG_FEATURE_COLUMNS
+                )
+            
                 logger.info(
                     "\n===== TOP%d 特徴量 =====\n%s",
                     Config.POTENTIAL_TOP_N,
-                    debug_columns = (
-                        ["symbol", "signal_type", "prob", "EV"] + self.factory.FEATURE_COLS
-                        if Config.DEBUG_SHOW_ALL_FEATURES
-                        else Config.DEBUG_FEATURE_COLUMNS
-                    )
-                    
-                    logger.info(
-                        "\n===== TOP%d 特徴量 =====\n%s",
-                        Config.POTENTIAL_TOP_N,
-                        filtered[debug_columns]
-                            .head(Config.POTENTIAL_TOP_N)
-                            .to_string(index=False)
-                    )
-                    .head(Config.POTENTIAL_TOP_N)
-                    .to_string(index=False)
+                    filtered[debug_columns]
+                        .head(Config.POTENTIAL_TOP_N)
+                        .to_string(index=False)
                 )
 
         # 厳選フィルタで0件の場合の救済ロジック
