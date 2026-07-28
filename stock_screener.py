@@ -276,6 +276,8 @@ class Config:
         "RSI",
         "MACD_Hist",
         "ret5",
+        "Momentum_Change",
+        "VolVCP",
     ]
 
 
