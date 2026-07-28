@@ -256,6 +256,8 @@ class Config:
 
     # ===== AIデバッグ =====
     DEBUG_TOP_FEATURES = True      # 上位銘柄の特徴量表示
+
+    DEBUG_SHOW_ALL_FEATURES = True
     
     DEBUG_FEATURE_COLUMNS = [
         "symbol",
@@ -1674,9 +1676,19 @@ class StockScreener:
                 logger.info(
                     "\n===== TOP%d 特徴量 =====\n%s",
                     Config.POTENTIAL_TOP_N,
-                    filtered[
-                        Config.DEBUG_FEATURE_COLUMNS
-                    ]
+                    debug_columns = (
+                        ["symbol", "signal_type", "prob", "EV"] + self.factory.FEATURE_COLS
+                        if Config.DEBUG_SHOW_ALL_FEATURES
+                        else Config.DEBUG_FEATURE_COLUMNS
+                    )
+                    
+                    logger.info(
+                        "\n===== TOP%d 特徴量 =====\n%s",
+                        Config.POTENTIAL_TOP_N,
+                        filtered[debug_columns]
+                            .head(Config.POTENTIAL_TOP_N)
+                            .to_string(index=False)
+                    )
                     .head(Config.POTENTIAL_TOP_N)
                     .to_string(index=False)
                 )
