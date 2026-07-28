@@ -268,7 +268,13 @@ class Config:
         "VolRatio",
         "RelativeStrength",
         "Slope20",
+        "Slope10",
+        "SlopeCross",
         "Bias200",
+        "Bias75",
+        "Bias25",
+        "RSI",
+        "MACD_Hist",
         "ret5",
     ]
 
