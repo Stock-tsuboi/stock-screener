@@ -257,7 +257,7 @@ class Config:
     # ===== AIデバッグ =====
     DEBUG_TOP_FEATURES = True      # 上位銘柄の特徴量表示
 
-    DEBUG_SHOW_ALL_FEATURES = True
+    DEBUG_SHOW_ALL_FEATURES = False
     
     DEBUG_FEATURE_COLUMNS = [
         "symbol",
