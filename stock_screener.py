@@ -66,9 +66,6 @@ class Config:
     PORTFOLIO_SIZE = 30000    # 運用予算（S株/少額運用 3万円）
     RISK_PER_TRADE = 0.05     # 1トレードの許容損失（資金の5%：3万円なら1500円まで）
     MAX_HOLDING_DAYS = 10     # タイムストップ（10日間動かなければ撤退）
-    PORTFOLIO_SIZE = 30000
-    RISK_PER_TRADE = 0.05
-    MAX_HOLDING_DAYS = 10
 
     # ===== Target Label =====
     PRECURSOR_VOL_MIN = 0.7
@@ -302,22 +299,54 @@ class Config:
 # =========================================================
 class FeatureFactory:
 
-    FEATURE_COLS = [
+    TECHNICAL_FEATURES = [
         "SMA5", "SMA25", "SMA75", "SMA200",
         "Bias5", "Bias25", "Bias75", "Bias200",
         "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2",
-        "VolRatio",
-        "Bull", "BigBull", "BigBear",
         "Slope10", "Slope20", "SlopeAccel", "SlopeCross",
         "ret10", "RSI", "MACD_Hist", "Momentum_Change",
         "ret1", "ret3", "ret5", "ret20",
-        "atr_ratio", "Stage2_Score",
-        "VolVCP",
+        "atr_ratio",
+        "Stage2_Score",
         "RelativeStrength",
-        "RS20",
+        "RS20"
+    ]
+    
+    
+    VOLUME_FEATURES = [
+        "VolRatio",
+        "VolVCP",
+        "Bull",
+        "BigBull",
+        "BigBear"
+    ]
+    
+    
+    EVENT_FEATURES = [
         "GapRate",
-        "Days_To_Earnings", "Macro_VXJ", "Macro_JPY"
-    ] # AIが判断に使用する項目のリスト
+        "Days_To_Earnings"
+    ]
+    
+    
+    MACRO_FEATURES = [
+        "Macro_VXJ",
+        "Macro_JPY"
+    ]
+    
+    
+    FEATURE_COLS = []
+    
+    if Config.USE_TECHNICAL_FEATURES:
+        FEATURE_COLS += TECHNICAL_FEATURES
+    
+    if Config.USE_VOLUME_FEATURES:
+        FEATURE_COLS += VOLUME_FEATURES
+    
+    if Config.USE_EVENT_FEATURES:
+        FEATURE_COLS += EVENT_FEATURES
+    
+    if Config.USE_MACRO_FEATURES:
+        FEATURE_COLS += MACRO_FEATURES
 
     @staticmethod
     def add_moving_average(df: pd.DataFrame) -> pd.DataFrame:
