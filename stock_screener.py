@@ -247,7 +247,7 @@ class Config:
     # ===== ログ設定 =====
     DEBUG_DELETE_LOG = False      # DuckDB削除ログ
     DEBUG_BATCH_LOG = False       # バッチ処理ログ
-    DEBUG_FEATURE_LOG = False     # 特徴量生成ログ
+    DEBUG_FEATURE_LOG = True     # 特徴量生成ログ
     DEBUG_AI_LOG = False          # AI推論詳細ログ
     DEBUG_TARGET_LOG = False      # Target作成ログ
 
