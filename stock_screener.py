@@ -1388,6 +1388,37 @@ class StockScreener:
                     "特徴量TOP10\n%s",
                     importance.head(Config.DEBUG_TOP_N)
                 )
+
+            # ===== 特徴量グループ別重要度 =====
+            if Config.DEBUG_FEATURE_LOG:
+            
+                feature_group_importance = {
+                    "TECHNICAL": importance[
+                        importance.index.isin(self.factory.TECHNICAL_FEATURES)
+                    ].sum(),
+            
+                    "VOLUME": importance[
+                        importance.index.isin(self.factory.VOLUME_FEATURES)
+                    ].sum(),
+            
+                    "EVENT": importance[
+                        importance.index.isin(self.factory.EVENT_FEATURES)
+                    ].sum(),
+            
+                    "MACRO": importance[
+                        importance.index.isin(self.factory.MACRO_FEATURES)
+                    ].sum(),
+                }
+            
+                group_df = (
+                    pd.Series(feature_group_importance)
+                    .sort_values(ascending=False)
+                )
+            
+                logger.info(
+                    "特徴量グループ別重要度\n%s",
+                    group_df.to_string()
+                )
             
             train_proba = self.model.predict_proba(X)[:, 1]
             
