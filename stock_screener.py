@@ -282,29 +282,76 @@ class Config:
         "VolVCP",
     ]
 
+    # ===== AI特徴量設定 =====
+
+    # テクニカル指標
+    USE_TECHNICAL_FEATURES = True
+    
+    # 出来高・需給系
+    USE_VOLUME_FEATURES = True
+    
+    # 相場環境・マクロ系
+    USE_MACRO_FEATURES = True
+    
+    # 決算イベント系
+    USE_EVENT_FEATURES = True
+
 
 # =========================================================
 # Feature Engineering (Unified)
 # =========================================================
 class FeatureFactory:
-    """
-    株価データからAIが学習・推論するために必要な「テクニカル指標（特徴量）」を生成するクラスです。
-    学習時と推論時で同じ計算ロジックを使用することで、AIの精度低下（計算の乖離）を防ぎます。
-    """
-    
+
     FEATURE_COLS = [
-        "SMA5", "SMA25", "SMA75", "SMA200", "Bias5", "Bias25", "Bias75", "Bias200",
-        "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2", "VolRatio",
+        "SMA5", "SMA25", "SMA75", "SMA200",
+        "Bias5", "Bias25", "Bias75", "Bias200",
+        "BB_UP1", "BB_LOW1", "BB_UP2", "BB_LOW2",
+        "VolRatio",
         "Bull", "BigBull", "BigBear",
         "Slope10", "Slope20", "SlopeAccel", "SlopeCross",
         "ret10", "RSI", "MACD_Hist", "Momentum_Change",
-        "ret1", "ret3", "ret5", "ret20", "atr_ratio", "Stage2_Score",
+        "ret1", "ret3", "ret5", "ret20",
+        "atr_ratio", "Stage2_Score",
         "VolVCP",
         "RelativeStrength",
         "RS20",
         "GapRate",
         "Days_To_Earnings", "Macro_VXJ", "Macro_JPY"
     ] # AIが判断に使用する項目のリスト
+
+    @staticmethod
+    def add_moving_average(df: pd.DataFrame) -> pd.DataFrame:
+        close = df["Close"]
+
+        for n in Config.MA_PERIODS:
+            df[f"SMA{n}"] = close.rolling(n).mean()
+            df[f"Bias{n}"] = (
+                close - df[f"SMA{n}"]
+            ) / df[f"SMA{n}"].replace(0, np.nan)
+
+        return df
+
+    @staticmethod
+    def add_stage2_score(df: pd.DataFrame) -> pd.DataFrame:
+    
+        close = df["Close"]
+    
+        df["is_long_uptrend"] = (
+            (close > df["SMA200"])
+            & (df["SMA200"] > df["SMA200"].shift(1))
+        )
+    
+        df["is_alignment"] = (
+            (df["SMA25"] > df["SMA75"])
+            & (df["SMA75"] > df["SMA200"])
+        )
+    
+        df["Stage2_Score"] = (
+            df["is_long_uptrend"].astype(int)
+            + df["is_alignment"].astype(int)
+        )
+    
+        return df
 
     @staticmethod
     def calculate_metrics(df: pd.DataFrame, fundamentals: Dict = None, macro_df: pd.DataFrame = None) -> pd.DataFrame:
@@ -315,16 +362,9 @@ class FeatureFactory:
         df = df.copy()
         close = df["Close"]
         
-        # 移動平均と乖離率 (長期トレンド確認用に200日を追加)
-        for n in Config.MA_PERIODS:
-            df[f"SMA{n}"] = close.rolling(n).mean()
-            df[f"Bias{n}"] = (close - df[f"SMA{n}"]) / df[f"SMA{n}"].replace(0, np.nan)
+        df = FeatureFactory.add_moving_average(df)
 
-        # 上昇トレンドの土台（Stage2）スコアリング
-        # 200日線が上向き、かつ価格がその上にあり、短期>中期>長期の順に並んでいるか
-        df["is_long_uptrend"] = (close > df["SMA200"]) & (df["SMA200"] > df["SMA200"].shift(1))
-        df["is_alignment"] = (df["SMA25"] > df["SMA75"]) & (df["SMA75"] > df["SMA200"])
-        df["Stage2_Score"] = (df["is_long_uptrend"].astype(int) + df["is_alignment"].astype(int))
+        df = FeatureFactory.add_stage2_score(df)
 
         # ボリンジャーバンド
         # screening_ai.py の計算式に合わせる
