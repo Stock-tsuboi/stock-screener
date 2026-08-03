@@ -156,15 +156,6 @@ class Config:
     DEFAULT_MACRO_VXJ = 20
     DEFAULT_MACRO_JPY = 150
     
-    # 特徴量生成に必要な列
-    FEATURE_REQUIRED_COLS = [
-        "SMA200",
-        "Slope20",
-        "RelativeStrength",
-        "Days_To_Earnings",
-        "Macro_VXJ",
-        "Macro_JPY",
-    ]
 
     # ===== Inference / Ranking =====
 
@@ -292,6 +283,27 @@ class Config:
     
     # 決算イベント系
     USE_EVENT_FEATURES = True
+
+
+    SETUP_SLOPE20_MIN = -0.001
+    SETUP_SMA75_RATIO = 1.01
+
+    # ===== Sell Signal =====
+
+    SELL_RSI_HIGH = 80
+    SELL_RET1_RSI = -0.02
+    
+    SELL_MACD_SLOPE20 = -0.01
+    SELL_MACD_BB_MULT = 0.2
+    
+    SELL_SMA25_BREAK = 0.97
+    SELL_RET1_SMA = -0.01
+    
+    SELL_RET1_DROP = -0.05
+    
+    SELL_SCORE_THRESHOLD = 2
+
+    SELL_SLOPE10_MAX = 0.05
 
 
 # =========================================================
@@ -503,9 +515,27 @@ class FeatureFactory:
         
         # 指標が計算できていない初期の行（SMA75などがNaNの期間）を削除してから、残りを0埋め
         # 新しい特徴量もNaNになりうるので、dropnaのsubsetに追加
-        df = df.dropna(
-            subset=Config.FEATURE_REQUIRED_COLS
-        )
+        required_cols = []
+        
+        if Config.USE_TECHNICAL_FEATURES:
+            required_cols += [
+                "SMA200",
+                "Slope20",
+                "RelativeStrength",
+            ]
+        
+        if Config.USE_EVENT_FEATURES:
+            required_cols += [
+                "Days_To_Earnings",
+            ]
+        
+        if Config.USE_MACRO_FEATURES:
+            required_cols += [
+                "Macro_VXJ",
+                "Macro_JPY",
+            ]
+        
+        df = df.dropna(subset=required_cols)
         
         return df.fillna(0).replace([np.inf, -np.inf], 0)
 
@@ -639,9 +669,9 @@ class FeatureFactory:
         is_setup = (
             (is_precursor | is_trend)
             &
-            (df["Slope20"] > -0.001)
+            (df["Slope20"] > Config.SETUP_SLOPE20_MIN)
             &
-            (df["SMA25"] <= df["SMA75"] * 1.01)
+            (df["SMA25"] <= df["SMA75"] * Config.SETUP_SMA75_RATIO)
         )
 
         logger.info(f"is_setup={int(is_setup.sum()):,}")
@@ -1351,6 +1381,21 @@ class StockScreener:
                 logger.info(f"特徴量作成後データ件数: {len(full_train):,}")
             if Config.DEBUG_FEATURE_LOG:
                 logger.info(f"特徴量数: {len(FeatureFactory.FEATURE_COLS)}")
+
+            # ★ここから追加
+            if Config.DEBUG_FEATURE_LOG:
+                cols = [
+                    "GapRate",
+                    "Days_To_Earnings",
+                    "Macro_VXJ",
+                    "Macro_JPY",
+                ]
+            
+                logger.info(
+                    "イベント・マクロ特徴量統計\n%s",
+                    full_train[cols].describe().to_string()
+                )
+            # ★ここまで追加
            
             logger.info(f"AIモデルの学習を開始します (データ件数: {len(X)})...")
             base_model = RandomForestClassifier(
@@ -1640,46 +1685,50 @@ class StockScreener:
         
         # MACDは2項目を別々に数えず、「強い悪化」のみを1項目として評価
         sell_score = (
-            ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)).astype(int)
+            ((res_df["RSI"] > Config.SELL_RSI_HIGH)
+             &
+             (res_df["ret1"] < Config.SELL_RET1_RSI)).astype(int)
         
             # MACDが弱く、さらに20日トレンドも下降している場合のみ加点
             + (
                 (
-                    (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2)
+                    (res_df["MACD_Hist"] < -res_df["BB_STD"] * Config.SELL_MACD_BB_MULT)
                     &
-                    (res_df["Slope20"] < -0.01)
+                    (res_df["Slope20"] < Config.SELL_MACD_SLOPE20)
                 ).astype(int)
             )
         
             + (
                 (
-                    (res_df["Close"] < res_df["SMA25"] * 0.97)
-                    & (res_df["ret1"] < -0.01)
+                    (res_df["Close"] < res_df["SMA25"] * Config.SELL_SMA25_BREAK)
+                    &
+                    (res_df["ret1"] < Config.SELL_RET1_SMA)
                 ).astype(int)
             )
         
-            + (res_df["ret1"] < -0.05).astype(int)
+            + (res_df["ret1"] < Config.SELL_RET1_DROP).astype(int)
         )
         
         # 売り判定は悪条件が2つ以上
-        cond_sell = sell_score >= 2
+        cond_sell = sell_score >= Config.SELL_SCORE_THRESHOLD
 
         # ===== 売り条件の内訳デバッグ（SELL判定がついた銘柄のみ表示） =====
         if logger.isEnabledFor(logging.DEBUG):
             debug_sell = pd.DataFrame({
                 "symbol": res_df["symbol"],
-                "RSI": ((res_df["RSI"] > 80) & (res_df["ret1"] < -0.02)),
+                "RSI": ((res_df["RSI"] > Config.SELL_RSI_HIGH)&(res_df["ret1"] < Config.SELL_RET1_RSI)),
                 "MACD1": (res_df["MACD_Hist"] < 0),
                 "MACD2": (
-                    (res_df["MACD_Hist"] < -res_df["BB_STD"] * 0.2)
+                    (res_df["MACD_Hist"] < -res_df["BB_STD"] * Config.SELL_MACD_BB_MULT)
                     &
-                    (res_df["Slope20"] < -0.01)
+                    (res_df["Slope20"] < Config.SELL_MACD_SLOPE20)
                 ),
                 "SMA25": (
-                    (res_df["Close"] < res_df["SMA25"] * 0.97)
-                    & (res_df["ret1"] < -0.01)
+                    (res_df["Close"] < res_df["SMA25"] * Config.SELL_SMA25_BREAK)
+                    &
+                    (res_df["ret1"] < Config.SELL_RET1_SMA)
                 ),
-                "DROP": (res_df["ret1"] < -0.05),
+                "DROP": (res_df["ret1"] < Config.SELL_RET1_DROP),
                 "SELL": cond_sell
             })
             sell_df = debug_sell[debug_sell["SELL"]]
@@ -1712,7 +1761,10 @@ class StockScreener:
         logger.info(f"【条件別ヒット数】 AI確率({adjusted_threshold:.2f}以上): {cond_prob.sum()}, テクニカル合致: {(cond_tech & cond_slope).sum()}")
        
         # 売りシグナルフラグを付与
-        res_df["is_sell_signal"] = cond_sell & (res_df["Slope10"] < 0.05)
+        res_df["is_sell_signal"] = (
+            cond_sell &
+            (res_df["Slope10"] < Config.SELL_SLOPE10_MAX)
+        )
 
         # AIが非常に高い確率を出している場合、Slope条件を緩和して「下げ止まりからの反発」を拾う
         cond_slope_flexible = (res_df["Slope20"] > Config.SLOPE20_RELAXED) if max_prob > Config.HIGH_PROB_RELAX else cond_slope
