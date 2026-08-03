@@ -1382,19 +1382,29 @@ class StockScreener:
             if Config.DEBUG_FEATURE_LOG:
                 logger.info(f"特徴量数: {len(FeatureFactory.FEATURE_COLS)}")
 
-            # ★ここから追加
             if Config.DEBUG_FEATURE_LOG:
-                cols = [
-                    "GapRate",
-                    "Days_To_Earnings",
-                    "Macro_VXJ",
-                    "Macro_JPY",
-                ]
+                logger.info(f"特徴量数: {len(FeatureFactory.FEATURE_COLS)}")
             
                 logger.info(
-                    "イベント・マクロ特徴量統計\n%s",
-                    full_train[cols].describe().to_string()
+                    "使用特徴量一覧:\n%s",
+                    FeatureFactory.FEATURE_COLS
                 )
+            
+                cols = [
+                    c for c in [
+                        "GapRate",
+                        "Days_To_Earnings",
+                        "Macro_VXJ",
+                        "Macro_JPY",
+                    ]
+                    if c in full_train.columns
+                ]
+            
+                if cols:
+                    logger.info(
+                        "イベント・マクロ特徴量統計\n%s",
+                        full_train[cols].describe().to_string()
+                    )
             # ★ここまで追加
            
             logger.info(f"AIモデルの学習を開始します (データ件数: {len(X)})...")
