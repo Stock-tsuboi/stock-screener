@@ -1293,6 +1293,10 @@ class StockScreener:
                         trained_features = list(est.feature_names_in_)
         
                 if trained_features and trained_features != self.factory.FEATURE_COLS:
+
+                    logger.info(f"保存モデル特徴量: {trained_features}")
+                    logger.info(f"現在の特徴量: {self.factory.FEATURE_COLS}")
+                    
                     need_training = True
                     reason = (
                         f"特徴量変更 "
