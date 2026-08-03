@@ -279,10 +279,10 @@ class Config:
     USE_VOLUME_FEATURES = True
     
     # 相場環境・マクロ系
-    USE_MACRO_FEATURES = True
+    USE_MACRO_FEATURES = False
     
     # 決算イベント系
-    USE_EVENT_FEATURES = True
+    USE_EVENT_FEATURES = False
 
 
     SETUP_SLOPE20_MIN = -0.001
