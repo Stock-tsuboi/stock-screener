@@ -1501,6 +1501,8 @@ class StockScreener:
                 f"学習データ 高確率件数(0.5以上): {(train_proba >= 0.5).sum():,}"
             )
             # ★ここまで追加
+
+            self.model.feature_names_in_ = np.array(self.factory.FEATURE_COLS)
             
             joblib.dump(self.model, Config.MODEL_PATH)
             logger.info("モデルの学習と保存が完了しました。")
