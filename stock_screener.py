@@ -491,24 +491,33 @@ class FeatureFactory:
         df["BigBull"] = ((close - df["Open"]) / df["Open"].replace(0, np.nan) > Config.BIG_CANDLE_THRESHOLD).astype(int)
         df["BigBear"] = ((df["Open"] - close) / df["Open"].replace(0, np.nan) > Config.BIG_CANDLE_THRESHOLD).astype(int)
         
-        # 財務データの統合 (決算発表日までの日数)
-        if fundamentals:
-            df["Days_To_Earnings"] = fundamentals.get("days_to_earnings", Config.DEFAULT_DAYS_TO_EARNINGS)
-        else:
-            # 学習時など、財務データがない場合はデフォルト値
-            df["Days_To_Earnings"] = Config.DEFAULT_DAYS_TO_EARNINGS
+        # 財務・イベント特徴量
+        if Config.USE_EVENT_FEATURES:
+            if fundamentals:
+                df["Days_To_Earnings"] = fundamentals.get(
+                    "days_to_earnings",
+                    Config.DEFAULT_DAYS_TO_EARNINGS
+                )
+            else:
+                df["Days_To_Earnings"] = Config.DEFAULT_DAYS_TO_EARNINGS
 
-        # マクロデータの統合
-        if macro_df is not None and not macro_df.empty:
-            df = df.join(macro_df, how="left").ffill()
-        
-        # カラムが存在しない、または取得失敗時のデフォルト値補完
-        if "Macro_VXJ" not in df.columns: df["Macro_VXJ"] = Config.DEFAULT_MACRO_VXJ
-        if "Macro_JPY" not in df.columns: df["Macro_JPY"] = Config.DEFAULT_MACRO_JPY
-        
-        # 個別銘柄の期間中にマクロデータが欠落している場合を埋める
-        df["Macro_VXJ"] = df["Macro_VXJ"].fillna(Config.DEFAULT_MACRO_VXJ)
-        df["Macro_JPY"] = df["Macro_JPY"].fillna(Config.DEFAULT_MACRO_JPY)
+        # マクロ特徴量
+        if Config.USE_MACRO_FEATURES:
+            if macro_df is not None and not macro_df.empty:
+                df = df.join(macro_df, how="left").ffill()
+
+            if "Macro_VXJ" not in df.columns:
+                df["Macro_VXJ"] = Config.DEFAULT_MACRO_VXJ
+
+            if "Macro_JPY" not in df.columns:
+                df["Macro_JPY"] = Config.DEFAULT_MACRO_JPY
+
+            df["Macro_VXJ"] = df["Macro_VXJ"].fillna(
+                Config.DEFAULT_MACRO_VXJ
+            )
+            df["Macro_JPY"] = df["Macro_JPY"].fillna(
+                Config.DEFAULT_MACRO_JPY
+            )
 
         # 無限大をNaNに変換
         df = df.replace([np.inf, -np.inf], np.nan)
