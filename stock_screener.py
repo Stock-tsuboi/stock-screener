@@ -1301,7 +1301,7 @@ class StockScreener:
                     if hasattr(est, "feature_names_in_"):
                         trained_features = list(est.feature_names_in_)
         
-                if trained_features and trained_features != self.factory.FEATURE_COLS:
+                if trained_features != self.factory.FEATURE_COLS:
 
                     logger.info(f"保存モデル特徴量: {trained_features}")
                     logger.info(f"現在の特徴量: {self.factory.FEATURE_COLS}")
@@ -1501,8 +1501,6 @@ class StockScreener:
                 f"学習データ 高確率件数(0.5以上): {(train_proba >= 0.5).sum():,}"
             )
             # ★ここまで追加
-
-            self.model.feature_names_in_ = np.array(self.factory.FEATURE_COLS)
             
             joblib.dump(self.model, Config.MODEL_PATH)
             logger.info("モデルの学習と保存が完了しました。")
