@@ -1445,7 +1445,7 @@ class StockScreener:
 
             validation_model = CalibratedClassifierCV(
                 estimator=base_model,
-                method="isotonic",
+                method="sigmoid",
                 cv=TimeSeriesSplit(n_splits=3)
             )
 
@@ -1494,7 +1494,7 @@ class StockScreener:
             
             self.model = CalibratedClassifierCV(
                 estimator=base_model,
-                method="isotonic",
+                method="sigmoid",
                 cv=TimeSeriesSplit(n_splits=3) # 時系列を考慮し、検証回数を増やして精度向上
             )
             self.model.fit(X, y)
