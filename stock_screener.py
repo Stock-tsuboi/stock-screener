@@ -14,6 +14,7 @@ from joblib import Parallel, delayed
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.calibration import CalibratedClassifierCV
+from sklearn.metrics import roc_auc_score, brier_score_loss
 
 # =========================================================
 # ロギングと警告の設定
@@ -657,7 +658,7 @@ class FeatureFactory:
             & (future_gain <= Config.BREAKOUT_GAIN_MAX)
         )
 
-        # B. 20日後も価格が維持または上昇している（長期持続性）
+        # B. 10日後も価格が維持または上昇している（長期持続性）
         will_sustain = (
             (future_10d_gain >= Config.SUSTAIN_10D_GAIN_MIN)
             &
@@ -1432,6 +1433,65 @@ class StockScreener:
                 random_state=42,
                 class_weight="balanced_subsample"
             )
+            
+            # ===== 未見データによるモデル性能検証 =====
+            # 時系列順の最後20%を検証専用にする
+            split_idx = int(len(X) * 0.8)
+
+            X_train = X.iloc[:split_idx]
+            y_train = y.iloc[:split_idx]
+            X_valid = X.iloc[split_idx:]
+            y_valid = y.iloc[split_idx:]
+
+            validation_model = CalibratedClassifierCV(
+                estimator=base_model,
+                method="sigmoid",
+                cv=TimeSeriesSplit(n_splits=3)
+            )
+
+            validation_model.fit(X_train, y_train)
+
+            valid_proba = validation_model.predict_proba(X_valid)[:, 1]
+
+            # ROC-AUC
+            if y_valid.nunique() >= 2:
+                valid_auc = roc_auc_score(y_valid, valid_proba)
+            else:
+                valid_auc = float("nan")
+
+            # Brier Score
+            valid_brier = brier_score_loss(y_valid, valid_proba)
+
+            logger.info(
+                f"【未見データ検証】"
+                f"件数={len(X_valid):,}, "
+                f"Target=1={int(y_valid.sum()):,}, "
+                f"ROC-AUC={valid_auc:.3f}, "
+                f"Brier={valid_brier:.4f}"
+            )
+
+            # 確率帯ごとの実績Target=1率
+            for prob_threshold in [0.35, 0.40, 0.50, 0.70]:
+                mask = valid_proba >= prob_threshold
+                count = int(mask.sum())
+
+                if count > 0:
+                    success_rate = y_valid.to_numpy()[mask].mean()
+
+                    logger.info(
+                        f"【未見データ検証】"
+                        f"確率{prob_threshold:.2f}以上: "
+                        f"{count:,}件, "
+                        f"実績Target=1率={success_rate:.1%}"
+                    )
+                else:
+                    logger.info(
+                        f"【未見データ検証】"
+                        f"確率{prob_threshold:.2f}以上: 0件"
+                    )
+
+            # ===== 未見データ検証ここまで =====
+            
             self.model = CalibratedClassifierCV(
                 estimator=base_model,
                 method="sigmoid",
