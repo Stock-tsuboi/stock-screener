@@ -1445,7 +1445,7 @@ class StockScreener:
 
             validation_model = CalibratedClassifierCV(
                 estimator=base_model,
-                method="sigmoid",
+                method="isotonic",
                 cv=TimeSeriesSplit(n_splits=3)
             )
 
