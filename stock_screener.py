@@ -125,6 +125,9 @@ class Config:
     
     # リターン
     RETURN_PERIODS = [1, 3, 5, 10, 20]
+
+    # 直近高値までの距離
+    HIGH20_PERIOD = 20
     
     # VCP
     VCP_SHORT = 10
@@ -322,7 +325,9 @@ class FeatureFactory:
         "atr_ratio",
         "Stage2_Score",
         "RelativeStrength",
-        "RS20"
+        "RS20",
+        "High20_Distance",
+        "BBWidth"
     ]
     
     
@@ -331,7 +336,8 @@ class FeatureFactory:
         "VolVCP",
         "Bull",
         "BigBull",
-        "BigBear"
+        "BigBear",
+        "UpVolumeShare"
     ]
     
     
@@ -420,6 +426,13 @@ class FeatureFactory:
         df["BB_UP2"] = df["SMA25"] + Config.BB_STD2 * std25
         df["BB_LOW2"] = df["SMA25"] - Config.BB_STD2 * std25
 
+        # ボリンジャーバンド幅
+        # 値動きが収縮しているかを表す
+        df["BBWidth"] = (
+            (df["BB_UP2"] - df["BB_LOW2"])
+            / df["SMA25"].replace(0, np.nan)
+        ).replace([np.inf, -np.inf], np.nan)
+
         # 出来高とリターン
         df["VolRatio"] = (
             df["Volume"] /
@@ -427,6 +440,30 @@ class FeatureFactory:
         )
         for n in Config.RETURN_PERIODS:
             df[f"ret{n}"] = close.pct_change(n)
+
+        # 直近20日高値までの距離
+        # 前日までの20日間高値を基準にすることで、
+        # 「現在値がブレイクラインにどれだけ近いか」を表す
+        prior_high20 = (
+            df["High"]
+            .shift(1)
+            .rolling(Config.HIGH20_PERIOD)
+            .max()
+        )
+
+        df["High20_Distance"] = (
+            close / prior_high20 - 1
+        ).replace([np.inf, -np.inf], np.nan)
+
+        # 上昇日に集中した出来高の割合
+        # 直近25日間の総出来高に対して、
+        # 陽線日の出来高がどれだけ占めるかを表す
+        up_volume = df["Volume"].where(close > df["Open"], 0)
+
+        df["UpVolumeShare"] = (
+            up_volume.rolling(Config.VOLRATIO_PERIOD).sum()
+            / df["Volume"].rolling(Config.VOLRATIO_PERIOD).sum().replace(0, np.nan)
+        ).replace([np.inf, -np.inf], np.nan)
 
         # ボラティリティの収束 (VCP: Volatility Contraction Pattern)
         # 短期のボラティリティが長期に対して低下しているか（＝エネルギーが溜まっているか）
