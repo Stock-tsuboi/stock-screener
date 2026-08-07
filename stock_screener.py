@@ -569,6 +569,12 @@ class FeatureFactory:
                 "SMA200",
                 "Slope20",
                 "RelativeStrength",
+                "High20_Distance",
+            ]
+
+        if Config.USE_VOLUME_FEATURES:
+            required_cols += [
+                "UpVolumeShare",
             ]
         
         if Config.USE_EVENT_FEATURES:
