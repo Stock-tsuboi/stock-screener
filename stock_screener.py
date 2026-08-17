@@ -1556,8 +1556,8 @@ class StockScreener:
             
             if Config.DEBUG_FEATURE_LOG:
                 logger.info(
-                    "特徴量TOP10\n%s",
-                    importance.head(Config.DEBUG_TOP_N)
+                    "特徴量重要度（全特徴量）\n%s",
+                    importance.to_string()
                 )
 
             # ===== 特徴量グループ別重要度 =====
