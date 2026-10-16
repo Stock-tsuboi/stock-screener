@@ -84,8 +84,8 @@ class FeatureFactory:
         "ret1", "ret3", "ret5", "ret20", "atr_ratio",
         "VolVCP",
         # 追加される多角的特徴量
-        "PE_Ratio", "PB_Ratio", "ROE", "Rev_Growth", "EPS_Growth", 
-        "Op_Margin", "Debt_Equity", "Macro_VIX", "Macro_10Y", "Days_To_Earnings"
+        # "PE_Ratio", "PB_Ratio", "ROE", "Rev_Growth", "EPS_Growth", 
+        # "Op_Margin", "Debt_Equity", "Macro_VIX", "Macro_10Y", "Days_To_Earnings"
     ]
 
     @staticmethod
