@@ -585,6 +585,29 @@ class USStockScreener:
         cond_prob = (res_df["prob"] >= threshold)
         
         res_df["is_sell_signal"] = cond_sell
+
+        # ===== 厳選条件の診断ログ =====
+        logger.info("=== AI厳選条件の診断 ===")
+        logger.info(f"分析対象: {len(res_df)}銘柄")
+        logger.info(f"最大AI確率: {res_df['prob'].max():.3f}")
+        logger.info(f"適用閾値: {threshold:.3f}")
+
+        logger.info(f"確率条件クリア: {cond_prob.sum()}件")
+        logger.info(f"VolVCP条件クリア: {(res_df['VolVCP'] < 1.2).sum()}件")
+        logger.info(f"Bias25条件クリア: {res_df['Bias25'].between(-0.15, 0.07).sum()}件")
+        logger.info(f"売り判定該当: {cond_sell.sum()}件")
+
+        logger.info(f"確率＋テクニカル通過: {(cond_prob & cond_tech).sum()}件")
+        logger.info(f"最終厳選通過: {(cond_prob & cond_tech & ~cond_sell).sum()}件")
+
+        logger.info("=== AI確率上位10銘柄 ===")
+        logger.info(
+            res_df.sort_values("prob", ascending=False)[
+                ["symbol", "prob", "VolVCP", "Bias25",
+                 "MACD_Hist", "EV", "is_sell_signal"]
+            ].head(10).to_string(index=False)
+        )
+
         filtered = res_df[cond_prob & cond_tech & ~cond_sell].sort_values("EV", ascending=False)
 
         if filtered.empty and not res_df.empty:
