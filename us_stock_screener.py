@@ -557,6 +557,19 @@ class USStockScreener:
             joblib.dump(self.model, Config.MODEL_PATH)
         else:
             self.model = joblib.load(Config.MODEL_PATH)
+
+        # ===== 保存済みモデル診断 =====
+        if os.path.exists(Config.MODEL_PATH):
+            model_time = datetime.fromtimestamp(
+                os.path.getmtime(Config.MODEL_PATH)
+            )
+            logger.info(
+                f"モデル最終更新日時: {model_time}"
+            )
+            logger.info(
+                f"モデル再学習実施: {need_training}"
+            )
+
         return self.model is not None
 
     def _inference(self, feature_dict: Dict, threshold: float) -> Tuple[pd.DataFrame, pd.DataFrame, float]:
