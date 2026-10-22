@@ -812,6 +812,31 @@ class USStockScreener:
                     ["symbol", "prob", "VolVCP", "Bias25", "EV"]
                 ].head(10).to_string(index=False)
             )
+        # ===== 30%以上の候補が除外される理由を診断 =====
+        diag_prob = res_df["prob"] >= 0.30
+
+        logger.info("=== 30%以上の候補・除外理由診断 ===")
+        logger.info(f"AI確率30%以上: {diag_prob.sum()}件")
+
+        logger.info(
+            f"VolVCP条件で除外: "
+            f"{(diag_prob & ~(res_df['VolVCP'] < 1.2)).sum()}件"
+        )
+
+        logger.info(
+            f"Bias25条件で除外: "
+            f"{(diag_prob & ~res_df['Bias25'].between(-0.15, 0.07)).sum()}件"
+        )
+
+        logger.info(
+            f"売り判定で除外: "
+            f"{(diag_prob & cond_sell).sum()}件"
+        )
+
+        logger.info(
+            f"全条件通過: "
+            f"{(diag_prob & cond_tech & ~cond_sell).sum()}件"
+        )
         logger.info("=== AI確率上位10銘柄 ===")
         logger.info(
             res_df.sort_values("prob", ascending=False)[
