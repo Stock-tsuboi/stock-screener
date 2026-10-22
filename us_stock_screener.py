@@ -837,6 +837,27 @@ class USStockScreener:
             f"全条件通過: "
             f"{(diag_prob & cond_tech & ~cond_sell).sum()}件"
         )
+        # ===== 売り判定3条件の内訳診断 =====
+        sell_rsi = (
+            (res_df["RSI"] > 82)
+            & (res_df["ret1"] < -0.03)
+        )
+        sell_macd = res_df["MACD_Hist"] < 0
+        sell_drop = res_df["ret1"] < -0.07
+
+        logger.info("=== 30%以上候補・売り判定の内訳 ===")
+        logger.info(
+            f"RSI過熱＋下落: {(diag_prob & sell_rsi).sum()}件"
+        )
+        logger.info(
+            f"MACD_Histマイナス: {(diag_prob & sell_macd).sum()}件"
+        )
+        logger.info(
+            f"前日比-7%未満: {(diag_prob & sell_drop).sum()}件"
+        )
+        logger.info(
+            f"売り判定合計（重複除外）: {(diag_prob & cond_sell).sum()}件"
+        )
         logger.info("=== AI確率上位10銘柄 ===")
         logger.info(
             res_df.sort_values("prob", ascending=False)[
