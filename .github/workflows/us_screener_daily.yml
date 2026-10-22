@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '0 23 * * 1-5' # 火〜土の日本時間 8:00 (UTC 23:00) 米国閉場後のデータ確定を待って実行
   workflow_dispatch:
+    inputs:
+      validate_only:
+        description: '精度検証専用モード（本番モデルを更新しない）'
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   run-screener:
@@ -41,6 +47,7 @@ jobs:
         env:
           LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          US_SCREENER_VALIDATE_ONLY: ${{ inputs.validate_only && '1' || '0' }}
         run: python us_stock_screener.py
 
       - name: Commit and Push changes
