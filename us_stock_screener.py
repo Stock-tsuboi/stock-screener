@@ -606,6 +606,25 @@ class USStockScreener:
                 top_count = max(1, int(len(eval_result) * 0.05))
                 top_result = eval_result.nlargest(top_count, "prob")
 
+                # ===== AI確率別の適合率診断 =====
+                logger.info("=== AI確率別の適合率 ===")
+
+                for threshold in [0.20, 0.25, 0.30, 0.35, 0.40, 0.45]:
+                    selected = eval_result[
+                        eval_result["prob"] >= threshold
+                    ]
+
+                    if len(selected) > 0:
+                        logger.info(
+                            f"確率{threshold:.0%}以上: "
+                            f"{len(selected)}件 / "
+                            f"適合率 {selected['Target'].mean():.2%}"
+                        )
+                    else:
+                        logger.info(
+                            f"確率{threshold:.0%}以上: 0件"
+                        )
+                
                 high_prob = eval_result[
                     eval_result["prob"] >= Config.THRESHOLD_NORMAL
                 ]
