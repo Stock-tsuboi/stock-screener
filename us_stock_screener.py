@@ -796,6 +796,22 @@ class USStockScreener:
         logger.info(f"確率＋テクニカル通過: {(cond_prob & cond_tech).sum()}件")
         logger.info(f"最終厳選通過: {(cond_prob & cond_tech & ~cond_sell).sum()}件")
 
+        # ===== 30%基準の比較診断（本番選定には使用しない）=====
+        diagnostic_30 = res_df[
+            (res_df["prob"] >= 0.30)
+            & cond_tech
+            & ~cond_sell
+        ].sort_values("prob", ascending=False)
+
+        logger.info("=== 30%基準の比較診断（通知対象外）===")
+        logger.info(f"30%以上＋厳選条件: {len(diagnostic_30)}件")
+
+        if not diagnostic_30.empty:
+            logger.info(
+                diagnostic_30[
+                    ["symbol", "prob", "VolVCP", "Bias25", "EV"]
+                ].head(10).to_string(index=False)
+            )
         logger.info("=== AI確率上位10銘柄 ===")
         logger.info(
             res_df.sort_values("prob", ascending=False)[
