@@ -538,6 +538,13 @@ class USStockScreener:
                 logger.warning(f"モデルチェック中にエラーが発生しました: {e}。再学習を実行します。")
                 need_training = True
 
+        # 検証専用モードでは、保存済みモデルの更新周期に関係なく検証を実行
+        validate_only = os.environ.get("US_SCREENER_VALIDATE_ONLY") == "1"
+
+        if validate_only:
+            need_training = True
+            logger.info("検証専用モード：別期間の精度検証を実行します")
+
         if need_training:
             logger.info("米国株モデル再学習中...")
             # 学習データの準備（データ量が増えるため、メモリ管理に注意）
@@ -555,11 +562,11 @@ class USStockScreener:
             from sklearn.metrics import roc_auc_score, brier_score_loss
 
             dates = full_train.index.unique().sort_values()
-            split_pos = int(len(dates) * 0.8)
+            split_pos = int(len(dates) * 0.6)
+            test_end_pos = int(len(dates) * 0.8)
 
-            # 5日先の正解ラベルが評価期間に重ならないようにする
             train_dates = dates[:max(0, split_pos - 5)]
-            test_dates = dates[split_pos:]
+            test_dates = dates[split_pos:test_end_pos]
 
             train_mask = full_train.index.isin(train_dates)
             test_mask = full_train.index.isin(test_dates)
@@ -692,11 +699,19 @@ class USStockScreener:
                 )
 
             logger.info("=== AIモデル精度検証終了 ===")
-            
+
+            # ===== 検証専用モードはここで終了 =====
+            if validate_only:
+                logger.info("検証専用モード終了：本番モデルは更新しません")
+                self.model = joblib.load(Config.MODEL_PATH)
+                return True
+                
             base_model = RandomForestClassifier(n_estimators=400, max_depth=14, n_jobs=-1, random_state=42, class_weight="balanced")
             self.model = CalibratedClassifierCV(estimator=base_model, method="sigmoid", cv=TimeSeriesSplit(n_splits=3))
             self.model.fit(X, y)
-            joblib.dump(self.model, Config.MODEL_PATH)
+
+            if os.environ.get("US_SCREENER_VALIDATE_ONLY") != "1":
+                joblib.dump(self.model, Config.MODEL_PATH)
         else:
             self.model = joblib.load(Config.MODEL_PATH)
 
