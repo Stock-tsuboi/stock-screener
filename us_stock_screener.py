@@ -391,17 +391,35 @@ class USStockScreener:
         is_market_good = self.db.get_market_regime()
         current_threshold = Config.THRESHOLD_STRICT if not is_market_good else Config.THRESHOLD_NORMAL
         
-        # マクロデータの取得
+        # 検証専用モードでは、保存済み株価データだけを使用する
+        validate_only = os.environ.get("US_SCREENER_VALIDATE_ONLY") == "1"
+
+        if validate_only:
+            logger.info("検証専用モード：株価・マクロデータの更新をスキップします")
+            all_data = self.db.load_all_data(symbols)
+            if not all_data:
+                logger.error("検証に使用できる保存済み株価データがありません")
+                return
+            if not self._prepare_model(all_data):
+                return
+            logger.info("検証専用モード終了：推論・通知・履歴更新をスキップします")
+            return
+
+        # 通常モード：マクロ・株価データを更新
         macro_df = self.db.update_macro_data()
-        
         self.db.update_prices(symbols)
         all_data = self.db.load_all_data(symbols)
         processed_data = self._parallel_feature_engineering(all_data, macro_df)
-        
-        if not self._prepare_model(all_data): return
+
+        if not self._prepare_model(all_data):
+            return
+
+        if os.environ.get("US_SCREENER_VALIDATE_ONLY") == "1":
+            logger.info("検証専用モード：精度検証のみ実行し、推論・通知・履歴更新をスキップします")
+            return
+
         buy_results, sell_results, max_prob = self._inference(processed_data, current_threshold)
         self._notify((buy_results, sell_results), symbols, is_market_good, max_prob)
-
     def _load_symbols(self) -> pd.DataFrame:
         """
         us_stocks.csv を読み込む。
