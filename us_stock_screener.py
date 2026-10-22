@@ -611,6 +611,38 @@ class USStockScreener:
                 top_count = max(1, int(len(eval_result) * 0.05))
                 top_result = eval_result.nlargest(top_count, "prob")
 
+                # ===== テクニカル条件込みの適合率検証 =====
+                eval_sell = (
+                    ((eval_result["RSI"] > 82) & (eval_result["ret1"] < -0.03))
+                    | (eval_result["MACD_Hist"] < 0)
+                    | (eval_result["ret1"] < -0.07)
+                )
+
+                eval_tech = (
+                    (eval_result["VolVCP"] < 1.2)
+                    & eval_result["Bias25"].between(-0.15, 0.07)
+                )
+
+                logger.info("=== テクニカル条件込みの適合率 ===")
+
+                for threshold in [0.25, 0.30, 0.35, 0.40, 0.45]:
+                    selected = eval_result[
+                        (eval_result["prob"] >= threshold)
+                        & eval_tech
+                        & ~eval_sell
+                    ]
+
+                    if len(selected) > 0:
+                        logger.info(
+                            f"確率{threshold:.0%}以上＋厳選条件: "
+                            f"{len(selected)}件 / "
+                            f"適合率 {selected['Target'].mean():.2%}"
+                        )
+                    else:
+                        logger.info(
+                            f"確率{threshold:.0%}以上＋厳選条件: 0件"
+                        )
+
                 # ===== AI確率別の適合率診断 =====
                 logger.info("=== AI確率別の適合率 ===")
 
