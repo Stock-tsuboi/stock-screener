@@ -580,8 +580,12 @@ class USStockScreener:
             from sklearn.metrics import roc_auc_score, brier_score_loss
 
             dates = full_train.index.unique().sort_values()
-            split_pos = int(len(dates) * 0.6)
-            test_end_pos = int(len(dates) * 0.8)
+            if validate_only:
+                split_pos = int(len(dates) * 0.8)
+                test_end_pos = len(dates)
+            else:
+                split_pos = int(len(dates) * 0.6)
+                test_end_pos = int(len(dates) * 0.8)
 
             train_dates = dates[:max(0, split_pos - 5)]
             test_dates = dates[split_pos:test_end_pos]
