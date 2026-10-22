@@ -55,7 +55,7 @@ class Config:
     
     # 米国株の場合、特定のセクターや大型株（S&P500構成銘柄など）を対象にすることを推奨
     TARGET_EXCHANGES = ["NASDAQ", "NYSE", "AMEX"]
-    RETRAIN_DAYS = 0
+    RETRAIN_DAYS = 7
     THRESHOLD_STRICT = 0.52  # 米国株はボラティリティが高いため少し厳しめに設定
     THRESHOLD_NORMAL = 0.45
     TRAILING_STOP_ATR_MULT = 3.0  # 米国株はノイズが多いためATR倍率を少し広めに
