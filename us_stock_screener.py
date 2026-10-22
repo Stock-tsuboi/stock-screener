@@ -534,7 +534,13 @@ class USStockScreener:
             feat_df = self.factory.calculate_metrics(df)
             feat_df = self.factory.add_target_label(feat_df)
             if len(feat_df) < 50: return None
-            cols = self.factory.FEATURE_COLS + ["Target"]
+
+            # 検証用：5営業日後の実際の終値騰落率
+            feat_df["FutureReturn5"] = (
+                feat_df["Close"].shift(-5) / feat_df["Close"] - 1
+            )
+
+            cols = self.factory.FEATURE_COLS + ["Target", "FutureReturn5"]
             return feat_df.iloc[:-5][cols]
 
         need_training = False
@@ -777,6 +783,96 @@ class USStockScreener:
                         logger.info(
                             f"最大EV: {selected['EV'].max():.4f}"
                         )
+                # ===== 5営業日後の実際の騰落率を検証 =====
+                if validate_only:
+                    future_return = full_train.loc[
+                        X_test.index, "FutureReturn5"
+                    ]
+
+                    return_check = eval_result.copy()
+                    return_check["FutureReturn5"] = future_return.to_numpy()
+
+                    base_mask = (
+                        (return_check["prob"] >= 0.30)
+                        & eval_tech
+                        & ~eval_sell
+                    )
+
+                    selected = return_check[base_mask].dropna(
+                        subset=["FutureReturn5"]
+                    )
+
+                    logger.info("=== 5営業日後の実際の騰落率 ===")
+                    logger.info(f"検証対象件数: {len(selected)}件")
+
+                    if not selected.empty:
+                        logger.info(
+                            f"平均騰落率: "
+                            f"{selected['FutureReturn5'].mean():.2%}"
+                        )
+                        logger.info(
+                            f"中央値: "
+                            f"{selected['FutureReturn5'].median():.2%}"
+                        )
+                        logger.info(
+                            f"プラス騰落率の割合: "
+                            f"{(selected['FutureReturn5'] > 0).mean():.2%}"
+                        )
+                        logger.info(
+                            f"+4%以上の割合: "
+                            f"{(selected['FutureReturn5'] >= 0.04).mean():.2%}"
+                        )
+                        logger.info(
+                            f"-5%以下の割合: "
+                            f"{(selected['FutureReturn5'] <= -0.05).mean():.2%}"
+                        )
+                    else:
+                        logger.warning("騰落率を検証できる銘柄がありません")
+                # ===== 5営業日後の実際の騰落率を検証 =====
+                future_return_test = full_train.loc[
+                    test_mask, "FutureReturn5"
+                ].to_numpy()
+
+                return_check = eval_result.copy()
+                return_check["FutureReturn5"] = future_return_test
+
+                return_mask = (
+                    (return_check["prob"] >= 0.30)
+                    & eval_tech
+                    & ~eval_sell
+                )
+
+                selected_returns = (
+                    return_check.loc[return_mask, "FutureReturn5"]
+                    .dropna()
+                )
+
+                logger.info("=== 5営業日後の実際の騰落率 ===")
+                logger.info(f"検証対象件数: {len(selected_returns)}件")
+
+                if not selected_returns.empty:
+                    logger.info(
+                        f"平均騰落率: {selected_returns.mean():.2%}"
+                    )
+                    logger.info(
+                        f"中央値: {selected_returns.median():.2%}"
+                    )
+                    logger.info(
+                        f"プラス騰落率の割合: "
+                        f"{(selected_returns > 0).mean():.2%}"
+                    )
+                    logger.info(
+                        f"+4%以上の割合: "
+                        f"{(selected_returns >= 0.04).mean():.2%}"
+                    )
+                    logger.info(
+                        f"-5%以下の割合: "
+                        f"{(selected_returns <= -0.05).mean():.2%}"
+                    )
+                else:
+                    logger.warning(
+                        "5営業日後の騰落率を検証できる銘柄がありません。"
+                    )
                 # ===== AI確率別の適合率診断 =====
                 logger.info("=== AI確率別の適合率 ===")
 
