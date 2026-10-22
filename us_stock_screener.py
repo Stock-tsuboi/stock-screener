@@ -676,6 +676,44 @@ class USStockScreener:
                             f"確率{threshold:.0%}以上＋厳選条件: 0件"
                         )
 
+                # ===== MACD除外条件の有効性比較（検証専用）=====
+                if validate_only:
+                    eval_sell_without_macd = (
+                        ((eval_result["RSI"] > 82) & (eval_result["ret1"] < -0.03))
+                        | (eval_result["ret1"] < -0.07)
+                    )
+
+                    logger.info("=== MACD条件あり・なし比較 ===")
+
+                    for threshold in [0.25, 0.30, 0.35]:
+                        base_condition = (
+                            (eval_result["prob"] >= threshold)
+                            & eval_tech
+                        )
+
+                        current_selected = eval_result[
+                            base_condition & ~eval_sell
+                        ]
+
+                        without_macd = eval_result[
+                            base_condition & ~eval_sell_without_macd
+                        ]
+
+                        logger.info(
+                            f"確率{threshold:.0%}以上 / "
+                            f"現行MACD除外あり: {len(current_selected)}件 "
+                            f"適合率={current_selected['Target'].mean():.2%}"
+                            if len(current_selected) else
+                            f"確率{threshold:.0%}以上 / 現行MACD除外あり: 0件"
+                        )
+
+                        logger.info(
+                            f"確率{threshold:.0%}以上 / "
+                            f"MACD除外なし: {len(without_macd)}件 "
+                            f"適合率={without_macd['Target'].mean():.2%}"
+                            if len(without_macd) else
+                            f"確率{threshold:.0%}以上 / MACD除外なし: 0件"
+                        )
                 # ===== AI確率別の適合率診断 =====
                 logger.info("=== AI確率別の適合率 ===")
 
