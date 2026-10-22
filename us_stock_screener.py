@@ -588,6 +588,8 @@ class USStockScreener:
                 test_end_pos = int(len(dates) * 0.8)
 
             train_dates = dates[:max(0, split_pos - 5)]
+            logger.info(f"検証用の日付範囲: 全{len(dates)}日 / 学習終了位置={split_pos} / 評価終了位置={test_end_pos}")
+            logger.info(f"評価対象期間: {test_dates.min()} ～ {test_dates.max()}")
             test_dates = dates[split_pos:test_end_pos]
 
             train_mask = full_train.index.isin(train_dates)
