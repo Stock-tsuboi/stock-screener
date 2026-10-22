@@ -467,9 +467,9 @@ class USStockScreener:
             if i % 100 == 0 and i > 0:
                 logger.info(f"特徴量生成進捗: {i}/{total} 銘柄完了... (現在: {s})")
             
-            # 財務データの取得（キャッシュがあれば高速、なければAPI経由で低速）
-            f_data = self.db.fetch_fundamentals(s)
-            res = self._feature_worker(s, d, f_data, macro_df)
+            # AIはテクニカル26特徴量のみ使用
+            # 財務APIへの不要なアクセスを停止
+            res = self._feature_worker(s, d, None, None)
             if res:
                 results.append(res)
             
