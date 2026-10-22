@@ -600,7 +600,12 @@ class USStockScreener:
 
                 eval_result = pd.DataFrame({
                     "prob": eval_prob,
-                    "Target": y_test.to_numpy()
+                    "Target": y_test.to_numpy(),
+                    "VolVCP": X_test["VolVCP"].to_numpy(),
+                    "Bias25": X_test["Bias25"].to_numpy(),
+                    "RSI": X_test["RSI"].to_numpy(),
+                    "ret1": X_test["ret1"].to_numpy(),
+                    "MACD_Hist": X_test["MACD_Hist"].to_numpy()
                 })
 
                 top_count = max(1, int(len(eval_result) * 0.05))
