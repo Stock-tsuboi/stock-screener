@@ -751,6 +751,32 @@ class USStockScreener:
                             )
                         else:
                             logger.info(f"{label}: 0件")
+
+                    # ===== EVマイナスの原因診断 =====
+                    selected = ev_check[base_mask]
+
+                    logger.info("=== EV計算の内訳診断 ===")
+
+                    if not selected.empty:
+                        selected_risk = risk_width[base_mask.to_numpy()]
+                        selected_reward = reward_target[base_mask]
+
+                        logger.info(f"診断対象: {len(selected)}件")
+                        logger.info(
+                            f"平均AI確率: {selected['prob'].mean():.2%}"
+                        )
+                        logger.info(
+                            f"平均想定利益幅: {selected_reward.mean():.2%}"
+                        )
+                        logger.info(
+                            f"平均損切り幅: {selected_risk.mean():.2%}"
+                        )
+                        logger.info(
+                            f"平均EV: {selected['EV'].mean():.4f}"
+                        )
+                        logger.info(
+                            f"最大EV: {selected['EV'].max():.4f}"
+                        )
                 # ===== AI確率別の適合率診断 =====
                 logger.info("=== AI確率別の適合率 ===")
 
