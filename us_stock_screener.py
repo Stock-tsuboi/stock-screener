@@ -55,7 +55,7 @@ class Config:
     
     # 米国株の場合、特定のセクターや大型株（S&P500構成銘柄など）を対象にすることを推奨
     TARGET_EXCHANGES = ["NASDAQ", "NYSE", "AMEX"]
-    RETRAIN_DAYS = 7
+    RETRAIN_DAYS = 0
     THRESHOLD_STRICT = 0.52  # 米国株はボラティリティが高いため少し厳しめに設定
     THRESHOLD_NORMAL = 0.45
     TRAILING_STOP_ATR_MULT = 3.0  # 米国株はノイズが多いためATR倍率を少し広めに
@@ -550,6 +550,92 @@ class USStockScreener:
             full_train = pd.concat(training_dfs).sort_index().dropna(subset=["Target"])
             logger.info(f"学習データ件数: {len(full_train)} (上昇事例: {full_train['Target'].sum()})")
             X, y = full_train[self.factory.FEATURE_COLS], full_train["Target"]
+
+            # ===== AI予測精度の検証（時系列・未学習20%）=====
+            from sklearn.metrics import roc_auc_score, brier_score_loss
+
+            dates = full_train.index.unique().sort_values()
+            split_pos = int(len(dates) * 0.8)
+
+            # 5日先の正解ラベルが評価期間に重ならないようにする
+            train_dates = dates[:max(0, split_pos - 5)]
+            test_dates = dates[split_pos:]
+
+            train_mask = full_train.index.isin(train_dates)
+            test_mask = full_train.index.isin(test_dates)
+
+            X_train, y_train = X.loc[train_mask], y.loc[train_mask]
+            X_test, y_test = X.loc[test_mask], y.loc[test_mask]
+
+            logger.info("=== AIモデル精度検証 ===")
+            logger.info(f"検証用学習件数: {len(X_train)}")
+            logger.info(f"未学習評価件数: {len(X_test)}")
+
+            if (
+                len(X_train) > 100
+                and len(X_test) > 0
+                and y_train.nunique() == 2
+                and y_test.nunique() == 2
+            ):
+                eval_base = RandomForestClassifier(
+                    n_estimators=400,
+                    max_depth=14,
+                    n_jobs=-1,
+                    random_state=42,
+                    class_weight="balanced"
+                )
+
+                eval_model = CalibratedClassifierCV(
+                    estimator=eval_base,
+                    method="sigmoid",
+                    cv=TimeSeriesSplit(n_splits=3)
+                )
+
+                eval_model.fit(X_train, y_train)
+
+                eval_prob = eval_model.predict_proba(X_test)[:, 1]
+
+                auc = roc_auc_score(y_test, eval_prob)
+                brier = brier_score_loss(y_test, eval_prob)
+
+                eval_result = pd.DataFrame({
+                    "prob": eval_prob,
+                    "Target": y_test.to_numpy()
+                })
+
+                top_count = max(1, int(len(eval_result) * 0.05))
+                top_result = eval_result.nlargest(top_count, "prob")
+
+                high_prob = eval_result[
+                    eval_result["prob"] >= Config.THRESHOLD_NORMAL
+                ]
+
+                logger.info(f"評価期間の上昇事例率: {y_test.mean():.4f}")
+                logger.info(f"ROC-AUC: {auc:.4f}")
+                logger.info(f"Brier Score: {brier:.4f}")
+                logger.info(
+                    f"確率上位5%の適合率: "
+                    f"{top_result['Target'].mean():.4f}"
+                )
+                logger.info(
+                    f"45%基準の通過件数: {len(high_prob)}"
+                )
+
+                if len(high_prob) > 0:
+                    logger.info(
+                        f"45%基準の適合率: "
+                        f"{high_prob['Target'].mean():.4f}"
+                    )
+                else:
+                    logger.info("45%基準の適合率: 対象なし")
+
+                del eval_model, eval_base
+            else:
+                logger.warning(
+                    "評価データ不足、または正解ラベルが1種類のため検証を省略"
+                )
+
+            logger.info("=== AIモデル精度検証終了 ===")
             
             base_model = RandomForestClassifier(n_estimators=400, max_depth=14, n_jobs=-1, random_state=42, class_weight="balanced")
             self.model = CalibratedClassifierCV(estimator=base_model, method="sigmoid", cv=TimeSeriesSplit(n_splits=3))
