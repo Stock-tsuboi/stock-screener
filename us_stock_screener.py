@@ -714,6 +714,43 @@ class USStockScreener:
                             if len(without_macd) else
                             f"確率{threshold:.0%}以上 / MACD除外なし: 0件"
                         )
+                # ===== EVプラス・マイナス別の精度比較（検証専用）=====
+                if validate_only:
+                    ev_check = eval_result.copy()
+
+                    risk_width = (X_test["atr_ratio"].to_numpy() * 2.5).clip(min=0.04)
+                    reward_target = (0.07 + ev_check["prob"] * 0.15).clip(lower=0.07)
+
+                    ev_raw = (
+                        ev_check["prob"] * reward_target
+                        - (1.0 - ev_check["prob"]) * risk_width
+                    )
+
+                    ev_check["EV"] = ev_raw * (
+                        2.0 - X_test["VolRatio"].to_numpy()
+                    ).clip(0.5, 1.5)
+
+                    base_mask = (
+                        (ev_check["prob"] >= 0.30)
+                        & eval_tech
+                        & ~eval_sell
+                    )
+
+                    logger.info("=== EV別の適合率比較（30%以上＋現行厳選条件）===")
+
+                    for label, mask in [
+                        ("EVプラス", base_mask & (ev_check["EV"] > 0)),
+                        ("EVゼロ以下", base_mask & (ev_check["EV"] <= 0))
+                    ]:
+                        selected = ev_check[mask]
+
+                        if len(selected):
+                            logger.info(
+                                f"{label}: {len(selected)}件 / "
+                                f"適合率 {selected['Target'].mean():.2%}"
+                            )
+                        else:
+                            logger.info(f"{label}: 0件")
                 # ===== AI確率別の適合率診断 =====
                 logger.info("=== AI確率別の適合率 ===")
 
