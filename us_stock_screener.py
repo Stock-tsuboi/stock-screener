@@ -792,6 +792,41 @@ class USStockScreener:
                 return_check = eval_result.copy()
                 return_check["FutureReturn5"] = future_return_test
 
+                # ===== AI確率30%以上・月別騰落率検証 =====
+                monthly_check = return_check.copy()
+                monthly_check["Date"] = pd.to_datetime(X_test.index).to_numpy()
+
+                monthly_mask = (
+                    (monthly_check["prob"] >= 0.30)
+                    & eval_tech
+                    & ~eval_sell
+                )
+
+                monthly_selected = monthly_check.loc[monthly_mask].copy()
+                monthly_selected = monthly_selected.dropna(
+                    subset=["FutureReturn5"]
+                )
+
+                monthly_selected["Month"] = (
+                    monthly_selected["Date"].dt.to_period("M")
+                )
+
+                logger.info("=== AI確率30%以上・月別騰落率検証 ===")
+
+                for month, group in monthly_selected.groupby("Month"):
+                    returns = group["FutureReturn5"]
+
+                    logger.info(
+                        f"{month}: "
+                        f"{len(returns)}件 / "
+                        f"平均={returns.mean():.2%} / "
+                        f"プラス率={(returns > 0).mean():.2%} / "
+                        f"-5%以下={(returns <= -0.05).mean():.2%}"
+                    )
+
+                if monthly_selected.empty:
+                    logger.info("月別検証対象なし")
+
                 logger.info("=== AI確率別・5営業日後の騰落率比較 ===")
 
                 for threshold in [0.25, 0.30, 0.35]:
