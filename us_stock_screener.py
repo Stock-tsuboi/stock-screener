@@ -834,6 +834,56 @@ class USStockScreener:
                 if monthly_selected.empty:
                     logger.info("月別検証対象なし")
 
+                # ===== AI確率25%以上・Bias25水準別検証 =====
+                bias25_check = return_check.loc[
+                    (return_check["prob"] >= 0.25)
+                    & eval_tech
+                    & ~eval_sell
+                ].copy()
+
+                bias25_check = bias25_check.dropna(
+                    subset=["FutureReturn5"]
+                )
+
+                logger.info("=== AI確率25%以上・Bias25水準別検証 ===")
+                logger.info(f"全対象件数: {len(bias25_check)}件")
+
+                bias25_groups = [
+                    ("Bias25マイナス", bias25_check["Bias25"] < 0),
+                    (
+                        "Bias25 0%以上～3%未満",
+                        bias25_check["Bias25"].between(
+                            0, 0.03, inclusive="left"
+                        )
+                    ),
+                    ("Bias25 3%以上", bias25_check["Bias25"] >= 0.03)
+                ]
+
+                for label, mask in bias25_groups:
+                    selected = bias25_check.loc[mask]
+                    returns = selected["FutureReturn5"]
+
+                    logger.info(f"--- {label} ---")
+                    logger.info(f"検証件数: {len(returns)}件")
+
+                    if not returns.empty:
+                        logger.info(
+                            f"平均騰落率: {returns.mean():.2%}"
+                        )
+                        logger.info(
+                            f"中央値: {returns.median():.2%}"
+                        )
+                        logger.info(
+                            f"プラス率: {(returns > 0).mean():.2%}"
+                        )
+                        logger.info(
+                            f"+4%以上: {(returns >= 0.04).mean():.2%}"
+                        )
+                        logger.info(
+                            f"-5%以下: {(returns <= -0.05).mean():.2%}"
+                        )
+                    else:
+                        logger.info("対象なし")
                 # ===== Bias25水準別・5営業日後の騰落率検証 =====
                 bias_check = monthly_selected.copy()
 
