@@ -833,6 +833,45 @@ class USStockScreener:
 
                 if monthly_selected.empty:
                     logger.info("月別検証対象なし")
+
+                # ===== Bias25水準別・5営業日後の騰落率検証 =====
+                bias_check = monthly_selected.copy()
+
+                logger.info("=== Bias25水準別・5営業日後の騰落率 ===")
+
+                bias_groups = [
+                    ("Bias25マイナス", bias_check["Bias25"] < 0),
+                    (
+                        "Bias25 0%以上～3%未満",
+                        bias_check["Bias25"].between(
+                            0, 0.03, inclusive="left"
+                        )
+                    ),
+                    ("Bias25 3%以上", bias_check["Bias25"] >= 0.03)
+                ]
+
+                for label, mask in bias_groups:
+                    selected = bias_check.loc[mask]
+                    returns = selected["FutureReturn5"]
+
+                    logger.info(f"--- {label} ---")
+                    logger.info(f"検証件数: {len(returns)}件")
+
+                    if not returns.empty:
+                        logger.info(
+                            f"平均騰落率: {returns.mean():.2%}"
+                        )
+                        logger.info(
+                            f"中央値: {returns.median():.2%}"
+                        )
+                        logger.info(
+                            f"プラス率: {(returns > 0).mean():.2%}"
+                        )
+                        logger.info(
+                            f"-5%以下: {(returns <= -0.05).mean():.2%}"
+                        )
+                    else:
+                        logger.info("対象なし")
                 
                 # ===== 大幅下落銘柄の特徴量診断（検証専用）=====
                 loss_check = monthly_selected.copy()
