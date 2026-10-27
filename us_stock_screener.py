@@ -826,6 +826,52 @@ class USStockScreener:
 
                 if monthly_selected.empty:
                     logger.info("月別検証対象なし")
+                
+                # ===== 大幅下落銘柄の特徴量診断（検証専用）=====
+                loss_check = monthly_selected.copy()
+
+                for col in [
+                    "VolVCP", "Bias25", "RSI",
+                    "MACD_Hist", "ret1"
+                ]:
+                    loss_check[col] = eval_result.loc[
+                        monthly_mask, col
+                    ].to_numpy()[
+                        return_check.loc[
+                            monthly_mask, "FutureReturn5"
+                        ].notna().to_numpy()
+                    ]
+
+                loss_check["atr_ratio"] = X_test[
+                    "atr_ratio"
+                ].to_numpy()[
+                    monthly_mask.to_numpy()
+                ][
+                    return_check.loc[
+                        monthly_mask, "FutureReturn5"
+                    ].notna().to_numpy()
+                ]
+
+                loss_check["LargeLoss"] = (
+                    loss_check["FutureReturn5"] <= -0.05
+                )
+
+                logger.info("=== 大幅下落銘柄の特徴量比較 ===")
+
+                for label, group in [
+                    ("-5%以下", loss_check[loss_check["LargeLoss"]]),
+                    ("-5%超", loss_check[~loss_check["LargeLoss"]])
+                ]:
+                    logger.info(f"--- {label}: {len(group)}件 ---")
+
+                    for col in [
+                        "VolVCP", "Bias25", "RSI",
+                        "MACD_Hist", "ret1", "atr_ratio"
+                    ]:
+                        logger.info(
+                            f"{col}: 平均={group[col].mean():.4f} / "
+                            f"中央値={group[col].median():.4f}"
+                        )
 
                 logger.info("=== AI確率別・5営業日後の騰落率比較 ===")
 
