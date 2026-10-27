@@ -586,10 +586,17 @@ class USStockScreener:
             from sklearn.metrics import roc_auc_score, brier_score_loss
 
             dates = full_train.index.unique().sort_values()
+
             if validate_only:
-                split_pos = int(len(dates) * 0.8)
-                test_end_pos = len(dates)
+                # 検証専用：評価期間を固定
+                eval_start = pd.Timestamp("2026-08-05")
+                eval_end = pd.Timestamp("2026-10-19")
+
+                split_pos = dates.searchsorted(eval_start)
+                test_end_pos = dates.searchsorted(eval_end, side="right")
+
             else:
+                # 通常運用：従来の処理を維持
                 split_pos = int(len(dates) * 0.6)
                 test_end_pos = int(len(dates) * 0.8)
 
