@@ -581,6 +581,40 @@ class USStockScreener:
                 feat_df["Diag_Setup"] = (
                     feat_df["Diag_Breakout"] & is_setup
                 )
+                
+                # ===== 事前条件の内訳（検証専用）=====
+                feat_df["Diag_Precursor"] = (
+                    feat_df["Diag_Breakout"] & is_precursor
+                )
+
+                feat_df["Diag_Trend"] = (
+                    feat_df["Diag_Breakout"] & is_trend
+                )
+
+                feat_df["Diag_VolPrecursor"] = (
+                    feat_df["Diag_Breakout"]
+                    & (feat_df["VolRatio"] < 1.3)
+                )
+
+                feat_df["Diag_RetPrecursor"] = (
+                    feat_df["Diag_Breakout"]
+                    & feat_df["ret5"].between(-0.06, 0.03)
+                )
+
+                feat_df["Diag_VolTrend"] = (
+                    feat_df["Diag_Breakout"]
+                    & feat_df["VolRatio"].between(1.2, 2.5)
+                )
+
+                feat_df["Diag_RetTrend"] = (
+                    feat_df["Diag_Breakout"]
+                    & feat_df["ret5"].between(0.02, 0.12)
+                )
+
+                feat_df["Diag_BiasTrend"] = (
+                    feat_df["Diag_Breakout"]
+                    & (feat_df["Bias25"] < 0.15)
+                )
 
                 feat_df["Diag_Hold"] = (
                     feat_df["Diag_Setup"]
@@ -600,8 +634,14 @@ class USStockScreener:
                     "Diag_Setup",
                     "Diag_Hold",
                     "Diag_Clean",
+                    "Diag_Precursor",
+                    "Diag_Trend",
+                    "Diag_VolPrecursor",
+                    "Diag_RetPrecursor",
+                    "Diag_VolTrend",
+                    "Diag_RetTrend",
+                    "Diag_BiasTrend",
                 ]
-
             return feat_df.iloc[:-5][cols]
 
         need_training = False
@@ -694,6 +734,37 @@ class USStockScreener:
                 logger.info(
                     f"最終Target=1: {int(diag['Target'].sum())}件"
                 )
+
+                # ===== 事前条件の内訳診断 =====
+                setup_diag_cols = [
+                    "Diag_Precursor",
+                    "Diag_Trend",
+                    "Diag_VolPrecursor",
+                    "Diag_RetPrecursor",
+                    "Diag_VolTrend",
+                    "Diag_RetTrend",
+                    "Diag_BiasTrend",
+                ]
+
+                setup_diag = full_train.loc[
+                    full_train.index.isin(test_dates),
+                    setup_diag_cols
+                ]
+
+                logger.info("=== 事前条件の内訳診断 ===")
+
+                for col, label in [
+                    ("Diag_Precursor", "初動条件を通過"),
+                    ("Diag_Trend", "トレンド条件を通過"),
+                    ("Diag_VolPrecursor", "初動：出来高条件のみ通過"),
+                    ("Diag_RetPrecursor", "初動：ret5条件のみ通過"),
+                    ("Diag_VolTrend", "トレンド：出来高条件のみ通過"),
+                    ("Diag_RetTrend", "トレンド：ret5条件のみ通過"),
+                    ("Diag_BiasTrend", "トレンド：Bias25条件のみ通過"),
+                ]:
+                    logger.info(
+                        f"{label}: {int(setup_diag[col].sum())}件"
+                    )
 
             logger.info(f"検証用の日付範囲: 全{len(dates)}日 / 学習終了位置={split_pos} / 評価終了位置={test_end_pos}")
             logger.info(f"評価対象期間: {test_dates.min()} ～ {test_dates.max()}")
