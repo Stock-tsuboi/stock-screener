@@ -744,6 +744,43 @@ class USStockScreener:
                             f"{top_success / len(actual_rise):.2%}"
                         )
                 
+                # ===== AI予測確率と実際の達成率の比較（検証専用）=====
+                if validate_only:
+                    logger.info("=== AI確率校正診断 ===")
+
+                    calibration_ranges = [
+                        ("0～5%未満", 0.00, 0.05),
+                        ("5～10%未満", 0.05, 0.10),
+                        ("10～15%未満", 0.10, 0.15),
+                        ("15～20%未満", 0.15, 0.20),
+                        ("20～25%未満", 0.20, 0.25),
+                        ("25～30%未満", 0.25, 0.30),
+                        ("30～35%未満", 0.30, 0.35),
+                        ("35～40%未満", 0.35, 0.40),
+                        ("40～45%未満", 0.40, 0.45),
+                        ("45%以上", 0.45, 1.01),
+                    ]
+
+                    for label, lower, upper in calibration_ranges:
+                        selected = eval_result[
+                            (eval_result["prob"] >= lower)
+                            & (eval_result["prob"] < upper)
+                        ]
+
+                        if selected.empty:
+                            logger.info(f"{label}: 対象なし")
+                            continue
+
+                        predicted = selected["prob"].mean()
+                        actual = selected["Target"].mean()
+
+                        logger.info(
+                            f"{label}: {len(selected)}件 / "
+                            f"平均予測確率={predicted:.2%} / "
+                            f"実際の達成率={actual:.2%} / "
+                            f"差={actual - predicted:+.2%}"
+                        )
+                
                 # ===== テクニカル条件込みの適合率検証 =====
                 eval_sell = (
                     ((eval_result["RSI"] > 82) & (eval_result["ret1"] < -0.03))
