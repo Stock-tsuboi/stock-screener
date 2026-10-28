@@ -657,6 +657,93 @@ class USStockScreener:
                 top_count = max(1, int(len(eval_result) * 0.05))
                 top_result = eval_result.nlargest(top_count, "prob")
 
+                # ===== AIの急騰銘柄見逃し診断（検証専用）=====
+                if validate_only:
+                    logger.info("=== AI急騰銘柄見逃し診断 ===")
+
+                    actual_rise = eval_result[
+                        eval_result["Target"] == 1
+                    ].copy()
+
+                    logger.info(
+                        f"評価対象: {len(eval_result)}件 / "
+                        f"実際の目標達成: {len(actual_rise)}件"
+                    )
+
+                    if not actual_rise.empty:
+                        logger.info(
+                            f"目標達成銘柄の平均AI確率: "
+                            f"{actual_rise['prob'].mean():.2%}"
+                        )
+                        logger.info(
+                            f"目標達成銘柄の中央値AI確率: "
+                            f"{actual_rise['prob'].median():.2%}"
+                        )
+                        logger.info(
+                            f"目標達成銘柄の最大AI確率: "
+                            f"{actual_rise['prob'].max():.2%}"
+                        )
+
+                        logger.info(
+                            "=== 実際の目標達成銘柄・AI確率分布 ==="
+                        )
+
+                        probability_ranges = [
+                            ("10%未満", actual_rise["prob"] < 0.10),
+                            (
+                                "10%以上～20%未満",
+                                (actual_rise["prob"] >= 0.10)
+                                & (actual_rise["prob"] < 0.20)
+                            ),
+                            (
+                                "20%以上～25%未満",
+                                (actual_rise["prob"] >= 0.20)
+                                & (actual_rise["prob"] < 0.25)
+                            ),
+                            (
+                                "25%以上～30%未満",
+                                (actual_rise["prob"] >= 0.25)
+                                & (actual_rise["prob"] < 0.30)
+                            ),
+                            (
+                                "30%以上～35%未満",
+                                (actual_rise["prob"] >= 0.30)
+                                & (actual_rise["prob"] < 0.35)
+                            ),
+                            (
+                                "35%以上～45%未満",
+                                (actual_rise["prob"] >= 0.35)
+                                & (actual_rise["prob"] < 0.45)
+                            ),
+                            ("45%以上", actual_rise["prob"] >= 0.45)
+                        ]
+
+                        for label, mask in probability_ranges:
+                            count = int(mask.sum())
+
+                            logger.info(
+                                f"{label}: {count}件 / "
+                                f"目標達成銘柄内の割合 "
+                                f"{count / len(actual_rise):.2%}"
+                            )
+
+                        top_success = int(
+                            (top_result["Target"] == 1).sum()
+                        )
+
+                        logger.info("=== AIランキング上位5%の捕捉状況 ===")
+                        logger.info(
+                            f"上位5%の評価件数: {len(top_result)}件"
+                        )
+                        logger.info(
+                            f"上位5%に含まれる目標達成件数: "
+                            f"{top_success}件"
+                        )
+                        logger.info(
+                            f"全目標達成件数に対する捕捉率: "
+                            f"{top_success / len(actual_rise):.2%}"
+                        )
+                
                 # ===== テクニカル条件込みの適合率検証 =====
                 eval_sell = (
                     ((eval_result["RSI"] > 82) & (eval_result["ret1"] < -0.03))
