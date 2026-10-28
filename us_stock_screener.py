@@ -717,6 +717,23 @@ class USStockScreener:
                     full_train.index.isin(test_dates),
                     diag_cols + ["Target"]
                 ]
+                
+                logger.info(
+                    f"診断対象のDiag_Setup合計: "
+                    f"{int(diag['Diag_Setup'].sum())}件"
+                )
+                logger.info(
+                    f"診断対象のDiag_Precursor合計: "
+                    f"{int(diag['Diag_Precursor'].sum())}件"
+                )
+                logger.info(
+                    f"診断対象のDiag_Trend合計: "
+                    f"{int(diag['Diag_Trend'].sum())}件"
+                )
+                logger.info(
+                    f"診断対象のTarget合計: "
+                    f"{int(diag['Target'].sum())}件"
+                )
 
                 logger.info("=== 学習目標の条件別診断 ===")
                 logger.info(f"評価対象: {len(diag)}件")
