@@ -535,12 +535,73 @@ class USStockScreener:
             feat_df = self.factory.add_target_label(feat_df)
             if len(feat_df) < 50: return None
 
-            # 検証用：5営業日後の実際の終値騰落率
+             検証用：5営業日後の実際の終値騰落率
             feat_df["FutureReturn5"] = (
                 feat_df["Close"].shift(-5) / feat_df["Close"] - 1
             )
 
             cols = self.factory.FEATURE_COLS + ["Target", "FutureReturn5"]
+
+            # ===== 学習目標の条件別診断（検証専用）=====
+            if validate_only:
+                indexer = pd.api.indexers.FixedForwardWindowIndexer(
+                    window_size=5
+                )
+
+                future_max = (
+                    feat_df["High"].shift(-1)
+                    .rolling(window=indexer, min_periods=5)
+                    .max()
+                )
+
+                future_min = (
+                    feat_df["Low"].shift(-1)
+                    .rolling(window=indexer, min_periods=5)
+                    .min()
+                )
+
+                future_gain = future_max / feat_df["Close"] - 1
+                future_drawdown = future_min / feat_df["Close"] - 1
+
+                is_precursor = (
+                    (feat_df["VolRatio"] < 1.3)
+                    & feat_df["ret5"].between(-0.06, 0.03)
+                )
+
+                is_trend = (
+                    feat_df["VolRatio"].between(1.2, 2.5)
+                    & feat_df["ret5"].between(0.02, 0.12)
+                    & (feat_df["Bias25"] < 0.15)
+                )
+
+                is_setup = is_precursor | is_trend
+
+                feat_df["Diag_Breakout"] = future_gain >= 0.07
+
+                feat_df["Diag_Setup"] = (
+                    feat_df["Diag_Breakout"] & is_setup
+                )
+
+                feat_df["Diag_Hold"] = (
+                    feat_df["Diag_Setup"]
+                    & (feat_df["FutureReturn5"] >= 0.04)
+                )
+
+                feat_df["Diag_Clean"] = (
+                    feat_df["Diag_Hold"]
+                    & (
+                        future_drawdown
+                        > -(feat_df["atr_ratio"] * 2.0).fillna(0.03)
+                    )
+                )
+
+                cols += [
+                    "Diag_Breakout",
+                    "Diag_Setup",
+                    "Diag_Hold",
+                    "Diag_Clean",
+                ]
+
             return feat_df.iloc[:-5][cols]
 
         need_training = False
@@ -602,6 +663,37 @@ class USStockScreener:
 
             train_dates = dates[:max(0, split_pos - 5)]
             test_dates = dates[split_pos:test_end_pos]
+
+            # ===== 固定評価期間・学習目標の条件別診断 =====
+            if validate_only:
+                diag_cols = [
+                    "Diag_Breakout",
+                    "Diag_Setup",
+                    "Diag_Hold",
+                    "Diag_Clean",
+                ]
+
+                diag = full_train.loc[
+                    full_train.index.isin(test_dates),
+                    diag_cols + ["Target"]
+                ]
+
+                logger.info("=== 学習目標の条件別診断 ===")
+                logger.info(f"評価対象: {len(diag)}件")
+
+                for col, label in [
+                    ("Diag_Breakout", "5営業日以内に+7%到達"),
+                    ("Diag_Setup", "さらに事前条件を通過"),
+                    ("Diag_Hold", "さらに5営業日後の終値+4%"),
+                    ("Diag_Clean", "さらに途中の下落制限を通過"),
+                ]:
+                    logger.info(
+                        f"{label}: {int(diag[col].sum())}件"
+                    )
+
+                logger.info(
+                    f"最終Target=1: {int(diag['Target'].sum())}件"
+                )
 
             logger.info(f"検証用の日付範囲: 全{len(dates)}日 / 学習終了位置={split_pos} / 評価終了位置={test_end_pos}")
             logger.info(f"評価対象期間: {test_dates.min()} ～ {test_dates.max()}")
