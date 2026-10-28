@@ -535,7 +535,7 @@ class USStockScreener:
             feat_df = self.factory.add_target_label(feat_df)
             if len(feat_df) < 50: return None
 
-             検証用：5営業日後の実際の終値騰落率
+            # 検証用：5営業日後の実際の終値騰落率
             feat_df["FutureReturn5"] = (
                 feat_df["Close"].shift(-5) / feat_df["Close"] - 1
             )
