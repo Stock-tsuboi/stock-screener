@@ -729,48 +729,42 @@ class FeatureFactory:
 
         logger.info(f"is_setup={int(is_setup.sum()):,}")
         
-        #ｍｎ ===== 反転診断ここから=====
+        # ===== 反転診断ここから=====
         valid_future = future_10d_gain.notna()
         
-        # 中期的に下降している状態
         is_downtrend = (
             df["Slope20"] <= Config.SETUP_SLOPE20_MIN
         )
         
-        # 下降中に短期傾向が改善
         reversal_slope = (
             is_downtrend
             & (df["Slope10"] > df["Slope10"].shift(1))
         )
         
-        # 下降中にMACDが改善
         reversal_macd = (
             is_downtrend
             & (df["MACD_Hist"] > df["MACD_Hist"].shift(1))
         )
         
-        # 現行Targetと同じ将来の成功条件
         reversal_success = (
             will_breakout
             & will_sustain
             & is_clean_move
         )
         
-        # 診断結果をログに出力
+        reversal_stats = {}
+        
         for name, condition in [
-            ("下降＋Slope10改善", reversal_slope),
-            ("下降＋MACD改善", reversal_macd),
-            ("下降＋Slope10・MACD改善", reversal_slope & reversal_macd),
+            ("slope", reversal_slope),
+            ("macd", reversal_macd),
+            ("combined", reversal_slope & reversal_macd),
         ]:
             candidates = condition & valid_future
             successes = candidates & reversal_success
         
-            logger.info(
-                f"【反転診断】{name}: "
-                f"候補={int(candidates.sum()):,} "
-                f"成功={int(successes.sum()):,} "
-                f"成功率={successes.sum() / max(int(candidates.sum()), 1):.2%}"
-            )
+            reversal_stats[f"{name}_candidates"] = int(candidates.sum())
+            reversal_stats[f"{name}_successes"] = int(successes.sum())
+        
         # ===== 反転診断ここまで=====
 
         # ★ここから追加
@@ -813,17 +807,19 @@ class FeatureFactory:
             "target": int(df["Target"].fillna(0).sum()),
 
              # 追加
-            "breakout_gain": int(
-                (future_gain >= Config.BREAKOUT_GAIN_MIN).sum()
-            ),
-            
             "breakout_hold": int(
                 (
                     (future_gain >= Config.BREAKOUT_GAIN_MIN)
                     &
                     (future_close_gain >= Config.BREAKOUT_CLOSE_GAIN_MIN)
                 ).sum()
-            )
+            ),
+            "reversal_slope_candidates": reversal_stats["slope_candidates"],
+            "reversal_slope_successes": reversal_stats["slope_successes"],
+            "reversal_macd_candidates": reversal_stats["macd_candidates"],
+            "reversal_macd_successes": reversal_stats["macd_successes"],
+            "reversal_combined_candidates": reversal_stats["combined_candidates"],
+            "reversal_combined_successes": reversal_stats["combined_successes"]
         }
         
         return df, stats
@@ -1430,7 +1426,13 @@ class StockScreener:
                 "clean": 0,
                 "target": 0,
                 "breakout_gain": 0,
-                "breakout_hold": 0
+                "breakout_hold": 0,
+                "reversal_slope_candidates": 0,
+                "reversal_slope_successes": 0,
+                "reversal_macd_candidates": 0,
+                "reversal_macd_successes": 0,
+                "reversal_combined_candidates": 0,
+                "reversal_combined_successes": 0
             }
             
             for r in results:
@@ -1442,6 +1444,15 @@ class StockScreener:
             
                 total_stats["setup"] += stats["setup"]
                 total_stats["breakout"] += stats["breakout"]
+                for key in [
+                    "reversal_slope_candidates",
+                    "reversal_slope_successes",
+                    "reversal_macd_candidates",
+                    "reversal_macd_successes",
+                    "reversal_combined_candidates",
+                    "reversal_combined_successes",
+                ]:
+                    total_stats[key] += stats[key]
                 total_stats["sustain"] += stats["sustain"]
                 total_stats["clean"] += stats["clean"]
                 total_stats["target"] += stats["target"]
@@ -1465,6 +1476,21 @@ class StockScreener:
                     f"Breakout内訳: "
                     f"future_gain>=3%={total_stats['breakout_gain']:,} "
                     f"→ close維持={total_stats['breakout_hold']:,}"
+                )
+
+            for name, label in [
+                ("slope", "下降＋Slope10改善"),
+                ("macd", "下降＋MACD改善"),
+                ("combined", "下降＋Slope10・MACD改善"),
+            ]:
+                candidates = total_stats[f"reversal_{name}_candidates"]
+                successes = total_stats[f"reversal_{name}_successes"]
+
+                logger.info(
+                    f"【反転診断】{label}: "
+                    f"候補={candidates:,} "
+                    f"成功={successes:,} "
+                    f"成功率={successes / max(candidates, 1):.2%}"
                 )
             
             if not training_dfs:
