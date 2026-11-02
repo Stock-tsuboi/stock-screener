@@ -1048,10 +1048,11 @@ class DatabaseManager:
             
             logger.info(f"株価データの更新完了: 合計 {total_processed_symbols} 銘柄を処理しました。")
 
-            # 古いデータのクリーンアップ（2年以上前のデータを削除）
-            if datetime.now().weekday() == 6:  # 日曜日のみ実行して負荷軽減
-                logger.info("古いデータのクリーンアップを実行中...")
-                conn.execute("DELETE FROM prices WHERE date < CURRENT_DATE - INTERVAL 2 YEAR")
+            # 古いデータのクリーンアップ（20年分を維持）
+            logger.info("20年保存期間のクリーンアップを実行中...")
+            conn.execute(
+                "DELETE FROM prices WHERE date < CURRENT_DATE - INTERVAL 20 YEAR"
+            )
 
         if failed_codes:
             logger.warning(f"取得失敗銘柄数: {len(failed_codes)} (例: {failed_codes[:5]}...)")
