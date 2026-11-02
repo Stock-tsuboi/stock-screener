@@ -728,6 +728,23 @@ class FeatureFactory:
         )
 
         logger.info(f"is_setup={int(is_setup.sum()):,}")
+        # ===== 反転診断ここから=====
+        valid_future = future_10d_gain.notna()
+        
+        is_downtrend = (
+            df["Slope20"] <= Config.SETUP_SLOPE20_MIN
+        )
+        
+        reversal_slope = (
+            is_downtrend
+            & (df["Slope10"] > df["Slope10"].shift(1))
+        )
+        
+        reversal_macd = (
+            is_downtrend
+            & (df["MACD_Hist"] > df["MACD_Hist"].shift(1))
+        )
+        # ===== 反転診断ここまで=====
 
         # ★ここから追加
         setup_ok = is_setup
