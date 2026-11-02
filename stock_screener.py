@@ -805,6 +805,9 @@ class FeatureFactory:
             "sustain": int(sustain_ok.sum()),
             "clean": int(clean_ok.sum()),
             "target": int(df["Target"].fillna(0).sum()),
+            "breakout_gain": int(
+                (future_gain >= Config.BREAKOUT_GAIN_MIN).sum()
+            ),
 
              # 追加
             "breakout_hold": int(
