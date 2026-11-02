@@ -1477,19 +1477,81 @@ class StockScreener:
                 class_weight="balanced_subsample"
             )
             
-            # ===== 未見データによるモデル性能検証 =====
-            # 時系列順の最後20%を検証専用にする
-            split_idx = int(len(X) * 0.8)
+            # ===== 日付単位・10営業日ギャップ付き検証 =====
 
-            X_train = X.iloc[:split_idx]
-            y_train = y.iloc[:split_idx]
-            X_valid = X.iloc[split_idx:]
-            y_valid = y.iloc[split_idx:]
+            def make_purged_date_splits(index, n_splits=3, gap=10):
+                dates = pd.DatetimeIndex(
+                    pd.to_datetime(index)
+                ).normalize()
+
+                unique_dates = pd.Index(
+                    dates.unique()
+                ).sort_values()
+
+                splitter = TimeSeriesSplit(
+                    n_splits=n_splits,
+                    gap=gap
+                )
+
+                splits = []
+
+                for train_date_idx, valid_date_idx in splitter.split(unique_dates):
+                    train_dates = unique_dates[train_date_idx]
+                    valid_dates = unique_dates[valid_date_idx]
+
+                    train_rows = np.flatnonzero(
+                        dates.isin(train_dates)
+                    )
+                    valid_rows = np.flatnonzero(
+                        dates.isin(valid_dates)
+                    )
+
+                    splits.append((train_rows, valid_rows))
+
+                return splits
+
+            # 日付単位で最後の20%を検証用にする
+            all_dates = pd.DatetimeIndex(
+                pd.to_datetime(X.index)
+            ).normalize()
+
+            unique_dates = pd.Index(
+                all_dates.unique()
+            ).sort_values()
+
+            split_date_idx = int(len(unique_dates) * 0.8)
+
+            # 検証開始前の10営業日は学習から除外
+            train_dates = unique_dates[:split_date_idx - 10]
+            valid_dates = unique_dates[split_date_idx:]
+
+            train_mask = all_dates.isin(train_dates)
+            valid_mask = all_dates.isin(valid_dates)
+
+            X_train = X.iloc[np.flatnonzero(train_mask)]
+            y_train = y.iloc[np.flatnonzero(train_mask)]
+
+            X_valid = X.iloc[np.flatnonzero(valid_mask)]
+            y_valid = y.iloc[np.flatnonzero(valid_mask)]
+
+            logger.info(
+                f"【日付分割】"
+                f"学習期間={train_dates.min().date()}～{train_dates.max().date()}, "
+                f"検証期間={valid_dates.min().date()}～{valid_dates.max().date()}, "
+                f"間隔=10営業日"
+            )
+
+            # 学習データ内の確率校正も10営業日空ける
+            validation_cv = make_purged_date_splits(
+                X_train.index,
+                n_splits=3,
+                gap=10
+            )
 
             validation_model = CalibratedClassifierCV(
                 estimator=base_model,
                 method="sigmoid",
-                cv=TimeSeriesSplit(n_splits=3)
+                cv=validation_cv
             )
 
             validation_model.fit(X_train, y_train)
@@ -1534,12 +1596,20 @@ class StockScreener:
                     )
 
             # ===== 未見データ検証ここまで =====
-            
+
+            # 本番モデルも10営業日ギャップ付きで確率校正
+            final_cv = make_purged_date_splits(
+                X.index,
+                n_splits=3,
+                gap=10
+            )
+
             self.model = CalibratedClassifierCV(
                 estimator=base_model,
                 method="sigmoid",
-                cv=TimeSeriesSplit(n_splits=3) # 時系列を考慮し、検証回数を増やして精度向上
+                cv=final_cv
             )
+
             self.model.fit(X, y)
 
             # ★ここから追加
