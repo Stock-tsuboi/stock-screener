@@ -1979,7 +1979,57 @@ class StockScreener:
                 filtered = potential_df
             else:
                 filtered = pd.DataFrame()
+            # ===== 初回抽出精度検証用ログ =====
+            if not filtered.empty:
+                audit_df = filtered.copy()
 
+                audit_df["selection_route"] = np.where(
+                    audit_df["is_potential"],
+                    "救済候補",
+                    "厳選候補"
+                )
+
+                audit_df["pass_prob"] = cond_prob.loc[audit_df.index]
+                audit_df["pass_tech"] = cond_tech.loc[audit_df.index]
+                audit_df["pass_slope"] = cond_slope_flexible.loc[audit_df.index]
+                audit_df["pass_sell"] = (~cond_sell).loc[audit_df.index]
+                audit_df["pass_EV"] = (
+                    res_df["EV"] > Config.EV_MIN
+                ).loc[audit_df.index]
+    
+                audit_columns = [
+                    "symbol",
+                    "selection_route",
+                    "prob",
+                    "EV",
+                    "Close",
+                    "Slope10",
+                    "Slope20",
+                    "SlopeCross",
+                    "SlopeAccel",
+                    "Bias25",
+                    "ret5",
+                    "VolRatio",
+                    "VolVCP",
+                    "Stage2_Score",
+                    "RS20",
+                    "pass_prob",
+                    "pass_tech",
+                    "pass_slope",
+                    "pass_sell",
+                    "pass_EV"
+                ]
+    
+                audit_columns = [
+                    col for col in audit_columns
+                    if col in audit_df.columns
+                ]
+    
+                logger.info(
+                    "\n===== 初回抽出銘柄の判定内容 =====\n%s",
+                    audit_df[audit_columns].to_string(index=False)
+                )
+        # ===== 検証ログここまで =====
         # 売り結果のまとめ
         sell_results = res_df[res_df["is_sell_signal"] == True].sort_values("ret1", ascending=True)
 
