@@ -728,22 +728,49 @@ class FeatureFactory:
         )
 
         logger.info(f"is_setup={int(is_setup.sum()):,}")
-        # ===== 反転診断ここから=====
+        
+        #ｍｎ ===== 反転診断ここから=====
         valid_future = future_10d_gain.notna()
         
+        # 中期的に下降している状態
         is_downtrend = (
             df["Slope20"] <= Config.SETUP_SLOPE20_MIN
         )
         
+        # 下降中に短期傾向が改善
         reversal_slope = (
             is_downtrend
             & (df["Slope10"] > df["Slope10"].shift(1))
         )
         
+        # 下降中にMACDが改善
         reversal_macd = (
             is_downtrend
             & (df["MACD_Hist"] > df["MACD_Hist"].shift(1))
         )
+        
+        # 現行Targetと同じ将来の成功条件
+        reversal_success = (
+            will_breakout
+            & will_sustain
+            & is_clean_move
+        )
+        
+        # 診断結果をログに出力
+        for name, condition in [
+            ("下降＋Slope10改善", reversal_slope),
+            ("下降＋MACD改善", reversal_macd),
+            ("下降＋Slope10・MACD改善", reversal_slope & reversal_macd),
+        ]:
+            candidates = condition & valid_future
+            successes = candidates & reversal_success
+        
+            logger.info(
+                f"【反転診断】{name}: "
+                f"候補={int(candidates.sum()):,} "
+                f"成功={int(successes.sum()):,} "
+                f"成功率={successes.sum() / max(int(candidates.sum()), 1):.2%}"
+            )
         # ===== 反転診断ここまで=====
 
         # ★ここから追加
