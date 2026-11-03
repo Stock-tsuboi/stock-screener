@@ -747,8 +747,7 @@ class FeatureFactory:
         )
         
         reversal_success = (
-            is_setup
-            & will_breakout
+            will_breakout
             & will_sustain
             & is_clean_move
         )
