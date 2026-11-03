@@ -752,7 +752,10 @@ class FeatureFactory:
             & is_clean_move
         )
         
-        reversal_stats = {}
+        reversal_stats = {
+            "baseline_candidates": int(valid_future.sum()),
+            "baseline_successes": int((valid_future & reversal_success).sum())
+        }
         
         for name, condition in [
             ("slope", reversal_slope),
@@ -817,6 +820,8 @@ class FeatureFactory:
                     (future_close_gain >= Config.BREAKOUT_CLOSE_GAIN_MIN)
                 ).sum()
             ),
+            "baseline_candidates": reversal_stats["baseline_candidates"],
+            "baseline_successes": reversal_stats["baseline_successes"],
             "reversal_slope_candidates": reversal_stats["slope_candidates"],
             "reversal_slope_successes": reversal_stats["slope_successes"],
             "reversal_macd_candidates": reversal_stats["macd_candidates"],
@@ -1430,6 +1435,8 @@ class StockScreener:
                 "target": 0,
                 "breakout_gain": 0,
                 "breakout_hold": 0,
+                "baseline_candidates": 0,
+                "baseline_successes": 0,
                 "reversal_slope_candidates": 0,
                 "reversal_slope_successes": 0,
                 "reversal_macd_candidates": 0,
