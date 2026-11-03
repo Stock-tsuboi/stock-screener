@@ -1455,6 +1455,8 @@ class StockScreener:
                 total_stats["setup"] += stats["setup"]
                 total_stats["breakout"] += stats["breakout"]
                 for key in [
+                    "baseline_candidates",
+                    "baseline_successes",
                     "reversal_slope_candidates",
                     "reversal_slope_successes",
                     "reversal_macd_candidates",
@@ -1488,6 +1490,16 @@ class StockScreener:
                     f"→ close維持={total_stats['breakout_hold']:,}"
                 )
 
+            baseline_candidates = total_stats["baseline_candidates"]
+            baseline_successes = total_stats["baseline_successes"]
+
+            logger.info(
+                f"【反転診断・全体基準】"
+                f"候補={baseline_candidates:,} "
+                f"成功={baseline_successes:,} "
+                f"成功率={baseline_successes / max(baseline_candidates, 1):.2%}"
+            )
+            
             for name, label in [
                 ("slope", "下降＋Slope10改善"),
                 ("macd", "下降＋MACD改善"),
