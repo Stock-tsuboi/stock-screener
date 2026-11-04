@@ -1632,6 +1632,44 @@ class StockScreener:
             train_dates = unique_dates[:split_date_idx - 10]
             valid_dates = unique_dates[split_date_idx:]
 
+            # ===== 未学習期間での反転成功率を検証 =====
+            reversal_all = pd.concat(reversal_dfs).sort_index()
+
+            reversal_valid = reversal_all.loc[
+                reversal_all.index.normalize().isin(valid_dates)
+            ]
+
+            baseline_candidates = reversal_valid[
+                "Baseline_Candidate"
+            ].sum()
+
+            baseline_successes = reversal_valid[
+                "Baseline_Success"
+            ].sum()
+
+            slope_candidates = reversal_valid[
+                "Slope_Candidate"
+            ].sum()
+
+            slope_successes = reversal_valid[
+                "Slope_Success"
+            ].sum()
+
+            logger.info(
+                f"【未学習期間・全体基準】"
+                f"候補={baseline_candidates:,} "
+                f"成功={baseline_successes:,} "
+                f"成功率={baseline_successes / max(baseline_candidates, 1):.2%}"
+            )
+
+            logger.info(
+                f"【未学習期間・下降＋Slope10改善】"
+                f"候補={slope_candidates:,} "
+                f"成功={slope_successes:,} "
+                f"成功率={slope_successes / max(slope_candidates, 1):.2%}"
+            )
+            # ===== 未学習期間の反転検証ここまで =====
+
             train_mask = all_dates.isin(train_dates)
             valid_mask = all_dates.isin(valid_dates)
 
