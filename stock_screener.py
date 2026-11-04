@@ -1437,6 +1437,7 @@ class StockScreener:
             # 学習データの準備を並列化
             results = Parallel(n_jobs=2)(delayed(train_worker)(s, d) for s, d in all_data.items())
             training_dfs = []
+            reversal_dfs = []
             
             total_stats = {
                 "setup": 0,
@@ -1460,8 +1461,9 @@ class StockScreener:
                 if r is None:
                     continue
             
-                df_train, stats = r
+                df_train, stats, reversal_diag = r
                 training_dfs.append(df_train)
+                reversal_dfs.append(reversal_diag)
             
                 total_stats["setup"] += stats["setup"]
                 total_stats["breakout"] += stats["breakout"]
