@@ -811,13 +811,13 @@ class FeatureFactory:
         )
         # ============================
         
-        stats["_reversal_diag"] = reversal_diag
         stats = {
             "setup": int(setup_ok.sum()),
             "breakout": int(breakout_ok.sum()),
             "sustain": int(sustain_ok.sum()),
             "clean": int(clean_ok.sum()),
             "target": int(df["Target"].fillna(0).sum()),
+            "_reversal_diag": reversal_diag,
             "breakout_gain": int(
                 (future_gain >= Config.BREAKOUT_GAIN_MIN).sum()
             ),
