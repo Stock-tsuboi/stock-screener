@@ -1371,6 +1371,7 @@ class StockScreener:
             train_df = train_df.dropna(subset=["Target"])
             
             reversal_diag = stats.pop("_reversal_diag")
+            reversal_diag = reversal_diag.loc[train_df.index]
             return train_df, stats, reversal_diag
 
         # モデルの読み込みと整合性チェック
