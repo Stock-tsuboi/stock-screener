@@ -1671,6 +1671,38 @@ class StockScreener:
                 f"成功={slope_successes:,} "
                 f"成功率={slope_successes / max(slope_candidates, 1):.2%}"
             )
+            # ===== Slope10改善幅別の成功率 =====
+            slope_data = reversal_valid.loc[
+                reversal_valid["Slope_Candidate"] == 1
+            ].copy()
+
+            slope_data = slope_data.dropna(
+                subset=["Slope10_Change"]
+            )
+
+            if len(slope_data) > 0:
+                slope_data["改善幅グループ"] = pd.qcut(
+                    slope_data["Slope10_Change"],
+                    q=4,
+                    duplicates="drop"
+                )
+
+                slope_groups = slope_data.groupby(
+                    "改善幅グループ",
+                    observed=True
+                ).agg(
+                    候補数=("Slope_Candidate", "size"),
+                    成功数=("Slope_Success", "sum")
+                )
+
+                for group, row in slope_groups.iterrows():
+                    logger.info(
+                        f"【Slope10改善幅別】{group}: "
+                        f"候補={int(row['候補数']):,} "
+                        f"成功={int(row['成功数']):,} "
+                        f"成功率={row['成功数'] / row['候補数']:.2%}"
+                    )
+            # ===== Slope10改善幅別の検証ここまで =====
             # ===== 未学習期間の反転検証ここまで =====
 
             train_mask = all_dates.isin(train_dates)
