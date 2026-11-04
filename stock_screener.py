@@ -776,7 +776,10 @@ class FeatureFactory:
             "Slope_Candidate": (reversal_slope & valid_future).astype(int),
             "Slope_Success": (
                 reversal_slope & valid_future & reversal_success
-            ).astype(int)
+            ).astype(int),
+            "Slope10_Change": (
+                df["Slope10"] - df["Slope10"].shift(1)
+            )
         }, index=df.index)
 
         # ★ここから追加
