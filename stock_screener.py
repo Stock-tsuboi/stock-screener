@@ -770,6 +770,15 @@ class FeatureFactory:
         
         # ===== 反転診断ここまで=====
 
+        reversal_diag = pd.DataFrame({
+            "Baseline_Candidate": valid_future.astype(int),
+            "Baseline_Success": (valid_future & reversal_success).astype(int),
+            "Slope_Candidate": (reversal_slope & valid_future).astype(int),
+            "Slope_Success": (
+                reversal_slope & valid_future & reversal_success
+            ).astype(int)
+        }, index=df.index)
+
         # ★ここから追加
         setup_ok = is_setup
         breakout_ok = setup_ok & will_breakout
