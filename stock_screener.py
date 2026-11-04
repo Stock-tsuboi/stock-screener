@@ -811,6 +811,7 @@ class FeatureFactory:
         )
         # ============================
         
+        stats["_reversal_diag"] = reversal_diag
         stats = {
             "setup": int(setup_ok.sum()),
             "breakout": int(breakout_ok.sum()),
@@ -1369,7 +1370,8 @@ class StockScreener:
             # Targetが存在しない行は学習対象から除外
             train_df = train_df.dropna(subset=["Target"])
             
-            return train_df, stats
+            reversal_diag = stats.pop("_reversal_diag")
+            return train_df, stats, reversal_diag
 
         # モデルの読み込みと整合性チェック
         need_training = False
