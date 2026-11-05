@@ -1734,12 +1734,32 @@ class StockScreener:
                     > symbol_stats["Baseline_Rate"]
                 ).sum()
 
+                equal_symbols = (
+                    symbol_stats["Slope_Rate"]
+                    == symbol_stats["Baseline_Rate"]
+                ).sum()
+
+                worse_symbols = (
+                    symbol_stats["Slope_Rate"]
+                    < symbol_stats["Baseline_Rate"]
+                ).sum()
+
+                total_symbols = len(symbol_stats)
+
                 logger.info(
                     f"【銘柄別検証・候補5件以上】"
-                    f"対象銘柄数={len(symbol_stats):,} "
-                    f"Slope平均成功率={symbol_stats['Slope_Rate'].mean():.2%} "
+                    f"対象銘柄数={total_symbols:,} "
+                    f"改善={better_symbols:,} "
+                    f"同率={equal_symbols:,} "
+                    f"悪化={worse_symbols:,}"
+                )
+
+                logger.info(
+                    f"【銘柄別成功率】"
+                    f"Slope平均={symbol_stats['Slope_Rate'].mean():.2%} "
                     f"Slope中央値={symbol_stats['Slope_Rate'].median():.2%} "
-                    f"全体基準より改善した銘柄数={better_symbols:,}"
+                    f"基準平均={symbol_stats['Baseline_Rate'].mean():.2%} "
+                    f"基準中央値={symbol_stats['Baseline_Rate'].median():.2%}"
                 )
             # ===== 銘柄別の反転成功率ここまで =====
             
