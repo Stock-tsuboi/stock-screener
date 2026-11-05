@@ -771,7 +771,6 @@ class FeatureFactory:
         # ===== 反転診断ここまで=====
 
         reversal_diag = pd.DataFrame({
-            "Symbol": symbol,
             "Baseline_Candidate": valid_future.astype(int),
             "Baseline_Success": (valid_future & reversal_success).astype(int),
             "Slope_Candidate": (reversal_slope & valid_future).astype(int),
@@ -1376,8 +1375,9 @@ class StockScreener:
             
             reversal_diag = stats.pop("_reversal_diag")
             reversal_diag = reversal_diag.loc[train_df.index]
+            reversal_diag["Symbol"] = symbol
             return train_df, stats, reversal_diag
-
+            
         # モデルの読み込みと整合性チェック
         need_training = False
         reason = ""
