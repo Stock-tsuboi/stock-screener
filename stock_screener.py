@@ -1810,14 +1810,6 @@ class StockScreener:
                     f"{total_noslope_successes:,}/{total_noslope_candidates:,}"
                     f" ({noslope_weighted_rate:.2%})"
                 )
-                
-                logger.info(
-                    f"【銘柄別成功率・下降トレンド内比較】"
-                    f"Slope改善あり平均={symbol_stats['Slope_Rate'].mean():.2%} "
-                    f"Slope改善なし平均={symbol_stats['NoSlope_Rate'].mean():.2%} "
-                    f"Slope改善あり中央値={symbol_stats['Slope_Rate'].median():.2%} "
-                    f"Slope改善なし中央値={symbol_stats['NoSlope_Rate'].median():.2%}"
-                )
             # ===== 銘柄別の反転成功率ここまで =====
             
             # ===== 未学習期間の反転検証ここまで =====
