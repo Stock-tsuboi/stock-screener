@@ -1762,8 +1762,53 @@ class StockScreener:
 
                 total_symbols = len(symbol_stats)
 
+                # 同じ対象銘柄群の候補数・成功数を合算
+                total_slope_candidates = (
+                    symbol_stats["Slope_Candidates"].sum()
+                )
+                total_slope_successes = (
+                    symbol_stats["Slope_Successes"].sum()
+                )
+                total_noslope_candidates = (
+                    symbol_stats["NoSlope_Candidates"].sum()
+                )
+                total_noslope_successes = (
+                    symbol_stats["NoSlope_Successes"].sum()
+                )
+
+                slope_weighted_rate = (
+                    total_slope_successes
+                    / total_slope_candidates
+                )
+                noslope_weighted_rate = (
+                    total_noslope_successes
+                    / total_noslope_candidates
+                )
+
                 logger.info(
                     f"【銘柄別検証・両群候補5件以上】"
+                    f"対象銘柄数={total_symbols:,} "
+                    f"改善={better_symbols:,} "
+                    f"同率={equal_symbols:,} "
+                    f"悪化={worse_symbols:,}"
+                )
+
+                logger.info(
+                    f"【銘柄別成功率・下降トレンド内比較】"
+                    f"Slope改善あり平均={symbol_stats['Slope_Rate'].mean():.2%} "
+                    f"Slope改善なし平均={symbol_stats['NoSlope_Rate'].mean():.2%} "
+                    f"Slope改善あり中央値={symbol_stats['Slope_Rate'].median():.2%} "
+                    f"Slope改善なし中央値={symbol_stats['NoSlope_Rate'].median():.2%}"
+                )
+
+                logger.info(
+                    f"【銘柄別成功率・候補数加重比較】"
+                    f"Slope改善あり="
+                    f"{total_slope_successes:,}/{total_slope_candidates:,}"
+                    f" ({slope_weighted_rate:.2%}) "
+                    f"Slope改善なし="
+                    f"{total_noslope_successes:,}/{total_noslope_candidates:,}"
+                    f" ({noslope_weighted_rate:.2%})"
                     f"対象銘柄数={total_symbols:,} "
                     f"改善={better_symbols:,} "
                     f"同率={equal_symbols:,} "
