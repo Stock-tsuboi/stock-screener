@@ -1713,47 +1713,57 @@ class StockScreener:
 
             # ===== 銘柄別の反転成功率 =====
             symbol_stats = reversal_valid.groupby("Symbol").agg(
-                Baseline_Candidates=("Baseline_Candidate", "sum"),
-                Baseline_Successes=("Baseline_Success", "sum"),
+                Downtrend_Candidates=("Downtrend_Candidate", "sum"),
+                Downtrend_Successes=("Downtrend_Success", "sum"),
                 Slope_Candidates=("Slope_Candidate", "sum"),
                 Slope_Successes=("Slope_Success", "sum")
             )
 
-            # Slope候補が5件以上ある銘柄に限定
+            # Slope改善あり・なしの両方で候補が5件以上ある銘柄に限定
+            symbol_stats["NoSlope_Candidates"] = (
+                symbol_stats["Downtrend_Candidates"]
+                - symbol_stats["Slope_Candidates"]
+            )
+            symbol_stats["NoSlope_Successes"] = (
+                symbol_stats["Downtrend_Successes"]
+                - symbol_stats["Slope_Successes"]
+            )
+
             symbol_stats = symbol_stats.loc[
-                symbol_stats["Slope_Candidates"] >= 5
+                (symbol_stats["Slope_Candidates"] >= 5)
+                & (symbol_stats["NoSlope_Candidates"] >= 5)
             ].copy()
 
             if len(symbol_stats) > 0:
-                symbol_stats["Baseline_Rate"] = (
-                    symbol_stats["Baseline_Successes"]
-                    / symbol_stats["Baseline_Candidates"].clip(lower=1)
-                )
-
                 symbol_stats["Slope_Rate"] = (
                     symbol_stats["Slope_Successes"]
                     / symbol_stats["Slope_Candidates"]
                 )
 
+                symbol_stats["NoSlope_Rate"] = (
+                    symbol_stats["NoSlope_Successes"]
+                    / symbol_stats["NoSlope_Candidates"]
+                )
+
                 better_symbols = (
                     symbol_stats["Slope_Rate"]
-                    > symbol_stats["Baseline_Rate"]
+                    > symbol_stats["NoSlope_Rate"]
                 ).sum()
 
                 equal_symbols = (
                     symbol_stats["Slope_Rate"]
-                    == symbol_stats["Baseline_Rate"]
+                    == symbol_stats["NoSlope_Rate"]
                 ).sum()
 
                 worse_symbols = (
                     symbol_stats["Slope_Rate"]
-                    < symbol_stats["Baseline_Rate"]
+                    < symbol_stats["NoSlope_Rate"]
                 ).sum()
 
                 total_symbols = len(symbol_stats)
 
                 logger.info(
-                    f"【銘柄別検証・候補5件以上】"
+                    f"【銘柄別検証・両群候補5件以上】"
                     f"対象銘柄数={total_symbols:,} "
                     f"改善={better_symbols:,} "
                     f"同率={equal_symbols:,} "
@@ -1761,11 +1771,11 @@ class StockScreener:
                 )
 
                 logger.info(
-                    f"【銘柄別成功率】"
-                    f"Slope平均={symbol_stats['Slope_Rate'].mean():.2%} "
-                    f"Slope中央値={symbol_stats['Slope_Rate'].median():.2%} "
-                    f"基準平均={symbol_stats['Baseline_Rate'].mean():.2%} "
-                    f"基準中央値={symbol_stats['Baseline_Rate'].median():.2%}"
+                    f"【銘柄別成功率・下降トレンド内比較】"
+                    f"Slope改善あり平均={symbol_stats['Slope_Rate'].mean():.2%} "
+                    f"Slope改善なし平均={symbol_stats['NoSlope_Rate'].mean():.2%} "
+                    f"Slope改善あり中央値={symbol_stats['Slope_Rate'].median():.2%} "
+                    f"Slope改善なし中央値={symbol_stats['NoSlope_Rate'].median():.2%}"
                 )
             # ===== 銘柄別の反転成功率ここまで =====
             
