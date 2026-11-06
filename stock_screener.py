@@ -1809,12 +1809,8 @@ class StockScreener:
                     f"Slope改善なし="
                     f"{total_noslope_successes:,}/{total_noslope_candidates:,}"
                     f" ({noslope_weighted_rate:.2%})"
-                    f"対象銘柄数={total_symbols:,} "
-                    f"改善={better_symbols:,} "
-                    f"同率={equal_symbols:,} "
-                    f"悪化={worse_symbols:,}"
                 )
-
+                
                 logger.info(
                     f"【銘柄別成功率・下降トレンド内比較】"
                     f"Slope改善あり平均={symbol_stats['Slope_Rate'].mean():.2%} "
