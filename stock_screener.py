@@ -773,6 +773,12 @@ class FeatureFactory:
         reversal_diag = pd.DataFrame({
             "Baseline_Candidate": valid_future.astype(int),
             "Baseline_Success": (valid_future & reversal_success).astype(int),
+            "Downtrend_Candidate": (
+                is_downtrend & valid_future
+            ).astype(int),
+            "Downtrend_Success": (
+                is_downtrend & valid_future & reversal_success
+            ).astype(int),
             "Slope_Candidate": (reversal_slope & valid_future).astype(int),
             "Slope_Success": (
                 reversal_slope & valid_future & reversal_success
