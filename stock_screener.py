@@ -1928,6 +1928,103 @@ class StockScreener:
                     f" ({nomacd_weighted_rate:.2%})"
                 )
             # ===== MACD改善あり・なしの銘柄別比較ここまで =====
+
+            # ===== UpVolumeShare改善あり・なしの銘柄別比較 =====
+            volume_stats = reversal_valid.groupby("Symbol").agg(
+                Downtrend_Candidates=("Downtrend_Candidate", "sum"),
+                Downtrend_Successes=("Downtrend_Success", "sum"),
+                Volume_Candidates=("UpVolumeShare_Candidate", "sum"),
+                Volume_Successes=("UpVolumeShare_Success", "sum")
+            )
+
+            volume_stats["NoVolume_Candidates"] = (
+                volume_stats["Downtrend_Candidates"]
+                - volume_stats["Volume_Candidates"]
+            )
+            volume_stats["NoVolume_Successes"] = (
+                volume_stats["Downtrend_Successes"]
+                - volume_stats["Volume_Successes"]
+            )
+
+            volume_stats = volume_stats.loc[
+                (volume_stats["Volume_Candidates"] >= 5)
+                & (volume_stats["NoVolume_Candidates"] >= 5)
+            ].copy()
+
+            if len(volume_stats) > 0:
+                volume_stats["Volume_Rate"] = (
+                    volume_stats["Volume_Successes"]
+                    / volume_stats["Volume_Candidates"]
+                )
+
+                volume_stats["NoVolume_Rate"] = (
+                    volume_stats["NoVolume_Successes"]
+                    / volume_stats["NoVolume_Candidates"]
+                )
+
+                better_volume = (
+                    volume_stats["Volume_Rate"]
+                    > volume_stats["NoVolume_Rate"]
+                ).sum()
+
+                equal_volume = (
+                    volume_stats["Volume_Rate"]
+                    == volume_stats["NoVolume_Rate"]
+                ).sum()
+
+                worse_volume = (
+                    volume_stats["Volume_Rate"]
+                    < volume_stats["NoVolume_Rate"]
+                ).sum()
+
+                total_volume_candidates = (
+                    volume_stats["Volume_Candidates"].sum()
+                )
+                total_volume_successes = (
+                    volume_stats["Volume_Successes"].sum()
+                )
+                total_novolume_candidates = (
+                    volume_stats["NoVolume_Candidates"].sum()
+                )
+                total_novolume_successes = (
+                    volume_stats["NoVolume_Successes"].sum()
+                )
+
+                volume_weighted_rate = (
+                    total_volume_successes
+                    / total_volume_candidates
+                )
+                novolume_weighted_rate = (
+                    total_novolume_successes
+                    / total_novolume_candidates
+                )
+
+                logger.info(
+                    f"【UpVolumeShare銘柄別検証・両群候補5件以上】"
+                    f"対象銘柄数={len(volume_stats):,} "
+                    f"改善={better_volume:,} "
+                    f"同率={equal_volume:,} "
+                    f"悪化={worse_volume:,}"
+                )
+
+                logger.info(
+                    f"【UpVolumeShare銘柄別成功率・下降トレンド内比較】"
+                    f"改善あり平均={volume_stats['Volume_Rate'].mean():.2%} "
+                    f"改善なし平均={volume_stats['NoVolume_Rate'].mean():.2%} "
+                    f"改善あり中央値={volume_stats['Volume_Rate'].median():.2%} "
+                    f"改善なし中央値={volume_stats['NoVolume_Rate'].median():.2%}"
+                )
+
+                logger.info(
+                    f"【UpVolumeShare銘柄別成功率・候補数加重比較】"
+                    f"改善あり="
+                    f"{total_volume_successes:,}/{total_volume_candidates:,}"
+                    f" ({volume_weighted_rate:.2%}) "
+                    f"改善なし="
+                    f"{total_novolume_successes:,}/{total_novolume_candidates:,}"
+                    f" ({novolume_weighted_rate:.2%})"
+                )
+            # ===== UpVolumeShare改善あり・なしの銘柄別比較ここまで =====
             
             # ===== 銘柄別の反転成功率ここまで =====
             
