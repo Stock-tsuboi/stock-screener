@@ -785,6 +785,13 @@ class FeatureFactory:
             ).astype(int),
             "Slope10_Change": (
                 df["Slope10"] - df["Slope10"].shift(1)
+            ),
+            "MACD_Candidate": (reversal_macd & valid_future).astype(int),
+            "MACD_Success": (
+                reversal_macd & valid_future & reversal_success
+            ).astype(int),
+            "MACD_Hist_Change": (
+                df["MACD_Hist"] - df["MACD_Hist"].shift(1)
             )
         }, index=df.index)
         
