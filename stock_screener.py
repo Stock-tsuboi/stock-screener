@@ -1817,6 +1817,104 @@ class StockScreener:
                     f"{total_noslope_successes:,}/{total_noslope_candidates:,}"
                     f" ({noslope_weighted_rate:.2%})"
                 )
+            
+            # ===== MACD改善あり・なしの銘柄別比較 =====
+            macd_stats = reversal_valid.groupby("Symbol").agg(
+                Downtrend_Candidates=("Downtrend_Candidate", "sum"),
+                Downtrend_Successes=("Downtrend_Success", "sum"),
+                MACD_Candidates=("MACD_Candidate", "sum"),
+                MACD_Successes=("MACD_Success", "sum")
+            )
+
+            macd_stats["NoMACD_Candidates"] = (
+                macd_stats["Downtrend_Candidates"]
+                - macd_stats["MACD_Candidates"]
+            )
+            macd_stats["NoMACD_Successes"] = (
+                macd_stats["Downtrend_Successes"]
+                - macd_stats["MACD_Successes"]
+            )
+
+            macd_stats = macd_stats.loc[
+                (macd_stats["MACD_Candidates"] >= 5)
+                & (macd_stats["NoMACD_Candidates"] >= 5)
+            ].copy()
+
+            if len(macd_stats) > 0:
+                macd_stats["MACD_Rate"] = (
+                    macd_stats["MACD_Successes"]
+                    / macd_stats["MACD_Candidates"]
+                )
+
+                macd_stats["NoMACD_Rate"] = (
+                    macd_stats["NoMACD_Successes"]
+                    / macd_stats["NoMACD_Candidates"]
+                )
+
+                better_macd = (
+                    macd_stats["MACD_Rate"]
+                    > macd_stats["NoMACD_Rate"]
+                ).sum()
+
+                equal_macd = (
+                    macd_stats["MACD_Rate"]
+                    == macd_stats["NoMACD_Rate"]
+                ).sum()
+
+                worse_macd = (
+                    macd_stats["MACD_Rate"]
+                    < macd_stats["NoMACD_Rate"]
+                ).sum()
+
+                total_macd_candidates = (
+                    macd_stats["MACD_Candidates"].sum()
+                )
+                total_macd_successes = (
+                    macd_stats["MACD_Successes"].sum()
+                )
+                total_nomacd_candidates = (
+                    macd_stats["NoMACD_Candidates"].sum()
+                )
+                total_nomacd_successes = (
+                    macd_stats["NoMACD_Successes"].sum()
+                )
+
+                macd_weighted_rate = (
+                    total_macd_successes
+                    / total_macd_candidates
+                )
+                nomacd_weighted_rate = (
+                    total_nomacd_successes
+                    / total_nomacd_candidates
+                )
+
+                logger.info(
+                    f"【MACD銘柄別検証・両群候補5件以上】"
+                    f"対象銘柄数={len(macd_stats):,} "
+                    f"改善={better_macd:,} "
+                    f"同率={equal_macd:,} "
+                    f"悪化={worse_macd:,}"
+                )
+
+                logger.info(
+                    f"【MACD銘柄別成功率・下降トレンド内比較】"
+                    f"MACD改善あり平均={macd_stats['MACD_Rate'].mean():.2%} "
+                    f"MACD改善なし平均={macd_stats['NoMACD_Rate'].mean():.2%} "
+                    f"MACD改善あり中央値={macd_stats['MACD_Rate'].median():.2%} "
+                    f"MACD改善なし中央値={macd_stats['NoMACD_Rate'].median():.2%}"
+                )
+
+                logger.info(
+                    f"【MACD銘柄別成功率・候補数加重比較】"
+                    f"MACD改善あり="
+                    f"{total_macd_successes:,}/{total_macd_candidates:,}"
+                    f" ({macd_weighted_rate:.2%}) "
+                    f"MACD改善なし="
+                    f"{total_nomacd_successes:,}/{total_nomacd_candidates:,}"
+                    f" ({nomacd_weighted_rate:.2%})"
+                )
+            # ===== MACD改善あり・なしの銘柄別比較ここまで =====
+            
             # ===== 銘柄別の反転成功率ここまで =====
             
             # ===== 未学習期間の反転検証ここまで =====
