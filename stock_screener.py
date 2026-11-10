@@ -792,6 +792,20 @@ class FeatureFactory:
             ).astype(int),
             "MACD_Hist_Change": (
                 df["MACD_Hist"] - df["MACD_Hist"].shift(1)
+            ),
+            "UpVolumeShare_Candidate": (
+                is_downtrend
+                & (df["UpVolumeShare"] > df["UpVolumeShare"].shift(1))
+                & valid_future
+            ).astype(int),
+            "UpVolumeShare_Success": (
+                is_downtrend
+                & (df["UpVolumeShare"] > df["UpVolumeShare"].shift(1))
+                & valid_future
+                & reversal_success
+            ).astype(int),
+            "UpVolumeShare_Change": (
+                df["UpVolumeShare"] - df["UpVolumeShare"].shift(1)
             )
         }, index=df.index)
         
