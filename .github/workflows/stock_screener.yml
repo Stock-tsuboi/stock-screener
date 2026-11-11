@@ -47,7 +47,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: model_v2.pkl
-          key: stock-model-${{ runner.os }}-v1
+          key: stock-model-${{ runner.os }}-v2-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            stock-model-${{ runner.os }}-v2-
       
       - name: Run stock screener
         env:
