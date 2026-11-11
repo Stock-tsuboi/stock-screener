@@ -40,7 +40,15 @@ jobs:
           key: stock-data-${{ runner.os }}-v2 # バージョンを上げて再学習を強制
           restore-keys: |
             stock-data-${{ runner.os }}-
+      - name: Remove Legacy Model
+        run: rm -f model_v2.pkl
 
+      - name: Cache AI Model
+        uses: actions/cache@v4
+        with:
+          path: model_v2.pkl
+          key: stock-model-${{ runner.os }}-v1
+      
       - name: Run stock screener
         env:
           LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
