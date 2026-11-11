@@ -1732,6 +1732,39 @@ class StockScreener:
                     )
             # ===== Slope10改善幅別の検証ここまで =====
 
+            # ===== MACD_Hist改善幅別の成功率 =====
+            macd_data = reversal_valid.loc[
+                reversal_valid["MACD_Candidate"] == 1
+            ].copy()
+
+            macd_data = macd_data.dropna(
+                subset=["MACD_Hist_Change"]
+            )
+
+            if len(macd_data) > 0:
+                macd_data["改善幅グループ"] = pd.qcut(
+                    macd_data["MACD_Hist_Change"],
+                    q=4,
+                    duplicates="drop"
+                )
+
+                macd_groups = macd_data.groupby(
+                    "改善幅グループ",
+                    observed=True
+                ).agg(
+                    候補数=("MACD_Candidate", "size"),
+                    成功数=("MACD_Success", "sum")
+                )
+
+                for group, row in macd_groups.iterrows():
+                    logger.info(
+                        f"【MACD_Hist改善幅別】{group}: "
+                        f"候補={int(row['候補数']):,} "
+                        f"成功={int(row['成功数']):,} "
+                        f"成功率={row['成功数'] / row['候補数']:.2%}"
+                    )
+            # ===== MACD_Hist改善幅別の検証ここまで =====
+
             # ===== 銘柄別の反転成功率 =====
             symbol_stats = reversal_valid.groupby("Symbol").agg(
                 Downtrend_Candidates=("Downtrend_Candidate", "sum"),
