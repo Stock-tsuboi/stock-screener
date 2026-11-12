@@ -793,6 +793,10 @@ class FeatureFactory:
             "MACD_Hist_Change": (
                 df["MACD_Hist"] - df["MACD_Hist"].shift(1)
             ),
+            "MACD_Hist_Change_ATR": (
+                (df["MACD_Hist"] - df["MACD_Hist"].shift(1))
+                / (df["atr_ratio"] * df["Close"]).replace(0, np.nan)
+            ),
             "UpVolumeShare_Candidate": (
                 is_downtrend
                 & (df["UpVolumeShare"] > df["UpVolumeShare"].shift(1))
