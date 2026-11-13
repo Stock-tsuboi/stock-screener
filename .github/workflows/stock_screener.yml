@@ -6,7 +6,13 @@ on:
     - cron: '42 23 * * 0-4'
     # 月〜金 16:12 JST (07:12 UTC) - 大引け後チェック（15時台の混雑ピークを回避）
     - cron: '12 7 * * 1-5'
-  workflow_dispatch: # 手動実行も可能にする
+  workflow_dispatch:
+    inputs:
+      run_diagnostics:
+        description: 'MACDなどの検証を実行する'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   build:
@@ -55,6 +61,7 @@ jobs:
         env:
           LINE_BOT_TOKEN: ${{ secrets.LINE_BOT_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
+          RUN_REVERSAL_DIAGNOSTICS: ${{ github.event_name == 'workflow_dispatch' && inputs.run_diagnostics && '1' || '0' }}
         run: python stock_screener.py
 
       - name: Commit and push history
