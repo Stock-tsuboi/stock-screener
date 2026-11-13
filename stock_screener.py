@@ -1412,6 +1412,10 @@ class StockScreener:
         # モデルの読み込みと整合性チェック
         need_training = False
         reason = ""
+
+        run_diagnostics = (
+            os.getenv("RUN_REVERSAL_DIAGNOSTICS", "0") == "1"
+        )
         
         if not os.path.exists(Config.MODEL_PATH):
             need_training = True
@@ -1465,10 +1469,17 @@ class StockScreener:
                 need_training = True
                 reason = "モデル読込失敗"
 
-        if need_training:
-            logger.info(
-                f"モデルを新規学習します。理由: {reason}"
-            )
+        diagnostics_only = run_diagnostics and not need_training
+
+        if need_training or run_diagnostics:
+            if need_training:
+                logger.info(
+                    f"モデルを新規学習します。理由: {reason}"
+                )
+            else:
+                logger.info(
+                    "手動検証モード：モデルを再学習せず検証を実行します。"
+                )
             
             # 学習データの準備を並列化
             results = Parallel(n_jobs=2)(delayed(train_worker)(s, d) for s, d in all_data.items())
@@ -2167,6 +2178,13 @@ class StockScreener:
             # ===== 銘柄別の反転成功率ここまで =====
             
             # ===== 未学習期間の反転検証ここまで =====
+
+            # 手動検証のみの場合は、モデルを再学習せず終了
+            if diagnostics_only:
+                logger.info(
+                    "手動検証が完了しました。既存モデルは変更していません。"
+                )
+                return self.model is not None
 
             train_mask = all_dates.isin(train_dates)
             valid_mask = all_dates.isin(valid_dates)
