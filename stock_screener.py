@@ -605,6 +605,16 @@ class FeatureFactory:
         future_max = df["High"].shift(-1).rolling(window=indexer, min_periods=5).max()
         future_gain = future_max / df["Close"] - 1
 
+        # 未来10営業日以内の最大上昇率
+        indexer10 = pd.api.indexers.FixedForwardWindowIndexer(
+            window_size=10
+        )
+        future_max10 = df["High"].shift(-1).rolling(
+            window=indexer10,
+            min_periods=10
+        ).max()
+        future_gain10 = future_max10 / df["Close"] - 1
+
         # ★★★ここを追加★★★
         future_close5 = df["Close"].shift(-5)
         future_close_gain = future_close5 / df["Close"] - 1
@@ -797,6 +807,8 @@ class FeatureFactory:
                 (df["MACD_Hist"] - df["MACD_Hist"].shift(1))
                 / (df["atr_ratio"] * df["Close"]).replace(0, np.nan)
             ),
+            "MACD_MaxGain_5D": future_gain,
+            "MACD_MaxGain_10D": future_gain10,
             "UpVolumeShare_Candidate": (
                 is_downtrend
                 & (df["UpVolumeShare"] > df["UpVolumeShare"].shift(1))
