@@ -1769,6 +1769,107 @@ class StockScreener:
                     )
             # ===== MACD_Hist ATR補正改善幅別の検証ここまで =====
 
+            # ===== MACD_Hist ATR補正改善幅・銘柄別比較 =====
+            macd_symbol_data = macd_data.copy()
+
+            if len(macd_symbol_data) > 0:
+                macd_symbol_data["MACD_Quartile"] = pd.qcut(
+                    macd_symbol_data["MACD_Hist_Change_ATR"].rank(
+                        method="first"
+                    ),
+                    q=4,
+                    labels=False
+                )
+
+                macd_symbol_stats = macd_symbol_data.assign(
+                    Q1_Candidate=(
+                        macd_symbol_data["MACD_Quartile"] == 0
+                    ).astype(int),
+                    Q1_Success=(
+                        (macd_symbol_data["MACD_Quartile"] == 0)
+                        & (macd_symbol_data["MACD_Success"] == 1)
+                    ).astype(int),
+                    Q4_Candidate=(
+                        macd_symbol_data["MACD_Quartile"] == 3
+                    ).astype(int),
+                    Q4_Success=(
+                        (macd_symbol_data["MACD_Quartile"] == 3)
+                        & (macd_symbol_data["MACD_Success"] == 1)
+                    ).astype(int)
+                ).groupby("Symbol").agg(
+                    Q1_Candidates=("Q1_Candidate", "sum"),
+                    Q1_Successes=("Q1_Success", "sum"),
+                    Q4_Candidates=("Q4_Candidate", "sum"),
+                    Q4_Successes=("Q4_Success", "sum")
+                )
+
+                macd_symbol_stats = macd_symbol_stats.loc[
+                    (macd_symbol_stats["Q1_Candidates"] >= 5)
+                    & (macd_symbol_stats["Q4_Candidates"] >= 5)
+                ].copy()
+
+                if len(macd_symbol_stats) > 0:
+                    macd_symbol_stats["Q1_Rate"] = (
+                        macd_symbol_stats["Q1_Successes"]
+                        / macd_symbol_stats["Q1_Candidates"]
+                    )
+
+                    macd_symbol_stats["Q4_Rate"] = (
+                        macd_symbol_stats["Q4_Successes"]
+                        / macd_symbol_stats["Q4_Candidates"]
+                    )
+
+                    better = (
+                        macd_symbol_stats["Q4_Rate"]
+                        > macd_symbol_stats["Q1_Rate"]
+                    ).sum()
+
+                    equal = (
+                        macd_symbol_stats["Q4_Rate"]
+                        == macd_symbol_stats["Q1_Rate"]
+                    ).sum()
+
+                    worse = (
+                        macd_symbol_stats["Q4_Rate"]
+                        < macd_symbol_stats["Q1_Rate"]
+                    ).sum()
+
+                    q1_candidates = (
+                        macd_symbol_stats["Q1_Candidates"].sum()
+                    )
+                    q1_successes = (
+                        macd_symbol_stats["Q1_Successes"].sum()
+                    )
+                    q4_candidates = (
+                        macd_symbol_stats["Q4_Candidates"].sum()
+                    )
+                    q4_successes = (
+                        macd_symbol_stats["Q4_Successes"].sum()
+                    )
+
+                    logger.info(
+                        f"【MACD_Hist銘柄別比較・両群5件以上】"
+                        f"対象銘柄数={len(macd_symbol_stats):,} "
+                        f"改善={better:,} "
+                        f"同率={equal:,} "
+                        f"悪化={worse:,}"
+                    )
+
+                    logger.info(
+                        f"【MACD_Hist銘柄別成功率】"
+                        f"Q1={q1_successes / q1_candidates:.2%} "
+                        f"Q4={q4_successes / q4_candidates:.2%} "
+                        f"Q1候補={q1_candidates:,} "
+                        f"Q4候補={q4_candidates:,}"
+                    )
+                else:
+                    logger.info(
+                        "【MACD_Hist銘柄別比較】"
+                        "両群5件以上の銘柄がありません"
+                    )
+            # ===== MACD_Hist ATR補正改善幅・銘柄別比較ここまで =====
+            
+
             # ===== 銘柄別の反転成功率 =====
             symbol_stats = reversal_valid.groupby("Symbol").agg(
                 Downtrend_Candidates=("Downtrend_Candidate", "sum"),
