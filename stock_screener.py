@@ -1815,8 +1815,8 @@ class StockScreener:
                 )
 
                 macd_symbol_stats = macd_symbol_stats.loc[
-                    (macd_symbol_stats["Q1_Candidates"] >= 5)
-                    & (macd_symbol_stats["Q4_Candidates"] >= 5)
+                    (macd_symbol_stats["Q1_Candidates"] >= 2)
+                    & (macd_symbol_stats["Q4_Candidates"] >= 2)
                 ].copy()
 
                 if len(macd_symbol_stats) > 0:
