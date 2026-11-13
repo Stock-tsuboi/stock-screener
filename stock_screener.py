@@ -1859,7 +1859,7 @@ class StockScreener:
                     )
 
                     logger.info(
-                        f"【MACD_Hist銘柄別比較・両群5件以上】"
+                        f"【MACD_Hist銘柄別比較・両群2件以上】"
                         f"対象銘柄数={len(macd_symbol_stats):,} "
                         f"改善={better:,} "
                         f"同率={equal:,} "
@@ -1867,16 +1867,28 @@ class StockScreener:
                     )
 
                     logger.info(
-                        f"【MACD_Hist銘柄別成功率】"
+                        f"【MACD_Hist銘柄別成功率・候補数加重】"
                         f"Q1={q1_successes / q1_candidates:.2%} "
                         f"Q4={q4_successes / q4_candidates:.2%} "
                         f"Q1候補={q1_candidates:,} "
                         f"Q4候補={q4_candidates:,}"
                     )
+
+                    logger.info(
+                        f"【MACD_Hist銘柄別成功率・単純平均】"
+                        f"Q1={macd_symbol_stats['Q1_Rate'].mean():.2%} "
+                        f"Q4={macd_symbol_stats['Q4_Rate'].mean():.2%}"
+                    )
+
+                    logger.info(
+                        f"【MACD_Hist銘柄別成功率・中央値】"
+                        f"Q1={macd_symbol_stats['Q1_Rate'].median():.2%} "
+                        f"Q4={macd_symbol_stats['Q4_Rate'].median():.2%}"
+                    )
                 else:
                     logger.info(
-                        "【MACD_Hist銘柄別比較】"
-                        "両群5件以上の銘柄がありません"
+                        "【MACD_Hist銘柄別比較・両群2件以上】"
+                        "対象銘柄がありません"
                     )
             # ===== MACD_Hist ATR補正改善幅・銘柄別比較ここまで =====
             
