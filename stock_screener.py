@@ -1781,10 +1781,10 @@ class StockScreener:
                 ).agg(
                     候補数=("MACD_Candidate", "size"),
                     成功数=("MACD_Success", "sum"),
-                    5日平均=("MACD_MaxGain_5D", "mean"),
-                    5日中央値=("MACD_MaxGain_5D", "median"),
-                    10日平均=("MACD_MaxGain_10D", "mean"),
-                    10日中央値=("MACD_MaxGain_10D", "median")
+                    avg_5d=("MACD_MaxGain_5D", "mean"),
+                    median_5d=("MACD_MaxGain_5D", "median"),
+                    avg_10d=("MACD_MaxGain_10D", "mean"),
+                    median_10d=("MACD_MaxGain_10D", "median")
                 )
 
                 for group, row in macd_groups.iterrows():
@@ -1793,10 +1793,10 @@ class StockScreener:
                         f"候補={int(row['候補数']):,} "
                         f"成功={int(row['成功数']):,} "
                         f"成功率={row['成功数'] / row['候補数']:.2%} "
-                        f"5日平均上昇率={row['5日平均']:.2%} "
-                        f"5日中央値={row['5日中央値']:.2%} "
-                        f"10日平均上昇率={row['10日平均']:.2%} "
-                        f"10日中央値={row['10日中央値']:.2%}"
+                        f"5日平均上昇率={row['avg_5d']:.2%} "
+                        f"5日中央値={row['median_5d']:.2%} "
+                        f"10日平均上昇率={row['avg_10d']:.2%} "
+                        f"10日中央値={row['median_10d']:.2%}"
                     )
             # ===== MACD_Hist ATR補正改善幅別の検証ここまで =====
 
