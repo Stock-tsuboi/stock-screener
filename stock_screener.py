@@ -624,6 +624,13 @@ class FeatureFactory:
         future_min = df["Low"].shift(-1).rolling(window=indexer, min_periods=5).min()
         future_drawdown = future_min / df["Close"] - 1
 
+        # 未来10営業日以内の最大下落率
+        future_min10 = df["Low"].shift(-1).rolling(
+            window=indexer10,
+            min_periods=10
+        ).min()
+        future_drawdown10 = future_min10 / df["Close"] - 1
+
         # 10日先の持続性を確認（初動重視）
         future_10d_gain = df["Close"].shift(-10) / df["Close"] - 1
 
@@ -809,6 +816,10 @@ class FeatureFactory:
             ),
             "MACD_MaxGain_5D": future_gain,
             "MACD_MaxGain_10D": future_gain10,
+            "Future_Close_Gain_5D": future_close_gain,
+            "Future_Close_Gain_10D": future_10d_gain,
+            "Future_MaxDrawdown_5D": future_drawdown,
+            "Future_MaxDrawdown_10D": future_drawdown10,
             "UpVolumeShare_Candidate": (
                 is_downtrend
                 & (df["UpVolumeShare"] > df["UpVolumeShare"].shift(1))
@@ -1419,6 +1430,23 @@ class StockScreener:
             reversal_diag = stats.pop("_reversal_diag")
             reversal_diag = reversal_diag.loc[train_df.index]
             reversal_diag["Symbol"] = symbol
+
+            # AI予測順位の検証用データを保持
+            train_df = train_df.copy()
+            train_df["Symbol"] = symbol
+
+            eval_cols = [
+                "MACD_MaxGain_5D",
+                "MACD_MaxGain_10D",
+                "Future_Close_Gain_5D",
+                "Future_Close_Gain_10D",
+                "Future_MaxDrawdown_5D",
+                "Future_MaxDrawdown_10D"
+            ]
+
+            for col in eval_cols:
+                train_df[col] = reversal_diag[col].to_numpy()
+
             return train_df, stats, reversal_diag
             
         # モデルの読み込みと整合性チェック
@@ -2282,6 +2310,93 @@ class StockScreener:
             validation_model.fit(X_train, y_train)
 
             valid_proba = validation_model.predict_proba(X_valid)[:, 1]
+
+            # ===== AI予測順位別・実績検証 =====
+
+            validation_meta = full_train.iloc[
+                np.flatnonzero(valid_mask)
+            ][
+                [
+                    "Symbol",
+                    "Target",
+                    "MACD_MaxGain_5D",
+                    "MACD_MaxGain_10D",
+                    "Future_Close_Gain_5D",
+                    "Future_Close_Gain_10D",
+                    "Future_MaxDrawdown_5D",
+                    "Future_MaxDrawdown_10D"
+                ]
+            ].copy()
+
+            validation_meta["Date"] = pd.to_datetime(
+                X_valid.index
+            ).normalize()
+
+            validation_meta["Predicted_Probability"] = valid_proba
+
+            daily_agg = {
+                "候補数": ("Symbol", "size"),
+                "Target成功率": ("Target", "mean"),
+                "5日最大上昇率": ("MACD_MaxGain_5D", "mean"),
+                "10日最大上昇率": ("MACD_MaxGain_10D", "mean"),
+                "5日終値リターン": ("Future_Close_Gain_5D", "mean"),
+                "10日終値リターン": ("Future_Close_Gain_10D", "mean"),
+                "5日最大下落率": ("Future_MaxDrawdown_5D", "mean"),
+                "10日最大下落率": ("Future_MaxDrawdown_10D", "mean")
+            }
+
+            # 全候補の日別平均
+            baseline_daily = validation_meta.groupby(
+                "Date"
+            ).agg(**daily_agg)
+
+            baseline_avg = baseline_daily.mean()
+
+            logger.info(
+                f"【AI順位検証・全候補】"
+                f"検証日数={len(baseline_daily):,} "
+                f"1日平均候補={baseline_avg['候補数']:.1f} "
+                f"Target成功率={baseline_avg['Target成功率']:.2%} "
+                f"5日最大上昇={baseline_avg['5日最大上昇率']:.2%} "
+                f"10日最大上昇={baseline_avg['10日最大上昇率']:.2%} "
+                f"5日終値={baseline_avg['5日終値リターン']:.2%} "
+                f"10日終値={baseline_avg['10日終値リターン']:.2%} "
+                f"5日最大下落={baseline_avg['5日最大下落率']:.2%} "
+                f"10日最大下落={baseline_avg['10日最大下落率']:.2%}"
+            )
+
+            # 日別の予測確率上位10銘柄・上位20銘柄
+            ranked_meta = validation_meta.sort_values(
+                ["Date", "Predicted_Probability"],
+                ascending=[True, False]
+            )
+
+            for top_n in [10, 20]:
+                top_data = ranked_meta.groupby(
+                    "Date",
+                    sort=False
+                ).head(top_n)
+
+                top_daily = top_data.groupby(
+                    "Date"
+                ).agg(**daily_agg)
+
+                top_avg = top_daily.mean()
+
+                logger.info(
+                    f"【AI順位検証・日別上位{top_n}銘柄】"
+                    f"検証日数={len(top_daily):,} "
+                    f"1日平均候補={top_avg['候補数']:.1f} "
+                    f"Target成功率={top_avg['Target成功率']:.2%} "
+                    f"5日最大上昇={top_avg['5日最大上昇率']:.2%} "
+                    f"10日最大上昇={top_avg['10日最大上昇率']:.2%} "
+                    f"5日終値={top_avg['5日終値リターン']:.2%} "
+                    f"10日終値={top_avg['10日終値リターン']:.2%} "
+                    f"5日最大下落={top_avg['5日最大下落率']:.2%} "
+                    f"10日最大下落={top_avg['10日最大下落率']:.2%}"
+                )
+
+            # ===== AI予測順位別・実績検証ここまで =====
 
             # ROC-AUC
             if y_valid.nunique() >= 2:
