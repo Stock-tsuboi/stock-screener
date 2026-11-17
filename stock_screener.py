@@ -1839,6 +1839,38 @@ class StockScreener:
                     & (macd_symbol_stats["Q4_Candidates"] >= 2)
                 ].copy()
 
+                # ===== 同一295銘柄に限定した5日・10日上昇余地比較 =====
+                matched_macd_data = macd_symbol_data.loc[
+                    macd_symbol_data["Symbol"].isin(
+                        macd_symbol_stats.index
+                    )
+                    & macd_symbol_data["MACD_Quartile"].isin([0, 3])
+                ].copy()
+
+                matched_macd_groups = matched_macd_data.groupby(
+                    "MACD_Quartile"
+                ).agg(
+                    候補数=("MACD_Success", "size"),
+                    成功率=("MACD_Success", "mean"),
+                    avg_5d=("MACD_MaxGain_5D", "mean"),
+                    median_5d=("MACD_MaxGain_5D", "median"),
+                    avg_10d=("MACD_MaxGain_10D", "mean"),
+                    median_10d=("MACD_MaxGain_10D", "median")
+                )
+
+                for quartile, row in matched_macd_groups.iterrows():
+                    label = "Q1" if quartile == 0 else "Q4"
+                    logger.info(
+                        f"【MACD_Hist同一銘柄・上昇余地比較】{label}: "
+                        f"候補={int(row['候補数']):,} "
+                        f"成功率={row['成功率']:.2%} "
+                        f"5日平均={row['avg_5d']:.2%} "
+                        f"5日中央値={row['median_5d']:.2%} "
+                        f"10日平均={row['avg_10d']:.2%} "
+                        f"10日中央値={row['median_10d']:.2%}"
+                    )
+                # ===== 同一銘柄比較ここまで =====
+
                 if len(macd_symbol_stats) > 0:
                     macd_symbol_stats["Q1_Rate"] = (
                         macd_symbol_stats["Q1_Successes"]
