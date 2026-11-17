@@ -2271,13 +2271,6 @@ class StockScreener:
             
             # ===== 未学習期間の反転検証ここまで =====
 
-            # 手動検証のみの場合は、モデルを再学習せず終了
-            if diagnostics_only:
-                logger.info(
-                    "手動検証が完了しました。既存モデルは変更していません。"
-                )
-                return self.model is not None
-
             train_mask = all_dates.isin(train_dates)
             valid_mask = all_dates.isin(valid_dates)
 
@@ -2436,6 +2429,14 @@ class StockScreener:
                     )
 
             # ===== 未見データ検証ここまで =====
+
+            # 手動検証のみの場合は、ここで終了
+            # 本番モデルの再学習・保存は行わない
+            if diagnostics_only:
+                logger.info(
+                    "手動検証が完了しました。既存モデルは変更していません。"
+                )
+                return self.model is not None
 
             # 本番モデルも10営業日ギャップ付きで確率校正
             final_cv = make_purged_date_splits(
