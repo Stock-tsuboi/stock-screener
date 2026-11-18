@@ -1746,7 +1746,7 @@ class StockScreener:
             
             # ===== 日付単位・10営業日ギャップ付き検証 =====
 
-            def make_purged_date_splits(index, n_splits=3, gap=10):
+            def make_purged_date_splits(index, n_splits=2, gap=10):
                 dates = pd.DatetimeIndex(
                     pd.to_datetime(index)
                 ).normalize()
@@ -1755,9 +1755,50 @@ class StockScreener:
                     dates.unique()
                 ).sort_values()
 
+                # データ日数に合わせて検証期間を自動調整
+                test_size = (
+                    len(unique_dates) - gap * n_splits
+                ) // (n_splits + 1)
+
+                if (
+                    test_size < 1
+                    or len(unique_dates) - gap * n_splits
+                    <= test_size * n_splits
+                ):
+                    raise ValueError(
+                        f"時系列検証に必要な日数が不足しています。"
+                        f"日数={len(unique_dates)}, "
+                        f"分割数={n_splits}, "
+                        f"間隔={gap}"
+                    )
+
                 splitter = TimeSeriesSplit(
                     n_splits=n_splits,
-                    gap=gap
+                    gap=gap,
+                    test_size=test_size
+                )
+
+                # データ日数に合わせて検証期間を自動調整
+                test_size = (
+                    len(unique_dates) - gap * n_splits
+                ) // (n_splits + 1)
+
+                if (
+                    test_size < 1
+                    or len(unique_dates) - gap * n_splits
+                    <= test_size * n_splits
+                ):
+                    raise ValueError(
+                        f"時系列検証に必要な日数が不足しています。"
+                        f"日数={len(unique_dates)}, "
+                        f"分割数={n_splits}, "
+                        f"間隔={gap}"
+                    )
+
+                splitter = TimeSeriesSplit(
+                    n_splits=n_splits,
+                    gap=gap,
+                    test_size=test_size
                 )
 
                 splits = []
@@ -2364,7 +2405,7 @@ class StockScreener:
             # 学習データ内の確率校正も10営業日空ける
             validation_cv = make_purged_date_splits(
                 X_train.index,
-                n_splits=3,
+                n_splits=2,
                 gap=10
             )
 
