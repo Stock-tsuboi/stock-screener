@@ -634,6 +634,72 @@ class FeatureFactory:
         # 10日先の持続性を確認（初動重視）
         future_10d_gain = df["Close"].shift(-10) / df["Close"] - 1
 
+        # ===== 翌営業日始値買い・ATR損切りバックテスト =====
+        def calc_stop_backtest(horizon):
+            entry_price = df["Open"].shift(-1)
+
+            # 現行LINE表示の損切り価格と同じ計算
+            stop_price = df["Close"] * (
+                1 - df["atr_ratio"] * Config.STOPLOSS_ATR_MULT
+            )
+
+            exit_price = pd.Series(
+                np.nan,
+                index=df.index,
+                dtype=float
+            )
+            stop_hit = pd.Series(
+                False,
+                index=df.index
+            )
+
+            for day in range(1, horizon + 1):
+                future_open = df["Open"].shift(-day)
+                future_low = df["Low"].shift(-day)
+
+                active = (
+                    (~stop_hit)
+                    & future_open.notna()
+                    & future_low.notna()
+                )
+
+                # 始値が損切り価格以下なら始値で売却
+                gap_hit = (
+                    active
+                    & (future_open <= stop_price)
+                )
+
+                # 始値は損切り価格より上だが、安値が到達した場合
+                touch_hit = (
+                    active
+                    & (~gap_hit)
+                    & (future_low <= stop_price)
+                )
+
+                if day == 1:
+                    # 買いと同じ始値で損切りになるケース
+                    exit_price.loc[gap_hit] = entry_price.loc[gap_hit]
+                else:
+                    exit_price.loc[gap_hit] = future_open.loc[gap_hit]
+
+                exit_price.loc[touch_hit] = stop_price.loc[touch_hit]
+
+                stop_hit |= gap_hit | touch_hit
+
+            # 損切りされなければ期間最終日の終値で売却
+            exit_price = exit_price.fillna(
+                df["Close"].shift(-horizon)
+            )
+
+            return (
+                exit_price / entry_price - 1,
+                stop_hit.astype(float)
+            )
+
+        stop_return5, stop_hit5 = calc_stop_backtest(5)
+        stop_return10, stop_hit10 = calc_stop_backtest(10)
+        # ===== バックテスト計算ここまで =====
+
         # 仕込み時の条件（現在が静かであること）
         # 1. 急騰予兆パターン（初動検知版）
         is_precursor = (
@@ -820,6 +886,10 @@ class FeatureFactory:
             "Future_Close_Gain_10D": future_10d_gain,
             "Future_MaxDrawdown_5D": future_drawdown,
             "Future_MaxDrawdown_10D": future_drawdown10,
+            "Stop_Return_5D": stop_return5,
+            "Stop_Return_10D": stop_return10,
+            "Stop_Hit_5D": stop_hit5,
+            "Stop_Hit_10D": stop_hit10,
             "UpVolumeShare_Candidate": (
                 is_downtrend
                 & (df["UpVolumeShare"] > df["UpVolumeShare"].shift(1))
@@ -1441,7 +1511,11 @@ class StockScreener:
                 "Future_Close_Gain_5D",
                 "Future_Close_Gain_10D",
                 "Future_MaxDrawdown_5D",
-                "Future_MaxDrawdown_10D"
+                "Future_MaxDrawdown_10D",
+                "Stop_Return_5D",
+                "Stop_Return_10D",
+                "Stop_Hit_5D",
+                "Stop_Hit_10D"
             ]
 
             for col in eval_cols:
@@ -2317,7 +2391,11 @@ class StockScreener:
                     "Future_Close_Gain_5D",
                     "Future_Close_Gain_10D",
                     "Future_MaxDrawdown_5D",
-                    "Future_MaxDrawdown_10D"
+                    "Future_MaxDrawdown_10D",
+                    "Stop_Return_5D",
+                    "Stop_Return_10D",
+                    "Stop_Hit_5D",
+                    "Stop_Hit_10D"
                 ]
             ].copy()
 
@@ -2389,6 +2467,56 @@ class StockScreener:
                     f"10日最大下落={top_avg['10日最大下落率']:.2%}"
                 )
 
+            # ===== ATR損切りを考慮した実売買想定 =====
+
+            trade_daily_agg = {
+                "5日平均損益": ("Stop_Return_5D", "mean"),
+                "5日勝率": (
+                    "Stop_Return_5D",
+                    lambda x: (x > 0).mean()
+                ),
+                "5日損切率": ("Stop_Hit_5D", "mean"),
+                "10日平均損益": ("Stop_Return_10D", "mean"),
+                "10日勝率": (
+                    "Stop_Return_10D",
+                    lambda x: (x > 0).mean()
+                ),
+                "10日損切率": ("Stop_Hit_10D", "mean")
+            }
+
+            def log_trade_result(label, data):
+                trade_daily = data.groupby(
+                    "Date"
+                ).agg(**trade_daily_agg)
+
+                trade_avg = trade_daily.mean()
+
+                logger.info(
+                    f"【実売買想定・{label}】"
+                    f"検証日数={len(trade_daily):,} "
+                    f"5日平均損益={trade_avg['5日平均損益']:.2%} "
+                    f"5日勝率={trade_avg['5日勝率']:.2%} "
+                    f"5日損切率={trade_avg['5日損切率']:.2%} "
+                    f"10日平均損益={trade_avg['10日平均損益']:.2%} "
+                    f"10日勝率={trade_avg['10日勝率']:.2%} "
+                    f"10日損切率={trade_avg['10日損切率']:.2%}"
+                )
+
+            log_trade_result("全候補", validation_meta)
+
+            for top_n in [10, 20]:
+                trade_top = ranked_meta.groupby(
+                    "Date",
+                    sort=False
+                ).head(top_n)
+
+                log_trade_result(
+                    f"日別上位{top_n}銘柄",
+                    trade_top
+                )
+
+            # ===== 実売買想定ここまで =====
+            
             # ===== AI予測順位別・実績検証ここまで =====
 
             # ROC-AUC
