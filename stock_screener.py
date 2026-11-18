@@ -1255,7 +1255,7 @@ class DatabaseManager:
             SELECT code, date, open as Open, high as High, low as Low, close as Close, volume as Volume
             FROM prices 
             WHERE code IN ? 
-              AND date >= CURRENT_DATE - INTERVAL 400 DAY
+              AND date >= CURRENT_DATE - INTERVAL 3 YEAR
             ORDER BY code, date
         """
         with self._get_connection() as conn:
