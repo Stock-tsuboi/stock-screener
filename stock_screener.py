@@ -2446,6 +2446,46 @@ class StockScreener:
 
             validation_meta["Predicted_Probability"] = valid_proba
 
+            # 日経平均の75日移動平均線で過去の地合いを分類
+            n225 = yf.download(
+                "^N225",
+                period="3y",
+                progress=False
+            )
+
+            if n225.empty:
+                raise ValueError("過去の日経平均データを取得できません")
+
+            n225_close = n225["Close"]
+
+            if isinstance(n225_close, pd.DataFrame):
+                n225_close = n225_close.iloc[:, 0]
+
+            n225_dates = pd.to_datetime(
+                n225.index
+            ).tz_localize(None).normalize()
+
+            n225_sma75 = n225_close.rolling(75).mean()
+
+            n225_regime = pd.DataFrame({
+                "Date": n225_dates,
+                "N225_Above_SMA75": (
+                    n225_close.to_numpy()
+                    > n225_sma75.to_numpy()
+                )
+            })
+
+            validation_meta = validation_meta.merge(
+                n225_regime,
+                on="Date",
+                how="left"
+            )
+
+            if validation_meta["N225_Above_SMA75"].isna().any():
+                raise ValueError(
+                    "日経平均の地合いを判定できない検証日があります"
+                )
+
             daily_agg = {
                 "候補数": ("Symbol", "size"),
                 "Target成功率": ("Target", "mean"),
