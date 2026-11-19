@@ -2544,9 +2544,13 @@ class StockScreener:
                 )
 
                 # 期間を時系列順に3分割して安定性を確認
-                for period_no, period_data in enumerate(
-                    np.array_split(trade_daily, 3), 1
-                ):
+                period_indices = np.array_split(
+                    np.arange(len(trade_daily)), 3
+                )
+
+                for period_no, indices in enumerate(period_indices, 1):
+                    period_data = trade_daily.iloc[indices]
+
                     if period_data.empty:
                         continue
 
