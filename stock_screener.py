@@ -2621,6 +2621,47 @@ class StockScreener:
                     trade_top
                 )
 
+            # ===== 日経平均の地合い別・上位20銘柄の実売買検証 =====
+
+            top20_trade = ranked_meta.groupby(
+                "Date",
+                sort=False
+            ).head(20)
+
+            for above_sma75, regime_label in [
+                (True, "75日線より上"),
+                (False, "75日線以下")
+            ]:
+                regime_data = top20_trade[
+                    top20_trade["N225_Above_SMA75"] == above_sma75
+                ]
+
+                if regime_data.empty:
+                    logger.info(
+                        f"【地合い別実売買・{regime_label}】該当データなし"
+                    )
+                    continue
+
+                regime_daily = regime_data.groupby(
+                    "Date"
+                ).agg(**trade_daily_agg)
+
+                regime_avg = regime_daily.mean()
+
+                logger.info(
+                    f"【地合い別実売買・上位20銘柄・{regime_label}】"
+                    f"検証日数={len(regime_daily)} "
+                    f"平均候補数={len(regime_data) / len(regime_daily):.1f} "
+                    f"5日平均損益={regime_avg['5日平均損益']:.2%} "
+                    f"5日勝率={regime_avg['5日勝率']:.2%} "
+                    f"5日損切率={regime_avg['5日損切率']:.2%} "
+                    f"10日平均損益={regime_avg['10日平均損益']:.2%} "
+                    f"10日勝率={regime_avg['10日勝率']:.2%} "
+                    f"10日損切率={regime_avg['10日損切率']:.2%}"
+                )
+
+            # ===== 地合い別実売買検証ここまで =====
+            
             # ===== 実売買想定ここまで =====
             
             # ===== AI予測順位別・実績検証ここまで =====
