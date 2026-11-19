@@ -2543,6 +2543,27 @@ class StockScreener:
                     f"10日損切率={trade_avg['10日損切率']:.2%}"
                 )
 
+                # 期間を時系列順に3分割して安定性を確認
+                for period_no, period_data in enumerate(
+                    np.array_split(trade_daily, 3), 1
+                ):
+                    if period_data.empty:
+                        continue
+
+                    period_avg = period_data.mean()
+
+                    logger.info(
+                        f"【実売買想定・{label}・期間{period_no}】"
+                        f"日数={len(period_data)} "
+                        f"開始={period_data.index.min():%Y-%m-%d} "
+                        f"終了={period_data.index.max():%Y-%m-%d} "
+                        f"5日平均損益={period_avg['5日平均損益']:.2%} "
+                        f"5日勝率={period_avg['5日勝率']:.2%} "
+                        f"10日平均損益={period_avg['10日平均損益']:.2%} "
+                        f"10日勝率={period_avg['10日勝率']:.2%} "
+                        f"10日損切率={period_avg['10日損切率']:.2%}"
+                    )
+
             log_trade_result("全候補", validation_meta)
 
             for top_n in [10, 20]:
