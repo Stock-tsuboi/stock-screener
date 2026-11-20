@@ -2663,6 +2663,33 @@ class StockScreener:
                         f"10日損切率={regime_avg['10日損切率']:.2%}"
                     )
 
+                    # 地合い別の検証期間を時系列順に3分割
+                    period_indices = np.array_split(
+                        np.arange(len(regime_daily)), 3
+                    )
+
+                    for period_no, indices in enumerate(period_indices, 1):
+                        period_data = regime_daily.iloc[indices]
+
+                        if period_data.empty:
+                            continue
+
+                        period_avg = period_data.mean()
+
+                        logger.info(
+                            f"【地合い別実売買・上位{top_n}銘柄・{regime_label}"
+                            f"・期間{period_no}】"
+                            f"日数={len(period_data)} "
+                            f"開始={period_data.index.min():%Y-%m-%d} "
+                            f"終了={period_data.index.max():%Y-%m-%d} "
+                            f"5日平均損益={period_avg['5日平均損益']:.2%} "
+                            f"5日勝率={period_avg['5日勝率']:.2%} "
+                            f"5日損切率={period_avg['5日損切率']:.2%} "
+                            f"10日平均損益={period_avg['10日平均損益']:.2%} "
+                            f"10日勝率={period_avg['10日勝率']:.2%} "
+                            f"10日損切率={period_avg['10日損切率']:.2%}"
+                        )
+
             # ===== 地合い別実売買検証ここまで =====
             
             # ===== 実売買想定ここまで =====
