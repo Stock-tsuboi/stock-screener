@@ -1520,7 +1520,6 @@ class StockScreener:
             # 学習データの準備を並列化
             results = Parallel(n_jobs=2)(delayed(train_worker)(s, d) for s, d in all_data.items())
             training_dfs = []
-            reversal_dfs = []
             
             total_stats = {
                 "setup": 0,
@@ -1529,15 +1528,7 @@ class StockScreener:
                 "clean": 0,
                 "target": 0,
                 "breakout_gain": 0,
-                "breakout_hold": 0,
-                "baseline_candidates": 0,
-                "baseline_successes": 0,
-                "reversal_slope_candidates": 0,
-                "reversal_slope_successes": 0,
-                "reversal_macd_candidates": 0,
-                "reversal_macd_successes": 0,
-                "reversal_combined_candidates": 0,
-                "reversal_combined_successes": 0
+                "breakout_hold": 0
             }
             
             for r in results:
