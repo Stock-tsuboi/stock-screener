@@ -812,74 +812,8 @@ class FeatureFactory:
 
         logger.info(f"is_setup={int(is_setup.sum()):,}")
         
-        # ===== 反転診断ここから=====
-        valid_future = future_10d_gain.notna()
-        
-        is_downtrend = (
-            df["Slope20"] <= Config.SETUP_SLOPE20_MIN
-        )
-        
-        reversal_slope = (
-            is_downtrend
-            & (df["Slope10"] > df["Slope10"].shift(1))
-        )
-        
-        reversal_macd = (
-            is_downtrend
-            & (df["MACD_Hist"] > df["MACD_Hist"].shift(1))
-        )
-        
-        reversal_success = (
-            will_breakout
-            & will_sustain
-            & is_clean_move
-        )
-        
-        reversal_stats = {
-            "baseline_candidates": int(valid_future.sum()),
-            "baseline_successes": int((valid_future & reversal_success).sum())
-        }
-        
-        for name, condition in [
-            ("slope", reversal_slope),
-            ("macd", reversal_macd),
-            ("combined", reversal_slope & reversal_macd),
-        ]:
-            candidates = condition & valid_future
-            successes = candidates & reversal_success
-        
-            reversal_stats[f"{name}_candidates"] = int(candidates.sum())
-            reversal_stats[f"{name}_successes"] = int(successes.sum())
-        
-        # ===== 反転診断ここまで=====
-
-        reversal_diag = pd.DataFrame({
-            "Baseline_Candidate": valid_future.astype(int),
-            "Baseline_Success": (valid_future & reversal_success).astype(int),
-            "Downtrend_Candidate": (
-                is_downtrend & valid_future
-            ).astype(int),
-            "Downtrend_Success": (
-                is_downtrend & valid_future & reversal_success
-            ).astype(int),
-            "Slope_Candidate": (reversal_slope & valid_future).astype(int),
-            "Slope_Success": (
-                reversal_slope & valid_future & reversal_success
-            ).astype(int),
-            "Slope10_Change": (
-                df["Slope10"] - df["Slope10"].shift(1)
-            ),
-            "MACD_Candidate": (reversal_macd & valid_future).astype(int),
-            "MACD_Success": (
-                reversal_macd & valid_future & reversal_success
-            ).astype(int),
-            "MACD_Hist_Change": (
-                df["MACD_Hist"] - df["MACD_Hist"].shift(1)
-            ),
-            "MACD_Hist_Change_ATR": (
-                (df["MACD_Hist"] - df["MACD_Hist"].shift(1))
-                / (df["atr_ratio"] * df["Close"]).replace(0, np.nan)
-            ),
+        # AI順位・実売買検証に必要な将来データのみ保持
+        eval_data = pd.DataFrame({
             "MACD_MaxGain_5D": future_gain,
             "MACD_MaxGain_10D": future_gain10,
             "Future_Close_Gain_5D": future_close_gain,
@@ -889,21 +823,19 @@ class FeatureFactory:
             "Stop_Return_5D": stop_return5,
             "Stop_Return_10D": stop_return10,
             "Stop_Hit_5D": stop_hit5,
-            "Stop_Hit_10D": stop_hit10,
-            "UpVolumeShare_Candidate": (
-                is_downtrend
-                & (df["UpVolumeShare"] > df["UpVolumeShare"].shift(1))
-                & valid_future
-            ).astype(int),
-            "UpVolumeShare_Success": (
-                is_downtrend
-                & (df["UpVolumeShare"] > df["UpVolumeShare"].shift(1))
-                & valid_future
-                & reversal_success
-            ).astype(int),
-            "UpVolumeShare_Change": (
-                df["UpVolumeShare"] - df["UpVolumeShare"].shift(1)
-            )
+            "Stop_Hit_10D": stop_hit10
+        }, index=df.index)# AI順位・実売買検証に必要な将来データのみ保持
+        eval_data = pd.DataFrame({
+            "MACD_MaxGain_5D": future_gain,
+            "MACD_MaxGain_10D": future_gain10,
+            "Future_Close_Gain_5D": future_close_gain,
+            "Future_Close_Gain_10D": future_10d_gain,
+            "Future_MaxDrawdown_5D": future_drawdown,
+            "Future_MaxDrawdown_10D": future_drawdown10,
+            "Stop_Return_5D": stop_return5,
+            "Stop_Return_10D": stop_return10,
+            "Stop_Hit_5D": stop_hit5,
+            "Stop_Hit_10D": stop_hit10
         }, index=df.index)
         
         # ★ここから追加
@@ -944,27 +876,17 @@ class FeatureFactory:
             "sustain": int(sustain_ok.sum()),
             "clean": int(clean_ok.sum()),
             "target": int(df["Target"].fillna(0).sum()),
-            "_reversal_diag": reversal_diag,
+            "_eval_data": eval_data,
             "breakout_gain": int(
                 (future_gain >= Config.BREAKOUT_GAIN_MIN).sum()
             ),
-
-             # 追加
             "breakout_hold": int(
                 (
                     (future_gain >= Config.BREAKOUT_GAIN_MIN)
                     &
                     (future_close_gain >= Config.BREAKOUT_CLOSE_GAIN_MIN)
                 ).sum()
-            ),
-            "baseline_candidates": reversal_stats["baseline_candidates"],
-            "baseline_successes": reversal_stats["baseline_successes"],
-            "reversal_slope_candidates": reversal_stats["slope_candidates"],
-            "reversal_slope_successes": reversal_stats["slope_successes"],
-            "reversal_macd_candidates": reversal_stats["macd_candidates"],
-            "reversal_macd_successes": reversal_stats["macd_successes"],
-            "reversal_combined_candidates": reversal_stats["combined_candidates"],
-            "reversal_combined_successes": reversal_stats["combined_successes"]
+            )
         }
         
         return df, stats
@@ -1497,9 +1419,7 @@ class StockScreener:
             # Targetが存在しない行は学習対象から除外
             train_df = train_df.dropna(subset=["Target"])
             
-            reversal_diag = stats.pop("_reversal_diag")
-            reversal_diag = reversal_diag.loc[train_df.index]
-            reversal_diag["Symbol"] = symbol
+            eval_data = stats.pop("_eval_data")
 
             # AI予測順位の検証用データを保持
             train_df = train_df.copy()
@@ -1518,10 +1438,12 @@ class StockScreener:
                 "Stop_Hit_10D"
             ]
 
-            for col in eval_cols:
-                train_df[col] = reversal_diag[col].to_numpy()
+            train_df[eval_cols] = eval_data.loc[
+                train_df.index,
+                eval_cols
+            ]
 
-            return train_df, stats, reversal_diag
+            return train_df, stats
             
         # モデルの読み込みと整合性チェック
         need_training = False
