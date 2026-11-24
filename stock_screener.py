@@ -1535,23 +1535,16 @@ class StockScreener:
                 if r is None:
                     continue
             
-                df_train, stats, reversal_diag = r
+                df_train, stats = r
                 training_dfs.append(df_train)
-                reversal_dfs.append(reversal_diag)
             
                 total_stats["setup"] += stats["setup"]
                 total_stats["breakout"] += stats["breakout"]
-                for key in [
-                    "baseline_candidates",
-                    "baseline_successes",
-                    "reversal_slope_candidates",
-                    "reversal_slope_successes",
-                    "reversal_macd_candidates",
-                    "reversal_macd_successes",
-                    "reversal_combined_candidates",
-                    "reversal_combined_successes",
-                ]:
-                    total_stats[key] += stats[key]
+                total_stats["sustain"] += stats["sustain"]
+                total_stats["clean"] += stats["clean"]
+                total_stats["target"] += stats["target"]
+                total_stats["breakout_gain"] += stats["breakout_gain"]
+                total_stats["breakout_hold"] += stats["breakout_hold"]
                 total_stats["sustain"] += stats["sustain"]
                 total_stats["clean"] += stats["clean"]
                 total_stats["target"] += stats["target"]
