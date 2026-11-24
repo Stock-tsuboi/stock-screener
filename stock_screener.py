@@ -812,19 +812,7 @@ class FeatureFactory:
 
         logger.info(f"is_setup={int(is_setup.sum()):,}")
         
-        # AI順位・実売買検証に必要な将来データのみ保持
-        eval_data = pd.DataFrame({
-            "MACD_MaxGain_5D": future_gain,
-            "MACD_MaxGain_10D": future_gain10,
-            "Future_Close_Gain_5D": future_close_gain,
-            "Future_Close_Gain_10D": future_10d_gain,
-            "Future_MaxDrawdown_5D": future_drawdown,
-            "Future_MaxDrawdown_10D": future_drawdown10,
-            "Stop_Return_5D": stop_return5,
-            "Stop_Return_10D": stop_return10,
-            "Stop_Hit_5D": stop_hit5,
-            "Stop_Hit_10D": stop_hit10
-        }, index=df.index)# AI順位・実売買検証に必要な将来データのみ保持
+        
         eval_data = pd.DataFrame({
             "MACD_MaxGain_5D": future_gain,
             "MACD_MaxGain_10D": future_gain10,
