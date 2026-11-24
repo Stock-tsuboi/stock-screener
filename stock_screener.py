@@ -1545,11 +1545,7 @@ class StockScreener:
                 total_stats["target"] += stats["target"]
                 total_stats["breakout_gain"] += stats["breakout_gain"]
                 total_stats["breakout_hold"] += stats["breakout_hold"]
-                total_stats["sustain"] += stats["sustain"]
-                total_stats["clean"] += stats["clean"]
-                total_stats["target"] += stats["target"]
-                total_stats["breakout_gain"] += stats["breakout_gain"]
-                total_stats["breakout_hold"] += stats["breakout_hold"]
+                
             if Config.DEBUG_TARGET_LOG:
                 logger.info(f"学習対象銘柄数: {len(training_dfs)}")
             if Config.DEBUG_TARGET_LOG:
