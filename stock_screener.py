@@ -1565,31 +1565,6 @@ class StockScreener:
                     f"future_gain>=3%={total_stats['breakout_gain']:,} "
                     f"→ close維持={total_stats['breakout_hold']:,}"
                 )
-
-            baseline_candidates = total_stats["baseline_candidates"]
-            baseline_successes = total_stats["baseline_successes"]
-
-            logger.info(
-                f"【反転診断・全体基準】"
-                f"候補={baseline_candidates:,} "
-                f"成功={baseline_successes:,} "
-                f"成功率={baseline_successes / max(baseline_candidates, 1):.2%}"
-            )
-            
-            for name, label in [
-                ("slope", "下降＋Slope10改善"),
-                ("macd", "下降＋MACD改善"),
-                ("combined", "下降＋Slope10・MACD改善"),
-            ]:
-                candidates = total_stats[f"reversal_{name}_candidates"]
-                successes = total_stats[f"reversal_{name}_successes"]
-
-                logger.info(
-                    f"【反転診断】{label}: "
-                    f"候補={candidates:,} "
-                    f"成功={successes:,} "
-                    f"成功率={successes / max(candidates, 1):.2%}"
-                )
             
             if not training_dfs:
                 logger.error("学習に使用できる有効なデータがありませんでした。")
