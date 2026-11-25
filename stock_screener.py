@@ -1813,6 +1813,235 @@ class StockScreener:
                     "日経平均の地合いを判定できない検証日があります"
                 )
 
+            # ===== 本番と同じ銘柄選定を過去データに再現 =====
+
+            validation_meta["SlopeScore"] = (
+                validation_meta["Slope10"].clip(-0.01, 0.01) * 100
+            )
+
+            validation_meta["RiskWidth"] = (
+                validation_meta["atr_ratio"] * Config.RISK_ATR_MULT
+            ).clip(lower=Config.RISK_WIDTH_MIN)
+
+            bias_bonus = (
+                validation_meta["Bias25"]
+                .clip(
+                    Config.REWARD_BIAS_MIN,
+                    Config.REWARD_BIAS_MAX
+                )
+                .abs()
+                * Config.REWARD_BIAS_WEIGHT
+            )
+
+            slope_bonus = (
+                validation_meta["SlopeScore"]
+                .clip(
+                    Config.SLOPE_SCORE_MIN,
+                    Config.SLOPE_SCORE_MAX
+                )
+                * Config.REWARD_SLOPE_WEIGHT
+            )
+
+            validation_meta["RewardTarget"] = (
+                Config.REWARD_BASE
+                + validation_meta["Predicted_Probability"]
+                * Config.REWARD_PROB_WEIGHT
+                + bias_bonus
+                + slope_bonus
+                + validation_meta["Stage2_Score"]
+                * Config.REWARD_STAGE2_WEIGHT
+                + (
+                    validation_meta["RS20"] - Config.RS20_BASE
+                ).clip(
+                    Config.RS20_MIN,
+                    Config.RS20_MAX
+                ) * Config.REWARD_RS20_WEIGHT
+            ).clip(
+                lower=Config.REWARD_MIN,
+                upper=Config.REWARD_MAX
+            )
+
+            validation_meta["EV_Raw"] = (
+                validation_meta["Predicted_Probability"]
+                * validation_meta["RewardTarget"]
+                - (
+                    1.0 - validation_meta["Predicted_Probability"]
+                ) * validation_meta["RiskWidth"]
+            )
+
+            validation_meta["VolExpansionScore"] = (
+                Config.VOL_EXPANSION_PEAK
+                - (
+                    validation_meta["VolRatio"]
+                    - Config.VOL_EXPANSION_CENTER
+                ).abs()
+            ).clip(
+                Config.VOL_EXPANSION_MIN,
+                Config.VOL_EXPANSION_PEAK
+            )
+
+            validation_meta["AccelBonus"] = np.where(
+                validation_meta["SlopeAccel"] > 0,
+                Config.ACCEL_BONUS_POSITIVE,
+                np.where(
+                    validation_meta["Predicted_Probability"]
+                    < Config.HIGH_PROB_RELAX,
+                    Config.ACCEL_BONUS_NEGATIVE,
+                    Config.ACCEL_BONUS_NORMAL
+                )
+            )
+
+            validation_meta["SustainabilityBonus"] = (
+                1.0
+                + validation_meta["Stage2_Score"]
+                * Config.SUSTAINABILITY_STAGE2_WEIGHT
+            )
+
+            validation_meta["EV"] = (
+                validation_meta["EV_Raw"]
+                * validation_meta["VolExpansionScore"]
+                * validation_meta["AccelBonus"]
+                * validation_meta["SustainabilityBonus"]
+            )
+
+            validation_meta["SellScore"] = (
+                (
+                    (validation_meta["RSI"] > Config.SELL_RSI_HIGH)
+                    & (validation_meta["ret1"] < Config.SELL_RET1_RSI)
+                ).astype(int)
+                + (
+                    (
+                        validation_meta["MACD_Hist"]
+                        < -validation_meta["BB_STD"]
+                        * Config.SELL_MACD_BB_MULT
+                    )
+                    & (
+                        validation_meta["Slope20"]
+                        < Config.SELL_MACD_SLOPE20
+                    )
+                ).astype(int)
+                + (
+                    (
+                        validation_meta["Close"]
+                        < validation_meta["SMA25"]
+                        * Config.SELL_SMA25_BREAK
+                    )
+                    & (
+                        validation_meta["ret1"]
+                        < Config.SELL_RET1_SMA
+                    )
+                ).astype(int)
+                + (
+                    validation_meta["ret1"]
+                    < Config.SELL_RET1_DROP
+                ).astype(int)
+            )
+
+            validation_meta["CondSell"] = (
+                validation_meta["SellScore"]
+                >= Config.SELL_SCORE_THRESHOLD
+            )
+
+            validation_meta["IsSellSignal"] = (
+                validation_meta["CondSell"]
+                & (
+                    validation_meta["Slope10"]
+                    < Config.SELL_SLOPE10_MAX
+                )
+            )
+
+            live_selected_days = []
+
+            for date, day_data in validation_meta.groupby("Date"):
+
+                max_prob = day_data["Predicted_Probability"].max()
+
+                base_threshold = (
+                    Config.THRESHOLD_NORMAL
+                    if day_data["N225_Above_SMA75"].iloc[0]
+                    else Config.THRESHOLD_STRICT
+                )
+
+                adjusted_threshold = (
+                    min(
+                        base_threshold,
+                        max_prob * Config.DYNAMIC_THRESHOLD_RATIO
+                    )
+                    if max_prob > Config.DYNAMIC_THRESHOLD_TRIGGER
+                    else base_threshold
+                )
+
+                cond_tech = (
+                    (day_data["VolRatio"] > Config.TECH_VOLRATIO_MIN)
+                    & (day_data["VolVCP"] < Config.TECH_VOLVCP_MAX)
+                    & day_data["Bias25"].between(
+                        Config.TECH_BIAS25_MIN,
+                        Config.TECH_BIAS25_MAX
+                    )
+                )
+
+                if max_prob > Config.HIGH_PROB_RELAX:
+                    cond_slope = (
+                        day_data["Slope20"] > Config.SLOPE20_RELAXED
+                    )
+                else:
+                    cond_slope = (
+                        day_data["Slope20"] > Config.SLOPE20_MIN
+                    )
+
+                cond_prob = (
+                    day_data["Predicted_Probability"]
+                    >= adjusted_threshold
+                )
+
+                strict_candidates = day_data[
+                    cond_prob
+                    & cond_tech
+                    & cond_slope
+                    & ~day_data["CondSell"]
+                    & (day_data["EV"] > Config.EV_MIN)
+                ].sort_values(
+                    "EV",
+                    ascending=False
+                ).head(Config.POTENTIAL_TOP_N).copy()
+
+                if not strict_candidates.empty:
+                    strict_candidates["SelectionRoute"] = "厳選候補"
+                    live_selected_days.append(strict_candidates)
+
+                else:
+                    potential_candidates = day_data[
+                        (~day_data["IsSellSignal"])
+                        & (
+                            day_data["VolRatio"]
+                            > Config.POTENTIAL_VOL_MIN
+                        )
+                    ].sort_values(
+                        "Predicted_Probability",
+                        ascending=False
+                    ).head(Config.POTENTIAL_TOP_N).copy()
+
+                    if not potential_candidates.empty:
+                        potential_candidates["SelectionRoute"] = "救済候補"
+                        live_selected_days.append(potential_candidates)
+
+            if live_selected_days:
+                live_selected_meta = pd.concat(
+                    live_selected_days,
+                    ignore_index=True
+                )
+            else:
+                live_selected_meta = pd.DataFrame()
+
+            logger.info(
+                f"【本番選定再現】"
+                f"選定銘柄数={len(live_selected_meta):,} "
+                f"厳選候補={int((live_selected_meta['SelectionRoute'] == '厳選候補').sum()) if not live_selected_meta.empty else 0:,} "
+                f"救済候補={int((live_selected_meta['SelectionRoute'] == '救済候補').sum()) if not live_selected_meta.empty else 0:,}"
+            )
+
+            # ===== 本番選定再現ここまで =====
+            
             daily_agg = {
                 "候補数": ("Symbol", "size"),
                 "Target成功率": ("Target", "mean"),
