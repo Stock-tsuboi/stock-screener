@@ -1748,7 +1748,22 @@ class StockScreener:
                     "Stop_Return_5D",
                     "Stop_Return_10D",
                     "Stop_Hit_5D",
-                    "Stop_Hit_10D"
+                    "Stop_Hit_10D",
+                    "Close",
+                    "SMA25",
+                    "BB_STD",
+                    "Slope10",
+                    "Slope20",
+                    "SlopeAccel",
+                    "VolRatio",
+                    "VolVCP",
+                    "Bias25",
+                    "atr_ratio",
+                    "Stage2_Score",
+                    "RS20",
+                    "RSI",
+                    "ret1",
+                    "MACD_Hist"
                 ]
             ].copy()
 
