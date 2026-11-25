@@ -1400,7 +1400,11 @@ class StockScreener:
             if len(feat_df) < 30:
                 return None
             # 学習に必要なカラムのみを抽出してメモリを節約
-            cols = self.factory.FEATURE_COLS + ["Target"]
+            cols = self.factory.FEATURE_COLS + [
+                "Target",
+                "Close",
+                "BB_STD"
+            ]
             
             train_df = feat_df.iloc[:-5][cols]
             
