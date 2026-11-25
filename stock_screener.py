@@ -2164,6 +2164,17 @@ class StockScreener:
                         f"10日損切率={period_avg['10日損切率']:.2%}"
                     )
 
+            # 本番と同じ条件で選定した銘柄の実売買成績
+            if not live_selected_meta.empty:
+                log_trade_result(
+                    "本番選定銘柄",
+                    live_selected_meta
+                )
+            else:
+                logger.info(
+                    "【実売買想定・本番選定銘柄】該当銘柄なし"
+                )
+
             log_trade_result("全候補", validation_meta)
 
             for top_n in [10, 20]:
