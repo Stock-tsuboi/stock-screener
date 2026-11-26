@@ -1803,9 +1803,12 @@ class StockScreener:
                 "N225_Above_SMA75": (
                     n225_close.to_numpy()
                     > n225_sma75.to_numpy()
+                ),
+                "N225_SMA75_Rising": (
+                    n225_sma75.to_numpy()
+                    > n225_sma75.shift(10).to_numpy()
                 )
             })
-
             validation_meta = validation_meta.merge(
                 n225_regime,
                 on="Date",
