@@ -2179,6 +2179,28 @@ class StockScreener:
                     "【実売買想定・本番選定銘柄】該当銘柄なし"
                 )
 
+            # 本番選定銘柄を日経平均の地合い別に比較
+            if not live_selected_meta.empty:
+                for above_sma75, regime_label in [
+                    (True, "75日線より上"),
+                    (False, "75日線以下")
+                ]:
+                    regime_selected = live_selected_meta[
+                        live_selected_meta["N225_Above_SMA75"]
+                        == above_sma75
+                    ]
+
+                    if not regime_selected.empty:
+                        log_trade_result(
+                            f"本番選定銘柄・{regime_label}",
+                            regime_selected
+                        )
+                    else:
+                        logger.info(
+                            f"【実売買想定・本番選定銘柄・{regime_label}】"
+                            "該当データなし"
+                        )
+
             log_trade_result("全候補", validation_meta)
 
             for top_n in [10, 20]:
