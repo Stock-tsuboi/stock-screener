@@ -2204,6 +2204,24 @@ class StockScreener:
                             "該当データなし"
                         )
 
+            # 本番選定銘柄の売り警戒スコア別に実売買成績を比較
+            if not live_selected_meta.empty:
+                for sell_score in [0, 1]:
+                    score_selected = live_selected_meta[
+                        live_selected_meta["SellScore"] == sell_score
+                    ]
+
+                    if not score_selected.empty:
+                        log_trade_result(
+                            f"本番選定銘柄・SellScore={sell_score}",
+                            score_selected
+                        )
+                    else:
+                        logger.info(
+                            f"【実売買想定・本番選定銘柄・SellScore={sell_score}】"
+                            "該当データなし"
+                        )
+            
             log_trade_result("全候補", validation_meta)
 
             for top_n in [10, 20]:
