@@ -2222,6 +2222,48 @@ class StockScreener:
                             "該当データなし"
                         )
             
+            # 本番選定銘柄の特徴量・上下25%別に実売買成績を比較
+            if not live_selected_meta.empty:
+                for feature_name in [
+                    "Slope20",
+                    "Bias25",
+                    "VolRatio",
+                    "Stage2_Score"
+                ]:
+                    feature_data = live_selected_meta.dropna(
+                        subset=[feature_name]
+                    ).copy()
+
+                    if len(feature_data) < 8:
+                        continue
+
+                    feature_data["_FeatureRank"] = (
+                        feature_data[feature_name].rank(
+                            method="first",
+                            pct=True
+                        )
+                    )
+
+                    for rank_label, rank_condition in [
+                        (
+                            "下位25%",
+                            feature_data["_FeatureRank"] <= 0.25
+                        ),
+                        (
+                            "上位25%",
+                            feature_data["_FeatureRank"] >= 0.75
+                        )
+                    ]:
+                        rank_data = feature_data[
+                            rank_condition
+                        ]
+
+                        if not rank_data.empty:
+                            log_trade_result(
+                                f"本番選定銘柄・{feature_name}・{rank_label}",
+                                rank_data
+                            )
+            
             log_trade_result("全候補", validation_meta)
 
             for top_n in [10, 20]:
