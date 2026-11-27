@@ -1269,6 +1269,13 @@ class StockScreener:
             logger.error("モデルの準備に失敗したため、スクリーニングを中断します。")
             send_line("【システム通知】AIモデルの準備に失敗しました。データ量を確認してください。")
             return
+
+        # 手動検証モードでは通常の推論・通知を実行しない
+        if os.getenv("RUN_REVERSAL_DIAGNOSTICS", "0") == "1":
+            logger.info(
+                "手動検証モードのため、通常の推論・LINE通知をスキップします。"
+            )
+            return
         
         # 推論とランキング
         buy_results, sell_results, max_prob = self._inference(processed_data, current_threshold)
